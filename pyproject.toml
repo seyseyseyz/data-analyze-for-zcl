@@ -1,0 +1,40 @@
+[project]
+name = "xiaohongshu-ceramics-analytics"
+version = "0.1.0"
+description = "Local Codex skill for Xiaohongshu ceramics ecommerce analytics"
+requires-python = ">=3.11"
+dependencies = [
+  "duckdb>=1.0.0",
+  "pandas>=2.2.0",
+  "openpyxl>=3.1.0",
+  "pydantic>=2.7.0",
+  "PyYAML>=6.0.0",
+  "Jinja2>=3.1.0",
+  "plotly>=5.22.0",
+  "typer>=0.12.0",
+  "rapidfuzz>=3.9.0"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.2.0",
+  "ruff>=0.5.0"
+]
+
+[project.scripts]
+xhs-ca = "xhs_ceramics_analytics.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.hatch.build.targets.wheel]
+packages = ["xhs_ceramics_analytics"]

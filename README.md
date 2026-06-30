@@ -7,8 +7,18 @@ The project is designed to turn exported Xiaohongshu content data, product/SKU d
 ## Current Scope
 
 - Design-first project scaffold.
+- Python package foundation with editable local dev setup.
 - Full V1 spec in `docs/specs/`.
-- No implementation code yet; implementation should follow an approved plan.
+- Feature implementation should follow the approved plan.
+
+## Development Setup
+
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -e ".[dev]"
+pytest -q
+```
 
 ## Core Principles
 
@@ -16,4 +26,3 @@ The project is designed to turn exported Xiaohongshu content data, product/SKU d
 - Treat note-to-order attribution as weak inference unless explicit source data exists.
 - Report evidence strength and caveats for every conclusion.
 - Make reports readable for non-technical operators.
-
