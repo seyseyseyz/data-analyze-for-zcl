@@ -8,7 +8,7 @@ from xhs_ceramics_analytics.evidence import EvidenceStrength
 def run(db_path: Path) -> AnalysisResult:
     con = connect(db_path)
     try:
-        rows = con.sql(
+        result = con.sql(
             """
             SELECT
               note_id,
@@ -20,7 +20,9 @@ def run(db_path: Path) -> AnalysisResult:
             FROM notes
             ORDER BY reads DESC
             """
-        ).fetchdf().to_dict(orient="records")
+        )
+        columns = result.columns
+        rows = [dict(zip(columns, row, strict=True)) for row in result.fetchall()]
     finally:
         con.close()
     return AnalysisResult(

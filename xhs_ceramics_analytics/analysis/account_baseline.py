@@ -8,10 +8,10 @@ from xhs_ceramics_analytics.evidence import score_evidence
 def run(db_path: Path) -> AnalysisResult:
     con = connect(db_path)
     try:
-        daily_posts = con.sql(
+        result = con.sql(
             """
             SELECT
-              CAST(publish_time AS DATE) AS date,
+              CAST(CAST(publish_time AS DATE) AS VARCHAR) AS date,
               COUNT(*) AS posts,
               AVG(reads) AS avg_reads
             FROM notes
@@ -19,7 +19,11 @@ def run(db_path: Path) -> AnalysisResult:
             GROUP BY 1
             ORDER BY 1
             """
-        ).fetchdf().to_dict(orient="records")
+        )
+        daily_posts = [
+            {"date": date, "posts": posts, "avg_reads": avg_reads}
+            for date, posts, avg_reads in result.fetchall()
+        ]
     finally:
         con.close()
     sample_size = int(sum(row["posts"] for row in daily_posts))
@@ -38,8 +42,8 @@ def run(db_path: Path) -> AnalysisResult:
                 ),
                 key_numbers={"posts": sample_size, "active_days": len(daily_posts)},
                 caveats=[
-                    "Small fixture data limits baseline reliability. Full account data should "
-                    "improve evidence strength."
+                    "Sample size and lack of control context limit causal interpretation of "
+                    "this baseline."
                 ],
             )
         ],
