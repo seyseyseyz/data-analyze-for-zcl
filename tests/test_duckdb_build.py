@@ -104,6 +104,34 @@ def test_build_database_maps_spaced_order_headers(tmp_path: Path):
         con.close()
 
 
+def test_build_database_uses_duckdb_columns_for_duplicate_headers(tmp_path: Path):
+    orders_path = tmp_path / "orders_export.csv"
+    orders_path.write_text(
+        "Order ID,Paid Time,SKU ID,Quantity,Paid Amount,Extra,Extra\n"
+        "o1,2026-06-01 10:00:00,s1,2,258,first,second\n"
+        "o2,2026-06-01 11:00:00,s1,4,516,third,fourth\n",
+        encoding="utf-8",
+    )
+    db_path = tmp_path / "analytics.duckdb"
+
+    build_database(db_path=db_path, files=[orders_path])
+
+    con = duckdb.connect(str(db_path))
+    try:
+        assert (
+            con.sql(
+                "SELECT SUM(units) FROM daily_sku_sales WHERE sku_id = 's1'"
+            ).fetchone()[0]
+            == 6
+        )
+        order_columns = {
+            row[1] for row in con.sql("PRAGMA table_info('orders')").fetchall()
+        }
+        assert {"extra", "extra_1"}.issubset(order_columns)
+    finally:
+        con.close()
+
+
 def test_create_note_metrics_view_allows_missing_shares(tmp_path: Path):
     con = duckdb.connect(str(tmp_path / "analytics.duckdb"))
     try:

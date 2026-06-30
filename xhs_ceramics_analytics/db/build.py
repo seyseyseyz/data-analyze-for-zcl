@@ -37,7 +37,14 @@ def _drop_refresh_objects(con) -> None:
 
 
 def _load_csv_table(con, file: Path, profile: FileProfile, table_type: str) -> None:
-    projection = ", ".join(_projected_columns(profile, table_type))
+    load_profile = FileProfile(
+        path=profile.path,
+        table_name=profile.table_name,
+        columns=_duckdb_csv_columns(con, file),
+        row_count=profile.row_count,
+        sample_rows=profile.sample_rows,
+    )
+    projection = ", ".join(_projected_columns(load_profile, table_type))
     con.execute(
         f"""
         CREATE TABLE {_quote_identifier(table_type)} AS
@@ -46,6 +53,11 @@ def _load_csv_table(con, file: Path, profile: FileProfile, table_type: str) -> N
         """,
         [str(file)],
     )
+
+
+def _duckdb_csv_columns(con, file: Path) -> list[str]:
+    con.execute("SELECT * FROM read_csv_auto(?) LIMIT 0", [str(file)])
+    return [column[0] for column in con.description]
 
 
 def _projected_columns(profile: FileProfile, table_type: str) -> list[str]:
