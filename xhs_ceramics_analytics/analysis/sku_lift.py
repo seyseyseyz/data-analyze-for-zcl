@@ -17,11 +17,10 @@ _LINK_REQUIRED_COLUMNS = {"note_id", "sku_id"}
 _SKUS_REQUIRED_COLUMNS = {"sku_id"}
 
 _REAL_LINK_CAVEAT = (
-    "Observed lifts are descriptive note-linked sales windows and do not prove causal lift."
+    "观测到的提升只是笔记关联销售窗口的描述性结果，不能证明因果提升。"
 )
 _CANDIDATE_LINK_CAVEAT = (
-    "No explicit note_sku_links table was available, so note-to-SKU matching uses a "
-    "single first-SKU candidate fallback with weak attribution."
+    "缺少显式 note_sku_links 表，笔记到 SKU 的匹配使用首个 SKU 候选兜底，归因较弱。"
 )
 
 
@@ -34,7 +33,7 @@ def run(db_path: Path) -> AnalysisResult:
                 reason=sales_issue,
                 caveats=[_REAL_LINK_CAVEAT],
                 recommended_action=(
-                    "Load daily_sku_sales with date, sku_id, and units before reading lift."
+                    "先导入包含 date、sku_id 和 units 的 daily_sku_sales，再读取提升窗口。"
                 ),
             )
 
@@ -53,8 +52,7 @@ def run(db_path: Path) -> AnalysisResult:
     if not rows:
         return _missing_result(
             reason=(
-                "No note-SKU links with publish_time and matching sales rows were available "
-                "for lift windows."
+                "没有可用于提升窗口的 note-SKU 关联、publish_time 和匹配销售数据。"
             ),
             caveats=list(link_context["caveats"]),
             recommended_action=str(link_context["recommended_action"]),
@@ -67,30 +65,28 @@ def run(db_path: Path) -> AnalysisResult:
     )
     findings = [
         Finding(
-            title="Descriptive note-anchored SKU lift windows",
+            title="笔记锚定的 SKU 描述性提升窗口",
             conclusion=(
-                f"Built descriptive lift windows for "
-                f"{len({(row['note_id'], row['sku_id']) for row in rows})} note-SKU links "
-                "anchored to note publish dates."
+                f"已基于笔记发布时间，为 "
+                f"{len({(row['note_id'], row['sku_id']) for row in rows})} 组 note-SKU 关联"
+                "生成描述性提升窗口。"
             ),
             evidence_strength=evidence_strength,
             key_numbers=_key_numbers(rows, str(link_context["source"])),
             caveats=list(link_context["caveats"]),
             recommended_action=(
-                "Treat these as weak directional signals and add explicit note-SKU linking "
-                "or holdout logic before using them for stronger attribution claims."
+                "先把这些结果当作弱方向信号；如果要做更强归因，需要补充显式 note-SKU 关联或留出对照逻辑。"
             ),
         )
     ]
 
     return AnalysisResult(
         task_id="sku_counterfactual_lift",
-        title="SKU Counterfactual Lift",
+        title="SKU 反事实提升",
         findings=findings,
         tables={"sku_lift": rows},
         limitations=[
-            "Lift windows are observational and remain sensitive to seasonality, pricing, "
-            "stockouts, and overlapping marketing activity."
+            "提升窗口是观测性结果，仍会受到季节性、价格、缺货和重叠营销活动影响。"
         ],
     )
 
@@ -216,12 +212,11 @@ def _link_context(con) -> dict[str, object]:
             "source": None,
             "caveats": [_REAL_LINK_CAVEAT],
             "reason": (
-                "note_sku_links exists but usable note_id/sku_id links with notes.publish_time "
-                "were not available."
+                "note_sku_links 已存在，但缺少可用的 note_id/sku_id 关联或 notes.publish_time。"
             ),
             "recommended_action": (
-                "Populate note_sku_links.note_id, note_sku_links.sku_id, and notes.publish_time "
-                "so lift windows can anchor to real note dates."
+                "补齐 note_sku_links.note_id、note_sku_links.sku_id 和 notes.publish_time，"
+                "让提升窗口能锚定真实笔记日期。"
             ),
         }
 
@@ -263,23 +258,23 @@ def _link_context(con) -> dict[str, object]:
         "source": None,
         "caveats": [_REAL_LINK_CAVEAT],
         "reason": (
-            "Could not derive note-SKU links with publish_time. note_sku_links was unavailable "
-            "and notes/skus were insufficient for even a conservative candidate fallback."
+            "无法推导带 publish_time 的 note-SKU 关联；note_sku_links 不可用，notes/skus "
+            "也不足以支持保守候选兜底。"
         ),
         "recommended_action": (
-            "Load note_sku_links or provide notes(note_id, publish_time) plus skus(sku_id) "
-            "to enable weak candidate linking."
+            "导入 note_sku_links，或至少提供 notes(note_id, publish_time) 与 skus(sku_id)，"
+            "以启用弱候选关联。"
         ),
     }
 
 
 def _sales_readiness_issue(con) -> str | None:
     if not _table_exists(con, "daily_sku_sales"):
-        return "daily_sku_sales table is missing."
+        return "缺少 daily_sku_sales 表。"
     columns = _table_columns(con, "daily_sku_sales")
     missing = sorted(_SALES_REQUIRED_COLUMNS - columns)
     if missing:
-        return "daily_sku_sales is missing required columns: " + ", ".join(missing) + "."
+        return "daily_sku_sales 表缺少必要字段：" + ", ".join(missing) + "。"
     return None
 
 
@@ -290,12 +285,12 @@ def _missing_result(
 ) -> AnalysisResult:
     return AnalysisResult(
         task_id="sku_counterfactual_lift",
-        title="SKU Counterfactual Lift",
+        title="SKU 反事实提升",
         findings=[
             Finding(
-                title="SKU lift not judgable",
+                title="SKU 提升不可判断",
                 conclusion=(
-                    "Could not assemble note-anchored SKU lift windows from the available data."
+                    "无法从当前数据组装笔记锚定的 SKU 提升窗口。"
                 ),
                 evidence_strength=EvidenceStrength.NOT_JUDGABLE,
                 key_numbers={"note_sku_links": 0, "windows": 0},
