@@ -10,11 +10,10 @@ _LINK_REQUIRED_COLUMNS = {"note_id", "sku_id"}
 _SKUS_REQUIRED_COLUMNS = {"sku_id"}
 
 _REAL_LINK_CAVEAT = (
-    "Response windows are descriptive note-linked sales windows and do not isolate causal impact."
+    "响应窗口是笔记关联销售窗口的描述性结果，不能隔离因果影响。"
 )
 _CANDIDATE_LINK_CAVEAT = (
-    "No explicit note_sku_links table was available, so response windows use a first-SKU "
-    "candidate fallback with very weak attribution."
+    "缺少显式 note_sku_links 表，响应窗口使用首个 SKU 候选兜底，归因很弱。"
 )
 
 
@@ -27,8 +26,7 @@ def run(db_path: Path) -> AnalysisResult:
                 reason=sales_issue,
                 caveats=[_REAL_LINK_CAVEAT],
                 recommended_action=(
-                    "Load daily_sku_sales with date, sku_id, and units before reading response "
-                    "windows."
+                    "先导入包含 date、sku_id 和 units 的 daily_sku_sales，再读取响应窗口。"
                 ),
             )
 
@@ -47,8 +45,7 @@ def run(db_path: Path) -> AnalysisResult:
     if not rows:
         return _missing_result(
             reason=(
-                "No note-SKU links with publish_time and matching sales rows were available "
-                "for response windows."
+                "没有可用于响应窗口的 note-SKU 关联、publish_time 和匹配销售数据。"
             ),
             caveats=list(link_context["caveats"]),
             recommended_action=str(link_context["recommended_action"]),
@@ -56,13 +53,13 @@ def run(db_path: Path) -> AnalysisResult:
 
     return AnalysisResult(
         task_id="content_response_curve",
-        title="Content Response Curve",
+        title="内容响应曲线",
         findings=[
             Finding(
-                title="Descriptive note-anchored response windows",
+                title="笔记锚定的描述性响应窗口",
                 conclusion=(
-                    f"Built note-anchored response windows for {len(rows)} note-SKU rows using "
-                    "publish-date windows instead of a fixed calendar anchor."
+                    f"已为 {len(rows)} 行 note-SKU 数据生成笔记锚定响应窗口，"
+                    "使用发布时间窗口而不是固定日历锚点。"
                 ),
                 evidence_strength=score_evidence(
                     len(rows),
@@ -76,15 +73,13 @@ def run(db_path: Path) -> AnalysisResult:
                 },
                 caveats=list(link_context["caveats"]),
                 recommended_action=(
-                    "Use these windows as weak timing diagnostics, then validate promising "
-                    "patterns with explicit linking or a controlled experiment."
+                    "先把这些窗口作为弱时间诊断，再用显式关联或受控实验验证有希望的模式。"
                 ),
             )
         ],
         tables={"response_windows": rows},
         limitations=[
-            "Response windows remain observational and can be distorted by overlapping notes, "
-            "stockouts, or demand shifts unrelated to the focal content."
+            "响应窗口仍是观测性结果，可能被重叠笔记、缺货或与目标内容无关的需求变化扭曲。"
         ],
     )
 
@@ -184,12 +179,11 @@ def _link_context(con) -> dict[str, object]:
             "source": None,
             "caveats": [_REAL_LINK_CAVEAT],
             "reason": (
-                "note_sku_links exists but usable note_id/sku_id links with notes.publish_time "
-                "were not available."
+                "note_sku_links 已存在，但缺少可用的 note_id/sku_id 关联或 notes.publish_time。"
             ),
             "recommended_action": (
-                "Populate note_sku_links.note_id, note_sku_links.sku_id, and notes.publish_time "
-                "so response windows can anchor to real note dates."
+                "补齐 note_sku_links.note_id、note_sku_links.sku_id 和 notes.publish_time，"
+                "让响应窗口能锚定真实笔记日期。"
             ),
         }
 
@@ -231,23 +225,23 @@ def _link_context(con) -> dict[str, object]:
         "source": None,
         "caveats": [_REAL_LINK_CAVEAT],
         "reason": (
-            "Could not derive note-SKU links with publish_time. note_sku_links was unavailable "
-            "and notes/skus were insufficient for even a conservative candidate fallback."
+            "无法推导带 publish_time 的 note-SKU 关联；note_sku_links 不可用，notes/skus "
+            "也不足以支持保守候选兜底。"
         ),
         "recommended_action": (
-            "Load note_sku_links or provide notes(note_id, publish_time) plus skus(sku_id) "
-            "to enable weak candidate linking."
+            "导入 note_sku_links，或至少提供 notes(note_id, publish_time) 与 skus(sku_id)，"
+            "以启用弱候选关联。"
         ),
     }
 
 
 def _sales_readiness_issue(con) -> str | None:
     if not _table_exists(con, "daily_sku_sales"):
-        return "daily_sku_sales table is missing."
+        return "缺少 daily_sku_sales 表。"
     columns = _table_columns(con, "daily_sku_sales")
     missing = sorted(_SALES_REQUIRED_COLUMNS - columns)
     if missing:
-        return "daily_sku_sales is missing required columns: " + ", ".join(missing) + "."
+        return "daily_sku_sales 表缺少必要字段：" + ", ".join(missing) + "。"
     return None
 
 
@@ -258,12 +252,12 @@ def _missing_result(
 ) -> AnalysisResult:
     return AnalysisResult(
         task_id="content_response_curve",
-        title="Content Response Curve",
+        title="内容响应曲线",
         findings=[
             Finding(
-                title="Response curve not judgable",
+                title="响应曲线不可判断",
                 conclusion=(
-                    "Could not assemble note-anchored response windows from the available data."
+                    "无法从当前数据组装笔记锚定的响应窗口。"
                 ),
                 evidence_strength=EvidenceStrength.NOT_JUDGABLE,
                 key_numbers={"note_sku_rows": 0},
