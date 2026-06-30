@@ -22,6 +22,18 @@ pytest -q
 
 ## Quick Start
 
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -e ".[dev]"
+xhs-ca build tests/fixtures/notes.csv tests/fixtures/products.csv tests/fixtures/skus.csv tests/fixtures/orders.csv tests/fixtures/content_features.csv tests/fixtures/comments.csv tests/fixtures/calendar_events.csv
+xhs-ca run all
+```
+
+Reports are written under `.xhs-ceramics-analytics/outputs/`.
+
+## Your Own Exports
+
 1. Export your Xiaohongshu notes, products, SKUs, orders, comments, and calendar data as CSV files.
 2. Build the local DuckDB database:
 
@@ -68,6 +80,10 @@ python -m xhs_ceramics_analytics.cli run all
 - A local DuckDB project state under `.xhs-ceramics-analytics/`
 - Markdown reports that summarize findings, evidence strength, caveats, and suggested next actions
 - A full `all` report that combines the current V1 task registry into one operating review
+
+## Evidence Rule
+
+The skill reports strong, medium, weak, or not-judgable evidence for every conclusion. Weak attribution is treated as a hypothesis, not a fact.
 
 ## Core Principles
 
