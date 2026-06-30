@@ -53,7 +53,7 @@ def run(db_path: Path) -> AnalysisResult:
               publish_time,
               pre_units,
               post_3d_units,
-              post_3d_units - pre_units AS lift_units,
+              post_3d_units - pre_units AS absolute_lift,
               CASE
                 WHEN pre_units > 0 THEN (post_3d_units - pre_units) / pre_units
               END AS lift_ratio
@@ -72,7 +72,7 @@ def run(db_path: Path) -> AnalysisResult:
             {
                 "pre_units": rows[0]["pre_units"],
                 "post_3d_units": rows[0]["post_3d_units"],
-                "lift_units": rows[0]["lift_units"],
+                "absolute_lift": rows[0]["absolute_lift"],
             }
         )
 
