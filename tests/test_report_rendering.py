@@ -4,7 +4,7 @@ from xhs_ceramics_analytics.reporting.html import render_html
 from xhs_ceramics_analytics.reporting.markdown import render_markdown
 
 
-def test_render_markdown_includes_evidence_strength():
+def test_render_markdown_uses_chinese_report_labels():
     report = render_markdown(
         [
             AnalysisResult(
@@ -23,8 +23,12 @@ def test_render_markdown_includes_evidence_strength():
             )
         ]
     )
-    assert "# Xiaohongshu Ceramics Analytics Report" in report
-    assert "Evidence: strong" in report
+    assert "# 小红书陶瓷账号分析报告" in report
+    assert "证据强度：强" in report
+    assert "关键数字：" in report
+    assert "建议动作：" in report
+    assert "表格 `table_count`: 0 行" not in report
+    assert "Evidence:" not in report
     assert "Proceed with analysis." in report
 
 

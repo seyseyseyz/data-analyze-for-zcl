@@ -20,13 +20,13 @@ def run(db_path: Path) -> AnalysisResult:
     missing = [row["table"] for row in rows if row["rows"] == 0]
     return AnalysisResult(
         task_id="data_quality_check",
-        title="Data Quality Check",
+        title="数据质量检查",
         findings=[
             Finding(
-                title="Imported tables are available",
+                title="导入表可用",
                 conclusion=(
-                    f"Detected {len(rows)} tables. Empty tables: "
-                    f"{', '.join(missing) if missing else 'none'}."
+                    f"已检测到 {len(rows)} 张表。空表："
+                    f"{', '.join(missing) if missing else '无'}。"
                 ),
                 evidence_strength=(
                     EvidenceStrength.STRONG if rows else EvidenceStrength.NOT_JUDGABLE
@@ -34,7 +34,7 @@ def run(db_path: Path) -> AnalysisResult:
                 key_numbers={"table_count": len(rows)},
                 caveats=[]
                 if not missing
-                else ["Some tables are empty and related analyses will degrade."],
+                else ["部分表为空，相关分析会降级为弱判断或不可判断。"],
             )
         ],
         tables={"table_row_counts": rows},

@@ -84,9 +84,10 @@ def test_markdown_renders_limitations_and_table_preview(tmp_path: Path):
 
     report = render_markdown([run_task("note_funnel", db_path)])
 
-    assert "Limitations:" in report
-    assert "notes columns missing for funnel rates" in report
-    assert "Table `note_funnel`: 1 rows" in report
+    assert "限制：" in report
+    assert "笔记表缺少漏斗指标字段" in report
+    assert "notes columns missing for funnel rates" not in report
+    assert "表格 `note_funnel`：1 行" in report
     assert "| note_id | reads | read_rate | like_rate | collect_rate | comment_rate |" in report
 
 
@@ -108,6 +109,14 @@ def test_cli_run_writes_markdown_and_html(tmp_path: Path, fixture_dir: Path, mon
 
     assert build_result.exit_code == 0
     assert run_result.exit_code == 0
-    assert (tmp_path / ".xhs-ceramics-analytics" / "outputs" / "all.md").exists()
+    report_path = tmp_path / ".xhs-ceramics-analytics" / "outputs" / "all.md"
+    assert report_path.exists()
     assert (tmp_path / ".xhs-ceramics-analytics" / "outputs" / "all.html").exists()
+    report = report_path.read_text(encoding="utf-8")
+    assert "# 小红书陶瓷账号分析报告" in report
+    assert "## 数据质量检查" in report
+    assert "## 每周经营复盘" in report
+    assert "# Xiaohongshu Ceramics Analytics Report" not in report
+    assert "## Data Quality Check" not in report
+    assert "## Weekly Business Review" not in report
     assert "all.html" in run_result.output
