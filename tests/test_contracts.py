@@ -19,6 +19,15 @@ def _order_row(**overrides: object) -> dict[str, object]:
     return row
 
 
+def _assert_normalize_error_context(overrides: dict[str, object], *snippets: str) -> None:
+    with pytest.raises(ValueError) as exc_info:
+        normalize_order_rows([_order_row(**overrides)])
+
+    message = str(exc_info.value)
+    for snippet in snippets:
+        assert snippet in message
+
+
 def test_note_accepts_core_fields():
     note = Note(
         note_id="n1",
@@ -55,14 +64,14 @@ def test_normalize_order_rows_preserves_sku_lines():
     assert sum(line.quantity for line in normalized) == 3
 
 
-def test_normalize_order_rows_rejects_missing_order_id():
-    with pytest.raises(ValueError, match="order_id"):
-        normalize_order_rows([_order_row(order_id=None)])
+@pytest.mark.parametrize("order_id", [None, "   "])
+def test_normalize_order_rows_rejects_missing_order_id(order_id: object):
+    _assert_normalize_error_context({"order_id": order_id}, "order_id", "row index 0")
 
 
-def test_normalize_order_rows_rejects_missing_sku_id():
-    with pytest.raises(ValueError, match="sku_id"):
-        normalize_order_rows([_order_row(sku_id=None)])
+@pytest.mark.parametrize("sku_id", [None, "   "])
+def test_normalize_order_rows_rejects_missing_sku_id(sku_id: object):
+    _assert_normalize_error_context({"sku_id": sku_id}, "sku_id", "row index 0")
 
 
 def test_normalize_order_rows_rejects_fractional_quantity():
@@ -112,6 +121,14 @@ def test_order_line_rejects_infinite_paid_amount():
 def test_normalize_order_rows_rejects_infinite_paid_amount_with_context():
     with pytest.raises(ValueError, match=r"paid_amount.*row index 0"):
         normalize_order_rows([_order_row(paid_amount="inf")])
+
+
+def test_normalize_order_rows_rejects_non_positive_quantity_with_context():
+    _assert_normalize_error_context({"quantity": "0"}, "quantity", "row index 0")
+
+
+def test_normalize_order_rows_rejects_negative_paid_amount_with_context():
+    _assert_normalize_error_context({"paid_amount": "-1"}, "paid_amount", "row index 0")
 
 
 def test_normalize_order_rows_treats_optional_missing_values_as_none():

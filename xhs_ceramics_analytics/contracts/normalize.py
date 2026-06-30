@@ -4,6 +4,7 @@ from decimal import Decimal, InvalidOperation
 import math
 
 import pandas as pd
+from pydantic import ValidationError
 
 from xhs_ceramics_analytics.contracts.schemas import OrderLine
 
@@ -25,10 +26,13 @@ def parse_error(
     if field_name is None and row_index is None:
         return ValueError(message)
 
-    context = field_name or ""
     if row_index is not None:
         row_context = f"row index {row_index}"
-        context = f"{context} at {row_context}" if context else row_context
+        if field_name is None:
+            return ValueError(f"{message} at {row_context}")
+        context = f"{field_name} at {row_context}"
+    else:
+        context = field_name or ""
     return ValueError(f"{context}: {message}")
 
 
@@ -91,19 +95,30 @@ def parse_optional_text(value: object) -> str | None:
     return text or None
 
 
+def with_row_context(exc: ValueError, row_index: int) -> ValueError:
+    if isinstance(exc, ValidationError):
+        error = exc.errors()[0]
+        field_name = ".".join(str(part) for part in error["loc"])
+        return parse_error(error["msg"], field_name, row_index)
+    return parse_error(str(exc), row_index=row_index)
+
+
 def normalize_order_rows(rows: list[Mapping[str, object]]) -> list[OrderLine]:
     normalized: list[OrderLine] = []
     for row_index, row in enumerate(rows):
-        normalized.append(
-            OrderLine(
-                order_id=parse_required_text(row.get("order_id"), "order_id"),
-                paid_time=parse_datetime(row.get("paid_time"), "paid_time", row_index),
-                sku_id=parse_required_text(row.get("sku_id"), "sku_id"),
-                quantity=parse_quantity(row.get("quantity", 1), "quantity", row_index),
-                paid_amount=parse_optional_float(
-                    row.get("paid_amount"), "paid_amount", row_index
-                ),
-                refund_status_optional=parse_optional_text(row.get("refund_status_optional")),
+        try:
+            normalized.append(
+                OrderLine(
+                    order_id=parse_required_text(row.get("order_id"), "order_id"),
+                    paid_time=parse_datetime(row.get("paid_time"), "paid_time"),
+                    sku_id=parse_required_text(row.get("sku_id"), "sku_id"),
+                    quantity=parse_quantity(row.get("quantity", 1), "quantity"),
+                    paid_amount=parse_optional_float(row.get("paid_amount"), "paid_amount"),
+                    refund_status_optional=parse_optional_text(
+                        row.get("refund_status_optional")
+                    ),
+                )
             )
-        )
+        except ValueError as exc:
+            raise with_row_context(exc, row_index) from exc
     return normalized
