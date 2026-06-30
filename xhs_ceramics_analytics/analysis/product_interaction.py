@@ -8,22 +8,7 @@ from xhs_ceramics_analytics.evidence import EvidenceStrength
 def run(db_path: Path) -> AnalysisResult:
     con = connect(db_path)
     try:
-        result = con.sql(
-            """
-            SELECT
-              f.composition_type,
-              f.copy_angle,
-              COUNT(*) AS notes,
-              AVG(n.reads) AS avg_reads,
-              AVG(n.collects) AS avg_collects
-            FROM content_features f
-            JOIN notes n USING(note_id)
-            GROUP BY 1, 2
-            ORDER BY avg_reads DESC
-            """
-        )
-        columns = result.columns
-        rows = [dict(zip(columns, row, strict=True)) for row in result.fetchall()]
+        rows, limitations = _fetch_interactions(con)
     finally:
         con.close()
 
@@ -37,7 +22,9 @@ def run(db_path: Path) -> AnalysisResult:
                     "The task compared cover and copy combinations as an initial "
                     "interaction view."
                 ),
-                evidence_strength=EvidenceStrength.WEAK,
+                evidence_strength=(
+                    EvidenceStrength.WEAK if rows else EvidenceStrength.NOT_JUDGABLE
+                ),
                 key_numbers={"combinations": len(rows)},
                 caveats=[
                     "Product joins need explicit note-SKU links for stronger "
@@ -46,4 +33,77 @@ def run(db_path: Path) -> AnalysisResult:
             )
         ],
         tables={"product_interactions": rows},
+        limitations=limitations,
     )
+
+
+def _fetch_interactions(con) -> tuple[list[dict[str, object]], list[str]]:
+    if not _table_exists(con, "content_features"):
+        return [], ["content_features table missing."]
+
+    content_columns = _table_columns(con, "content_features")
+    required = {"composition_type", "copy_angle"}
+    if not required.issubset(content_columns):
+        return [], ["content_features composition_type/copy_angle columns incomplete."]
+
+    can_join_notes = (
+        "note_id" in content_columns
+        and _table_exists(con, "notes")
+        and "note_id" in _table_columns(con, "notes")
+    )
+    if not can_join_notes:
+        result = con.sql(
+            """
+            SELECT
+              COALESCE(NULLIF(TRIM(CAST(composition_type AS VARCHAR)), ''), 'unknown')
+                AS composition_type,
+              COALESCE(NULLIF(TRIM(CAST(copy_angle AS VARCHAR)), ''), 'unknown')
+                AS copy_angle,
+              COUNT(*) AS notes,
+              NULL AS avg_reads,
+              NULL AS avg_collects
+            FROM content_features
+            GROUP BY 1, 2
+            ORDER BY notes DESC, composition_type, copy_angle
+            """
+        )
+        return _rows(result), ["notes metrics unavailable; interaction view uses feature counts only."]
+
+    note_columns = _table_columns(con, "notes")
+    avg_reads = "AVG(CAST(n.reads AS DOUBLE))" if "reads" in note_columns else "NULL"
+    avg_collects = (
+        "AVG(CAST(n.collects AS DOUBLE))" if "collects" in note_columns else "NULL"
+    )
+    result = con.sql(
+        f"""
+        SELECT
+          COALESCE(NULLIF(TRIM(CAST(f.composition_type AS VARCHAR)), ''), 'unknown')
+            AS composition_type,
+          COALESCE(NULLIF(TRIM(CAST(f.copy_angle AS VARCHAR)), ''), 'unknown')
+            AS copy_angle,
+          COUNT(*) AS notes,
+          {avg_reads} AS avg_reads,
+          {avg_collects} AS avg_collects
+        FROM content_features f
+        LEFT JOIN notes n ON CAST(f.note_id AS VARCHAR) = CAST(n.note_id AS VARCHAR)
+        GROUP BY 1, 2
+        ORDER BY avg_reads DESC NULLS LAST, notes DESC, composition_type, copy_angle
+        """
+    )
+    limitations = []
+    if "reads" not in note_columns or "collects" not in note_columns:
+        limitations.append("notes read/collect metrics incomplete.")
+    return _rows(result), limitations
+
+
+def _rows(result) -> list[dict[str, object]]:
+    columns = result.columns
+    return [dict(zip(columns, row, strict=True)) for row in result.fetchall()]
+
+
+def _table_exists(con, table_name: str) -> bool:
+    return table_name in {row[0] for row in con.sql("SHOW TABLES").fetchall()}
+
+
+def _table_columns(con, table_name: str) -> set[str]:
+    return {row[1] for row in con.sql(f"PRAGMA table_info('{table_name}')").fetchall()}
