@@ -1,15 +1,16 @@
 from datetime import date, datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, StringConstraints, field_validator
 
 
 NonNegativeInt = Annotated[int, Field(ge=0)] | None
-NonNegativeFloat = Annotated[float, Field(ge=0)] | None
+NonNegativeFloat = Annotated[float, Field(ge=0, allow_inf_nan=False)] | None
+RequiredId = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
 
 class Note(BaseModel):
-    note_id: str
+    note_id: RequiredId
     publish_time: datetime | None = None
     title: str | None = None
     body: str | None = None
@@ -42,7 +43,7 @@ class Note(BaseModel):
 
 
 class Product(BaseModel):
-    product_id: str
+    product_id: RequiredId
     product_name: str | None = None
     category: str | None = None
     vessel_type: str | None = None
@@ -55,7 +56,7 @@ class Product(BaseModel):
 
 
 class Sku(BaseModel):
-    sku_id: str
+    sku_id: RequiredId
     product_id: str | None = None
     sku_name: str | None = None
     price: NonNegativeFloat = None
@@ -64,9 +65,9 @@ class Sku(BaseModel):
 
 
 class OrderLine(BaseModel):
-    order_id: str
+    order_id: RequiredId
     paid_time: datetime | None = None
-    sku_id: str
+    sku_id: RequiredId
     quantity: int = Field(default=1)
     paid_amount: NonNegativeFloat = None
     refund_status_optional: str | None = None
@@ -80,8 +81,8 @@ class OrderLine(BaseModel):
 
 
 class NoteSkuLink(BaseModel):
-    note_id: str
-    sku_id: str
+    note_id: RequiredId
+    sku_id: RequiredId
     link_type: Literal["explicit", "manual", "inferred"]
     confidence: float = Field(ge=0.0, le=1.0)
     evidence: str | None = None

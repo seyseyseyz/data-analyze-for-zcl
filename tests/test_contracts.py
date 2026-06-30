@@ -3,7 +3,7 @@ from datetime import datetime
 import pytest
 
 from xhs_ceramics_analytics.contracts.normalize import normalize_order_rows
-from xhs_ceramics_analytics.contracts.schemas import Note, OrderLine, Sku
+from xhs_ceramics_analytics.contracts.schemas import Note, NoteSkuLink, OrderLine, Product, Sku
 
 
 def _order_row(**overrides: object) -> dict[str, object]:
@@ -89,9 +89,29 @@ def test_sku_rejects_negative_numeric_fields(field_name: str, value: object):
         Sku(sku_id="s1", **{field_name: value})
 
 
+def test_sku_rejects_infinite_price():
+    with pytest.raises(ValueError, match="price"):
+        Sku(sku_id="s1", price=float("inf"))
+
+
 def test_order_line_rejects_negative_paid_amount():
     with pytest.raises(ValueError, match="paid_amount"):
         OrderLine(order_id="o1", paid_time=datetime(2026, 6, 2), sku_id="s1", paid_amount=-1)
+
+
+def test_order_line_rejects_infinite_paid_amount():
+    with pytest.raises(ValueError, match="paid_amount"):
+        OrderLine(
+            order_id="o1",
+            paid_time=datetime(2026, 6, 2),
+            sku_id="s1",
+            paid_amount=float("inf"),
+        )
+
+
+def test_normalize_order_rows_rejects_infinite_paid_amount_with_context():
+    with pytest.raises(ValueError, match=r"paid_amount.*row index 0"):
+        normalize_order_rows([_order_row(paid_amount="inf")])
 
 
 def test_normalize_order_rows_treats_optional_missing_values_as_none():
@@ -108,3 +128,41 @@ def test_normalize_order_rows_treats_optional_missing_values_as_none():
     assert normalized[0].paid_time is None
     assert normalized[0].paid_amount is None
     assert normalized[0].refund_status_optional is None
+
+
+@pytest.mark.parametrize(
+    ("model_cls", "kwargs", "field_name"),
+    [
+        (Note, {"note_id": "   "}, "note_id"),
+        (Sku, {"sku_id": ""}, "sku_id"),
+        (Product, {"product_id": "   "}, "product_id"),
+        (OrderLine, {"order_id": "", "sku_id": "s1"}, "order_id"),
+        (
+            NoteSkuLink,
+            {"note_id": "   ", "sku_id": "s1", "link_type": "explicit", "confidence": 1.0},
+            "note_id",
+        ),
+        (
+            NoteSkuLink,
+            {"note_id": "n1", "sku_id": "", "link_type": "explicit", "confidence": 1.0},
+            "sku_id",
+        ),
+    ],
+)
+def test_required_ids_reject_blank_values(
+    model_cls: type, kwargs: dict[str, object], field_name: str
+):
+    with pytest.raises(ValueError, match=field_name):
+        model_cls(**kwargs)
+
+
+def test_required_ids_are_trimmed():
+    link = NoteSkuLink(
+        note_id=" n1 ",
+        sku_id=" s1 ",
+        link_type="explicit",
+        confidence=1.0,
+    )
+
+    assert link.note_id == "n1"
+    assert link.sku_id == "s1"
