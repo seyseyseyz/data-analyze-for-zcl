@@ -20,6 +20,55 @@ python -m pip install -e ".[dev]"
 pytest -q
 ```
 
+## Quick Start
+
+1. Export your Xiaohongshu notes, products, SKUs, orders, comments, and calendar data as CSV files.
+2. Build the local DuckDB database:
+
+```bash
+xhs-ca build path/to/notes.csv path/to/products.csv path/to/skus.csv path/to/orders.csv
+```
+
+3. Run a single analysis task or the full report menu:
+
+```bash
+xhs-ca run weekly_business_review
+xhs-ca run all
+```
+
+4. Open the generated Markdown report under `.xhs-ceramics-analytics/outputs/`.
+
+You can also run the CLI without installation:
+
+```bash
+python -m xhs_ceramics_analytics.cli build path/to/notes.csv path/to/orders.csv
+python -m xhs_ceramics_analytics.cli run all
+```
+
+## Analysis Menu
+
+- `data_quality_check`
+- `account_baseline`
+- `note_funnel`
+- `sku_counterfactual_lift`
+- `content_response_curve`
+- `cover_style_effect`
+- `copy_angle_effect`
+- `product_content_interaction`
+- `product_opportunity_matrix`
+- `comment_demand_mining`
+- `content_portfolio_optimization`
+- `weekly_experiment_matrix`
+- `reshoot_repost_candidates`
+- `hypothesis_knowledge_base`
+- `weekly_business_review`
+
+## What The Tool Produces
+
+- A local DuckDB project state under `.xhs-ceramics-analytics/`
+- Markdown reports that summarize findings, evidence strength, caveats, and suggested next actions
+- A full `all` report that combines the current V1 task registry into one operating review
+
 ## Core Principles
 
 - Reuse mature upstream projects instead of building toy replacements.
