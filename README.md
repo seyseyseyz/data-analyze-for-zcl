@@ -14,41 +14,62 @@ The project is designed to turn exported Xiaohongshu content data, product/SKU d
 ## Development Setup
 
 ```bash
-python3 -m venv .venv
-. .venv/bin/activate
-python -m pip install -e ".[dev]"
+./scripts/bootstrap
 pytest -q
 ```
+
+`./scripts/bootstrap` creates `.venv`, installs the editable package with dev
+dependencies, and runs `xhs-ca doctor --strict`.
 
 ## Quick Start
 
 ```bash
-python3 -m venv .venv
-. .venv/bin/activate
-python -m pip install -e ".[dev]"
+./scripts/bootstrap
 xhs-ca build tests/fixtures/notes.csv tests/fixtures/products.csv tests/fixtures/skus.csv tests/fixtures/orders.csv tests/fixtures/content_features.csv tests/fixtures/comments.csv tests/fixtures/calendar_events.csv
 xhs-ca run all
 ```
 
 Reports are written under `.xhs-ceramics-analytics/outputs/`.
 
+## Environment Check
+
+Run this before analyzing real exports, especially on a new machine:
+
+```bash
+xhs-ca doctor
+```
+
+The doctor checks Python version, project root, virtual environment status,
+required Python dependencies, the `xhs-ca` command, and whether the local state
+directory is writable. Use strict mode in automation:
+
+```bash
+xhs-ca doctor --strict
+```
+
 ## Your Own Exports
 
 1. Export your Xiaohongshu notes, products, SKUs, orders, comments, and calendar data as CSV files.
-2. Build the local DuckDB database:
+2. Check the local environment:
+
+```bash
+xhs-ca doctor
+```
+
+3. Build the local DuckDB database:
 
 ```bash
 xhs-ca build path/to/notes.csv path/to/products.csv path/to/skus.csv path/to/orders.csv
 ```
 
-3. Run a single analysis task or the full report menu:
+4. Run a single analysis task or the full report menu:
 
 ```bash
 xhs-ca run weekly_business_review
 xhs-ca run all
 ```
 
-4. Open the generated Markdown report under `.xhs-ceramics-analytics/outputs/`.
+5. Open the generated Markdown or HTML report under `.xhs-ceramics-analytics/outputs/`.
 
 You can also run the CLI without installation:
 

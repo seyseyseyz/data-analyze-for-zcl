@@ -9,15 +9,18 @@ Use this skill for local Xiaohongshu ceramics ecommerce analysis.
 
 ## Workflow
 
-1. Ask the user for exported CSV files and any cover image folders they want to reference.
-2. Let the local importer profile CSV headers and apply the closest standard table mapping.
-3. Build the local DuckDB database under `.xhs-ceramics-analytics/`.
-4. Run the requested task, or run `all` for the full V1 report menu.
-5. Present conclusions with evidence strength, caveats, and next actions.
+1. On a new checkout, run `./scripts/bootstrap`; otherwise run `xhs-ca doctor`.
+2. Ask the user for exported CSV files and any cover image folders they want to reference.
+3. Let the local importer profile CSV headers and apply the closest standard table mapping.
+4. Build the local DuckDB database under `.xhs-ceramics-analytics/`.
+5. Run the requested task, or run `all` for the full V1 report menu.
+6. Present conclusions with evidence strength, caveats, and next actions.
 
 ## Commands
 
 ```bash
+./scripts/bootstrap
+xhs-ca doctor
 xhs-ca build path/to/notes.csv path/to/orders.csv path/to/skus.csv
 xhs-ca run all
 xhs-ca run sku_counterfactual_lift
