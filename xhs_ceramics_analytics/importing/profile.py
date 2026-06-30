@@ -15,10 +15,12 @@ class FileProfile:
 
 def profile_csv(path: Path) -> FileProfile:
     frame = pd.read_csv(path)
+    sample = frame.head(5)
+    sample_rows = sample.astype(object).where(pd.notna(sample), None).to_dict(orient="records")
     return FileProfile(
         path=path,
         table_name=path.stem,
         columns=list(frame.columns),
         row_count=len(frame),
-        sample_rows=frame.head(5).where(pd.notna(frame), None).to_dict(orient="records"),
+        sample_rows=sample_rows,
     )
