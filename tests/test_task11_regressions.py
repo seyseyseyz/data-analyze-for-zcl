@@ -116,9 +116,7 @@ def test_hypothesis_without_comment_signal_stays_unknown(tmp_path: Path):
     assert demand_row["label"] == "unknown"
     assert demand_row["metric"] is None
     assert "price" not in str(demand_row["hypothesis"]).lower()
-    assert "collect" in str(demand_row["next_test"]).lower() or "comment" in str(
-        demand_row["next_test"]
-    ).lower()
+    assert "收集" in str(demand_row["next_test"]) or "评论" in str(demand_row["next_test"])
 
 
 def test_experiment_matrix_uses_future_default_planning_date(tmp_path: Path):

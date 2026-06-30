@@ -25,12 +25,12 @@ def run(db_path: Path) -> AnalysisResult:
 
     return AnalysisResult(
         task_id="hypothesis_knowledge_base",
-        title="Hypothesis Knowledge Base",
+        title="假设知识库",
         findings=[
             Finding(
-                title="Persistent hypothesis seeds generated",
+                title="持久化假设种子已生成",
                 conclusion=(
-                    f"Generated {len(rows)} persistent hypothesis seeds from current evidence."
+                    f"已基于当前证据生成 {len(rows)} 条可持续跟踪的假设种子。"
                 ),
                 evidence_strength=score_evidence(
                     evidence_count, has_controls=False, confounder_count=1
@@ -39,17 +39,14 @@ def run(db_path: Path) -> AnalysisResult:
                     "hypotheses": len(rows),
                     "evidence_items": evidence_count,
                 },
-                caveats=[
-                    "Hypotheses are evidence-backed starting points, not validated causal claims."
-                ],
+                caveats=["这些假设只是有证据支撑的起点，不是已验证的因果结论。"],
                 recommended_action=(
-                    "Carry these stable seeds into weekly experiments and update status after "
-                    "each measured result."
+                    "将这些稳定假设带入每周实验，并在每次测量后更新状态。"
                 ),
             )
         ],
         tables={"hypotheses": rows},
-        limitations=[] if evidence_count else ["No evidence rows were available for seeding."],
+        limitations=[] if evidence_count else ["没有可用于生成假设种子的证据行。"],
     )
 
 
@@ -66,7 +63,7 @@ def _angle_seed(con) -> dict[str, object]:
             "label": "unknown",
             "evidence_count": 0,
             "metric": None,
-            "evidence_summary": "No content_features rows available.",
+            "evidence_summary": "没有可用的 content_features 数据。",
         }
 
     content_columns = _table_columns(con, "content_features")
@@ -77,7 +74,7 @@ def _angle_seed(con) -> dict[str, object]:
             "label": "unknown",
             "evidence_count": 0,
             "metric": None,
-            "evidence_summary": "content_features.copy_angle missing.",
+            "evidence_summary": "content_features 表缺少 copy_angle。",
         }
 
     note_columns = _table_columns(con, "notes") if _table_exists(con, "notes") else set()
@@ -112,8 +109,8 @@ def _angle_seed(con) -> dict[str, object]:
                 "evidence_count": int(notes),
                 "metric": metric,
                 "evidence_summary": (
-                    f"{angle} has {int(notes)} notes"
-                    + (f" and avg collect rate {metric}." if metric is not None else ".")
+                    f"{angle} 有 {int(notes)} 篇笔记"
+                    + (f"，平均收藏率为 {metric}。" if metric is not None else "。")
                 ),
             }
 
@@ -136,7 +133,7 @@ def _angle_seed(con) -> dict[str, object]:
             "label": "unknown",
             "evidence_count": 0,
             "metric": None,
-            "evidence_summary": "No copy_angle rows available.",
+            "evidence_summary": "没有可用的 copy_angle 数据。",
         }
     angle, notes = row
     return {
@@ -145,7 +142,7 @@ def _angle_seed(con) -> dict[str, object]:
         "label": angle,
         "evidence_count": int(notes),
         "metric": None,
-        "evidence_summary": f"{angle} is the most observed copy angle with {int(notes)} notes.",
+        "evidence_summary": f"{angle} 是出现最多的文案角度，共 {int(notes)} 篇笔记。",
     }
 
 
@@ -170,7 +167,7 @@ def _demand_seed(con) -> dict[str, object]:
             "label": "unknown",
             "evidence_count": 0,
             "metric": None,
-            "evidence_summary": "No comment demand evidence was available; collect and label comments first.",
+            "evidence_summary": "没有可用的评论需求证据；请先收集并标注评论。",
         }
 
     group, count = max(counts.items(), key=lambda item: (item[1], item[0]))
@@ -180,7 +177,7 @@ def _demand_seed(con) -> dict[str, object]:
         "label": group,
         "evidence_count": count,
         "metric": count,
-        "evidence_summary": f"{count} comments were grouped as {group} demand.",
+        "evidence_summary": f"{count} 条评论被归入 {group} 需求。",
     }
 
 
@@ -194,7 +191,7 @@ def _sku_seed(con) -> dict[str, object]:
                 "label": "unknown",
                 "evidence_count": 0,
                 "metric": None,
-                "evidence_summary": "daily_sku_sales.sku_id missing.",
+                "evidence_summary": "daily_sku_sales 表缺少 sku_id。",
             }
         has_skus = _table_exists(con, "skus")
         sku_columns = _table_columns(con, "skus") if has_skus else set()
@@ -238,8 +235,8 @@ def _sku_seed(con) -> dict[str, object]:
                 "evidence_count": int(sales_days),
                 "metric": units_value,
                 "evidence_summary": (
-                    f"{sku_name} led SKU sales with {_display_metric(units_value)} units "
-                    f"across {int(sales_days)} days."
+                    f"{sku_name} 在 SKU 销量中领先，{int(sales_days)} 天内售出 "
+                    f"{_display_metric(units_value)} 件。"
                 ),
             }
 
@@ -249,7 +246,7 @@ def _sku_seed(con) -> dict[str, object]:
         "label": "unknown",
         "evidence_count": 0,
         "metric": None,
-        "evidence_summary": "No daily SKU sales rows available.",
+        "evidence_summary": "没有可用的 daily_sku_sales 数据。",
     }
 
 
@@ -277,22 +274,22 @@ def _hypothesis_row(seed: dict[str, object]) -> dict[str, object]:
 
 def _hypothesis_text(theme: str, label: str, evidence_count: int) -> str:
     if theme == "comment_demand" and evidence_count == 0:
-        return "Comment demand is still unknown until more comments are collected and labeled."
+        return "在收集并标注更多评论前，评论需求仍不可判断。"
     if theme == "copy_angle":
-        return f"{label} copy can create repeatable collect intent when paired with top SKUs."
+        return f"{label} 文案与头部 SKU 搭配时，可能形成可复用的收藏意图。"
     if theme == "comment_demand":
-        return f"{label} comment demand can be converted by making the answer visible in content."
-    return f"{label} deserves more controlled content allocation than the baseline mix."
+        return f"{label} 类评论需求可通过在内容中显性回答来转化。"
+    return f"{label} 相比当前基线内容组合，值得分配更多受控内容档期。"
 
 
 def _next_test(theme: str, label: str, evidence_count: int) -> str:
     if theme == "comment_demand" and evidence_count == 0:
-        return "Collect and label more comments before testing a visible reply pattern."
+        return "先收集并标注更多评论，再测试显性回复模式。"
     if theme == "copy_angle":
-        return f"Publish two {label} posts against one alternate angle and compare collect rate."
+        return f"发布两篇 {label} 角度笔记，并用一个替代角度做对照，比较收藏率。"
     if theme == "comment_demand":
-        return f"Add a {label} answer in overlay and first reply, then track matching comments."
-    return f"Assign {label} to two experiment slots and compare sales-assisted engagement."
+        return f"在封面叠字和首条回复中加入 {label} 回答，并跟踪匹配评论。"
+    return f"给 {label} 分配两个实验档期，并比较销售辅助互动表现。"
 
 
 def _classify_comment(text: str) -> str:
@@ -304,7 +301,7 @@ def _classify_comment(text: str) -> str:
 
 
 def _display_metric(value: object | None) -> str:
-    return "unknown" if value is None else str(value)
+    return "未知" if value is None else str(value)
 
 
 def _stable_id(seed: str) -> str:

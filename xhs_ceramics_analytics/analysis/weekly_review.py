@@ -15,20 +15,20 @@ def run(db_path: Path) -> AnalysisResult:
     ready_sections = [row for row in rows if row["status"] == "ready"]
     evidence_count = sum(int(row["evidence_count"]) for row in ready_sections)
     limitations = [
-        f"{row['section']} section lacks source data."
+        f"{row['section']} 模块缺少源数据。"
         for row in rows
         if row["status"] != "ready"
     ]
 
     return AnalysisResult(
         task_id="weekly_business_review",
-        title="Weekly Business Review",
+        title="每周经营复盘",
         findings=[
             Finding(
-                title="Weekly review sections assembled",
+                title="每周复盘模块已汇总",
                 conclusion=(
-                    f"Assembled {len(rows)} weekly review sections; "
-                    f"{len(ready_sections)} have source data."
+                    f"已汇总 {len(rows)} 个每周复盘模块，其中 "
+                    f"{len(ready_sections)} 个有源数据。"
                 ),
                 evidence_strength=score_evidence(
                     evidence_count, has_controls=False, confounder_count=2
@@ -39,12 +39,10 @@ def run(db_path: Path) -> AnalysisResult:
                     "evidence_items": evidence_count,
                 },
                 caveats=[
-                    "Weekly review sections summarize descriptive outputs and do not prove "
-                    "causal lift."
+                    "每周复盘模块汇总的是描述性输出，不能证明因果关系。"
                 ],
                 recommended_action=(
-                    "Use sections with ready data as the weekly narrative, and turn missing "
-                    "sections into import or instrumentation tasks."
+                    "将已有数据的模块作为本周经营叙事，把缺失模块转成导入或埋点任务。"
                 ),
             )
         ],
@@ -73,21 +71,21 @@ def _data_quality_section(con) -> dict[str, object]:
         "value": len(tables),
         "evidence_count": len(tables),
         "summary": (
-            f"{len(tables)} tables loaded; empty tables: "
-            f"{', '.join(table['table'] for table in empty_tables) if empty_tables else 'none'}."
+            f"已加载 {len(tables)} 张表；空表："
+            f"{', '.join(table['table'] for table in empty_tables) if empty_tables else '无'}。"
         )
         if tables
-        else "No DuckDB tables were found.",
+        else "没有发现 DuckDB 表。",
     }
 
 
 def _baseline_section(con) -> dict[str, object]:
     if not _table_exists(con, "notes"):
-        return _missing_section("baseline", "account_baseline", "notes table missing.")
+        return _missing_section("baseline", "account_baseline", "缺少 notes 表。")
 
     columns = _table_columns(con, "notes")
     if not {"note_id", "publish_time", "reads"}.issubset(columns):
-        return _missing_section("baseline", "account_baseline", "notes columns incomplete.")
+        return _missing_section("baseline", "account_baseline", "notes 表字段不完整。")
 
     row = con.sql(
         """
@@ -111,22 +109,22 @@ def _baseline_section(con) -> dict[str, object]:
         "value": int(posts),
         "evidence_count": int(posts),
         "summary": (
-            f"{int(posts)} posts across {int(active_days)} active days "
-            f"from {first_date} to {last_date}; avg reads {_display_number(avg_reads_value)}."
+            f"{int(posts)} 篇笔记覆盖 {int(active_days)} 个活跃发布日，"
+            f"日期从 {first_date} 到 {last_date}；平均阅读 {_display_number(avg_reads_value)}。"
         )
         if posts
-        else "No dated posts were available.",
+        else "没有可用的带日期笔记。",
     }
 
 
 def _funnel_section(con) -> dict[str, object]:
     if not _table_exists(con, "notes"):
-        return _missing_section("funnel", "note_funnel", "notes table missing.")
+        return _missing_section("funnel", "note_funnel", "缺少 notes 表。")
 
     columns = _table_columns(con, "notes")
     required = {"impressions", "reads", "likes", "collects", "comments"}
     if not required.issubset(columns):
-        return _missing_section("funnel", "note_funnel", "funnel columns incomplete.")
+        return _missing_section("funnel", "note_funnel", "漏斗字段不完整。")
 
     row = con.sql(
         """
@@ -153,11 +151,11 @@ def _funnel_section(con) -> dict[str, object]:
         "value": collect_rate,
         "evidence_count": int(notes),
         "summary": (
-            f"Average read rate {_display_number(read_rate)}, like rate {_display_number(like_rate)}, "
-            f"collect rate {_display_number(collect_rate)}, comment rate {_display_number(comment_rate)}."
+            f"平均阅读率 {_display_number(read_rate)}，点赞率 {_display_number(like_rate)}，"
+            f"收藏率 {_display_number(collect_rate)}，评论率 {_display_number(comment_rate)}。"
         )
         if notes
-        else "No note funnel rows were available.",
+        else "没有可用的笔记漏斗数据。",
     }
 
 
@@ -166,7 +164,7 @@ def _product_opportunity_section(con) -> dict[str, object]:
         return _missing_section(
             "product_opportunity",
             "product_opportunity_matrix",
-            "daily_sku_sales table missing.",
+            "缺少 daily_sku_sales 表。",
         )
 
     sales_columns = _table_columns(con, "daily_sku_sales")
@@ -174,7 +172,7 @@ def _product_opportunity_section(con) -> dict[str, object]:
         return _missing_section(
             "product_opportunity",
             "product_opportunity",
-            "daily_sku_sales.sku_id missing.",
+            "daily_sku_sales 表缺少 sku_id。",
         )
 
     has_skus = _table_exists(con, "skus")
@@ -218,7 +216,7 @@ def _product_opportunity_section(con) -> dict[str, object]:
         return _missing_section(
             "product_opportunity",
             "product_opportunity_matrix",
-            "daily_sku_sales table empty.",
+            "daily_sku_sales 表为空。",
         )
 
     sku_id, sku_name, units, gmv, sales_days = row
@@ -230,8 +228,8 @@ def _product_opportunity_section(con) -> dict[str, object]:
         "value": round(float(units), 4) if units is not None else None,
         "evidence_count": int(sales_days),
         "summary": (
-            f"{sku_name} ({sku_id}) leads observed SKU sales with "
-            f"{_display_number(_rounded(units))} units and {_display_number(_rounded(gmv, 2))} GMV."
+            f"{sku_name} ({sku_id}) 在观测 SKU 销售中领先，销量 "
+            f"{_display_number(_rounded(units))}，GMV {_display_number(_rounded(gmv, 2))}。"
         ),
     }
 
@@ -271,7 +269,7 @@ def _rounded(value: object | None, digits: int = 4) -> float | None:
 
 
 def _display_number(value: object | None) -> str:
-    return "unknown" if value is None else str(value)
+    return "未知" if value is None else str(value)
 
 
 def _quote_identifier(identifier: str) -> str:

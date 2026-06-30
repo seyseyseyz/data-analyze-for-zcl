@@ -47,6 +47,7 @@ def test_note_funnel_task_reports_rates(tmp_path, fixture_dir):
 def test_sku_lift_task_runs(tmp_path, fixture_dir):
     result = run_task("sku_counterfactual_lift", _db(tmp_path, fixture_dir))
     assert result.task_id == "sku_counterfactual_lift"
+    assert result.title == "SKU 销量响应"
     assert "sku_lift" in result.tables
 
 

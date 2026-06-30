@@ -2,13 +2,971 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <title>小红书陶瓷账号分析报告</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>小红书账号分析报告</title>
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 40px; line-height: 1.55; }
-    pre { white-space: pre-wrap; background: #f6f6f6; padding: 16px; border-radius: 6px; }
+    :root {
+      --canvas: #F7F6F3;
+      --surface: #FFFFFF;
+      --surface-soft: #F9F9F8;
+      --ink: #2F3437;
+      --ink-strong: #111111;
+      --muted: #787774;
+      --line: #EAEAEA;
+      --line-soft: rgba(0, 0, 0, 0.06);
+      --blue-bg: #E1F3FE;
+      --blue-text: #1F6C9F;
+      --green-bg: #EDF3EC;
+      --green-text: #346538;
+      --yellow-bg: #FBF3DB;
+      --yellow-text: #956400;
+      --red-bg: #FDEBEC;
+      --red-text: #9F2F2D;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--canvas);
+      color: var(--ink);
+      font-family: 'SF Pro Display', 'Geist Sans', 'Helvetica Neue', 'Switzer', sans-serif;
+      line-height: 1.6;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0.18;
+      border-left: 1px solid rgba(0,0,0,0.04);
+      border-right: 1px solid rgba(0,0,0,0.04);
+      width: min(1180px, calc(100% - 40px));
+      margin: 0 auto;
+    }
+
+    a { color: inherit; text-decoration: none; }
+
+    .report-shell {
+      width: min(1180px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 32px 0 72px;
+      position: relative;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      padding: 14px 0 32px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--ink-strong);
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+
+    .brand-mark {
+      width: 18px;
+      height: 18px;
+      border: 2px solid var(--ink-strong);
+      border-radius: 4px;
+      display: inline-block;
+      position: relative;
+    }
+
+    .brand-mark::after {
+      content: "";
+      position: absolute;
+      width: 6px;
+      height: 6px;
+      right: 3px;
+      bottom: 3px;
+      background: var(--ink-strong);
+      border-radius: 2px;
+    }
+
+    .toc {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      justify-content: flex-end;
+    }
+
+    .toc a {
+      border-bottom: 1px solid transparent;
+      padding-bottom: 2px;
+    }
+
+    .toc a:hover { border-color: var(--ink-strong); }
+
+    .hero {
+      background: var(--surface);
+      border: 1px solid #EAEAEA;
+      border-radius: 12px;
+      padding: clamp(32px, 6vw, 72px);
+      min-height: 420px;
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
+      gap: 48px;
+      align-items: end;
+    }
+
+    .eyebrow,
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      width: fit-content;
+      border-radius: 9999px;
+      padding: 5px 10px;
+      font-size: 11px;
+      line-height: 1;
+      letter-spacing: 0;
+      text-transform: uppercase;
+      font-family: 'Geist Mono', 'SF Mono', 'JetBrains Mono', monospace;
+      font-weight: 700;
+    }
+
+    .eyebrow {
+      background: var(--yellow-bg);
+      color: var(--yellow-text);
+      margin-bottom: 24px;
+    }
+
+    h1,
+    .display {
+      margin: 0;
+      color: var(--ink-strong);
+      font-family: 'Lyon Text', 'Newsreader', 'Playfair Display', 'Instrument Serif', serif;
+      font-size: 72px;
+      line-height: 0.96;
+      letter-spacing: 0;
+      max-width: 880px;
+    }
+
+    .hero-copy {
+      margin: 24px 0 0;
+      max-width: 680px;
+      color: var(--muted);
+      font-size: 18px;
+    }
+
+    .metric-stack {
+      display: grid;
+      gap: 12px;
+    }
+
+    .metric-card,
+    .card,
+    .section-panel,
+    .finding-card,
+    .table-card {
+      background: var(--surface);
+      border: 1px solid #EAEAEA;
+      border-radius: 12px;
+    }
+
+    .metric-card {
+      padding: 20px;
+    }
+
+    .metric-label,
+    .meta-label {
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: 0;
+      text-transform: uppercase;
+      font-family: 'Geist Mono', 'SF Mono', 'JetBrains Mono', monospace;
+    }
+
+    .metric-value {
+      display: block;
+      margin-top: 8px;
+      color: var(--ink-strong);
+      font-size: 34px;
+      line-height: 1;
+      font-weight: 760;
+      letter-spacing: 0;
+    }
+
+    section {
+      padding: 72px 0 0;
+    }
+
+    .section-heading {
+      max-width: 820px;
+      margin-bottom: 28px;
+    }
+
+    h2 {
+      margin: 0;
+      color: var(--ink-strong);
+      font-size: 42px;
+      line-height: 1.08;
+      letter-spacing: 0;
+    }
+
+    .section-kicker {
+      margin: 0 0 12px;
+      color: var(--muted);
+      font-family: 'Geist Mono', 'SF Mono', 'JetBrains Mono', monospace;
+      font-size: 12px;
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }
+
+    .section-lede {
+      margin: 14px 0 0;
+      color: var(--muted);
+      font-size: 17px;
+      max-width: 760px;
+    }
+
+    .bento {
+      display: grid;
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .card,
+    .finding-card {
+      padding: 28px;
+      transition: transform 200ms ease, box-shadow 200ms ease;
+    }
+
+    .card:hover,
+    .finding-card:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    }
+
+    .span-7 { grid-column: span 7; }
+    .span-5 { grid-column: span 5; }
+    .span-4 { grid-column: span 4; }
+    .span-6 { grid-column: span 6; }
+    .span-12 { grid-column: span 12; }
+
+    .card h3,
+    .finding-card h3 {
+      margin: 0;
+      color: var(--ink-strong);
+      font-size: 20px;
+      letter-spacing: 0;
+      line-height: 1.25;
+    }
+
+    .card p,
+    .finding-card p {
+      margin: 14px 0 0;
+      color: var(--ink);
+    }
+
+    .tag.medium,
+    .tag.strong { background: var(--green-bg); color: var(--green-text); }
+    .tag.weak { background: var(--yellow-bg); color: var(--yellow-text); }
+    .tag.not_judgable { background: var(--red-bg); color: var(--red-text); }
+    .tag.info { background: var(--blue-bg); color: var(--blue-text); }
+
+    .action-list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .action-item {
+      display: grid;
+      grid-template-columns: 42px minmax(0, 1fr);
+      gap: 16px;
+      padding: 24px;
+      border: 1px solid #EAEAEA;
+      border-radius: 12px;
+      background: var(--surface);
+    }
+
+    .action-item h3 {
+      margin: 10px 0 0;
+      color: var(--ink-strong);
+      font-size: 22px;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+
+    .action-meta-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .action-cell {
+      border: 1px solid #EAEAEA;
+      border-radius: 8px;
+      padding: 14px;
+      background: var(--surface-soft);
+    }
+
+    .action-cell span {
+      display: block;
+      color: var(--muted);
+      font-family: 'Geist Mono', 'SF Mono', 'JetBrains Mono', monospace;
+      font-size: 12px;
+      letter-spacing: 0;
+    }
+
+    .action-cell p {
+      margin: 8px 0 0;
+      color: var(--ink);
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
+    .step-number {
+      width: 42px;
+      height: 42px;
+      border: 1px solid #EAEAEA;
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      color: var(--ink-strong);
+      font-family: 'Geist Mono', 'SF Mono', 'JetBrains Mono', monospace;
+      font-weight: 700;
+      background: var(--surface-soft);
+    }
+
+    .section-panel {
+      padding: 0;
+      overflow: hidden;
+      margin-bottom: 18px;
+    }
+
+    .panel-header {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 18px;
+      padding: 28px;
+      border-bottom: 1px solid #EAEAEA;
+      background: var(--surface-soft);
+    }
+
+    .panel-header h3 {
+      margin: 0;
+      color: var(--ink-strong);
+      font-size: 24px;
+      letter-spacing: 0;
+    }
+
+    .panel-header p {
+      margin: 10px 0 0;
+      color: var(--muted);
+      max-width: 760px;
+    }
+
+    .panel-body {
+      padding: 28px;
+      display: grid;
+      gap: 18px;
+    }
+
+    .finding-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .result-block {
+      display: grid;
+      gap: 16px;
+      padding: 0 0 24px;
+      border-bottom: 1px solid #EAEAEA;
+    }
+
+    .result-block:last-child {
+      border-bottom: 0;
+      padding-bottom: 0;
+    }
+
+    .result-heading {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .result-heading h4 {
+      margin: 0;
+      color: var(--ink-strong);
+      font-size: 20px;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+
+    .notice {
+      border: 1px solid #EAEAEA;
+      border-radius: 8px;
+      padding: 16px;
+      background: var(--yellow-bg);
+      color: var(--yellow-text);
+    }
+
+    .notice strong {
+      color: var(--yellow-text);
+    }
+
+    .finding-card {
+      background: var(--surface);
+    }
+
+    .finding-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 18px;
+    }
+
+    .numbers {
+      margin: 18px 0 0;
+      padding: 16px;
+      border: 1px solid #EAEAEA;
+      border-radius: 8px;
+      background: var(--surface-soft);
+      display: grid;
+      gap: 8px;
+    }
+
+    .number-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      color: var(--ink);
+      font-family: 'Geist Mono', 'SF Mono', 'JetBrains Mono', monospace;
+      font-size: 13px;
+    }
+
+    .field-name {
+      display: grid;
+      gap: 4px;
+      font-family: 'SF Pro Display', 'Geist Sans', 'Helvetica Neue', 'Switzer', sans-serif;
+    }
+
+    .field-name strong {
+      color: var(--ink-strong);
+      font-size: 13px;
+      letter-spacing: 0;
+    }
+
+    .field-name code,
+    .field-code {
+      width: fit-content;
+      font-family: 'Geist Mono', 'SF Mono', 'JetBrains Mono', monospace;
+      color: var(--muted);
+      background: var(--canvas);
+      border: 1px solid #EAEAEA;
+      border-radius: 4px;
+      padding: 2px 5px;
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    .field-help {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+      font-weight: 400;
+      max-width: 220px;
+    }
+
+    .note-list {
+      margin: 16px 0 0;
+      padding-left: 18px;
+      color: var(--ink);
+    }
+
+    .note-list li + li { margin-top: 6px; }
+
+    details {
+      border-top: 1px solid #EAEAEA;
+      padding: 0;
+    }
+
+    details:first-child { border-top: 0; }
+
+    summary {
+      cursor: pointer;
+      list-style: none;
+      padding: 18px 0;
+      color: var(--ink-strong);
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    summary::-webkit-details-marker { display: none; }
+
+    summary::after {
+      content: "+";
+      font-family: 'Geist Mono', 'SF Mono', 'JetBrains Mono', monospace;
+      color: var(--muted);
+      font-size: 18px;
+    }
+
+    details[open] summary::after { content: "-"; }
+
+    .table-details {
+      border: 1px solid #EAEAEA;
+      border-radius: 8px;
+      padding: 0 16px;
+      background: var(--surface);
+    }
+
+    .table-details + .table-details {
+      margin-top: 2px;
+    }
+
+    .summary-meta {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .table-caption {
+      margin: 0 0 12px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .technical-details {
+      border-top: 1px solid #EAEAEA;
+      margin-top: 4px;
+    }
+
+    .technical-details summary {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .table-wrap {
+      width: 100%;
+      overflow-x: auto;
+      border: 1px solid #EAEAEA;
+      border-radius: 8px;
+      margin-bottom: 18px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 680px;
+      background: var(--surface);
+    }
+
+    th,
+    td {
+      padding: 12px 14px;
+      border-bottom: 1px solid #EAEAEA;
+      text-align: left;
+      vertical-align: top;
+      font-size: 13px;
+    }
+
+    th {
+      color: var(--muted);
+      font-family: 'Geist Mono', 'SF Mono', 'JetBrains Mono', monospace;
+      font-weight: 700;
+      background: var(--surface-soft);
+    }
+
+    td code,
+    kbd {
+      font-family: 'Geist Mono', 'SF Mono', 'JetBrains Mono', monospace;
+      background: var(--canvas);
+      border: 1px solid #EAEAEA;
+      border-radius: 4px;
+      padding: 2px 5px;
+    }
+
+    .appendix-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .codex-list {
+      display: grid;
+      gap: 10px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .codex-list li {
+      padding: 16px;
+      border: 1px solid #EAEAEA;
+      border-radius: 8px;
+      background: var(--surface);
+      font-weight: 650;
+      color: var(--ink-strong);
+    }
+
+    .reveal {
+      opacity: 0;
+      transform: translateY(12px);
+      animation: enter 600ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      animation-delay: calc(var(--index, 0) * 80ms);
+    }
+
+    @keyframes enter {
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .reveal {
+        opacity: 1;
+        transform: none;
+        animation: none;
+      }
+      .card,
+      .finding-card { transition: none; }
+    }
+
+    @media (max-width: 860px) {
+      .report-shell { width: min(100% - 24px, 1180px); }
+      .topbar { align-items: flex-start; flex-direction: column; }
+      .toc { justify-content: flex-start; }
+      .hero { grid-template-columns: 1fr; min-height: auto; padding: 32px; }
+      h1 { font-size: 46px; line-height: 1.02; }
+      h2 { font-size: 32px; line-height: 1.12; }
+      .action-item { grid-template-columns: 1fr; }
+      .action-meta-grid { grid-template-columns: 1fr; }
+      .bento,
+      .finding-grid,
+      .appendix-grid { grid-template-columns: 1fr; }
+      .span-7,
+      .span-5,
+      .span-4,
+      .span-6,
+      .span-12 { grid-column: auto; }
+      .panel-header { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
-  <pre>{{ markdown_report }}</pre>
+  <main class="report-shell">
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark" aria-hidden="true"></span> 小红书经营分析</div>
+      <nav class="toc" aria-label="报告目录">
+        <a href="#guide">经营导读</a>
+        <a href="#actions">行动计划</a>
+        <a href="#analysis">详细分析</a>
+        <a href="#appendix">数据附录</a>
+        <a href="#codex">Codex 追问</a>
+      </nav>
+    </header>
+
+    <section class="hero reveal" style="--index: 0">
+      <div>
+        <span class="eyebrow">Operating Report</span>
+        <h1>小红书账号分析报告</h1>
+        <p class="hero-copy">
+          这份报告按经营问题组织：先看结论和下周动作，再看商品、内容、用户需求、实验和数据可信度。技术字段会保留在追溯区，不影响正常阅读。
+        </p>
+      </div>
+      <aside class="metric-stack" aria-label="报告概览">
+        <div class="metric-card">
+          <span class="metric-label">分析模块</span>
+          <span class="metric-value">{{ report.task_count }}</span>
+        </div>
+        <div class="metric-card">
+          <span class="metric-label">经营发现</span>
+          <span class="metric-value">{{ report.finding_count }}</span>
+        </div>
+        <div class="metric-card">
+          <span class="metric-label">明细数据行</span>
+          <span class="metric-value">{{ report.total_table_rows }}</span>
+        </div>
+      </aside>
+    </section>
+
+    <section id="guide" class="reveal" style="--index: 1">
+      <div class="section-heading">
+        <p class="section-kicker">Reader Path</p>
+        <h2>经营导读</h2>
+        <p class="section-lede">
+          先读这里就能知道本周最值得做什么。数据质量和原始字段放在后面，避免一打开报告就被机器字段打断。
+        </p>
+      </div>
+      <div class="bento">
+        {% for item in report.highlights %}
+        <article class="card {% if loop.first %}span-7{% else %}span-5{% endif %}">
+          <span class="tag {{ item.evidence_class }}">可信度 {{ item.evidence }}</span>
+          <h3>{{ item.title }}</h3>
+          <p>{{ item.body }}</p>
+          <p class="meta-label">{{ item.help }}</p>
+        </article>
+        {% endfor %}
+        <article class="card span-12">
+          <span class="tag info">How to read</span>
+          <h3>低可信度结论，是实验线索</h3>
+          <p>
+            可信度说明的是这条结论能否直接用于决策。低可信度结论仍然有价值，
+            只是更适合转成下周实验，而不是直接当作长期策略。
+          </p>
+        </article>
+      </div>
+    </section>
+
+    <section id="actions" class="reveal" style="--index: 2">
+      <div class="section-heading">
+        <p class="section-kicker">Next Week</p>
+        <h2>下周行动计划</h2>
+        <p class="section-lede">
+          每条行动都写清楚目标、原因、执行方式、观察指标和暂停条件。执行时一次只改一个变量，避免看不出到底是什么起作用。
+        </p>
+      </div>
+      <div class="action-list">
+        {% for action in report.actions %}
+        <article class="action-item">
+          <div class="step-number">{{ loop.index }}</div>
+          <div>
+            <span class="tag {{ action.evidence_class }}">可信度 {{ action.evidence }}</span>
+            <h3>{{ action.task }}：{{ action.target }}</h3>
+            <div class="action-meta-grid">
+              <div class="action-cell">
+                <span>为什么做</span>
+                <p>{{ action.why }}</p>
+              </div>
+              <div class="action-cell">
+                <span>怎么执行</span>
+                <p>{{ action.how }}</p>
+              </div>
+              <div class="action-cell">
+                <span>看什么指标</span>
+                <p>{{ action.metric }}</p>
+              </div>
+              <div class="action-cell">
+                <span>什么时候暂停</span>
+                <p>{{ action.stop_rule }}</p>
+              </div>
+            </div>
+          </div>
+        </article>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section id="analysis" class="reveal" style="--index: 3">
+      <div class="section-heading">
+        <p class="section-kicker">Deep Dive</p>
+        <h2>详细分析</h2>
+        <p class="section-lede">
+          这里按业务问题分组，不按程序模块排序。每个小节先讲结论，再给用户视图表格；需要查原始字段时，再展开技术追溯信息。
+        </p>
+      </div>
+
+      {% for group in report.analysis_groups %}
+      <article class="section-panel">
+        <header class="panel-header">
+          <div>
+            <p class="section-kicker">Business Question</p>
+            <h3>{{ group.title }}</h3>
+            <p>{{ group.description }}</p>
+          </div>
+        </header>
+        <div class="panel-body">
+          {% for result in group.results %}
+          <section class="result-block">
+            <div class="result-heading">
+              <span class="tag info">{{ result.label }}</span>
+              <h4>{{ result.title }}</h4>
+            </div>
+
+            {% if result.limitations %}
+            <div class="notice">
+              <strong>数据限制</strong>
+              <ul class="note-list">
+                {% for limitation in result.limitations %}
+                <li>{{ limitation }}</li>
+                {% endfor %}
+              </ul>
+            </div>
+            {% endif %}
+
+            {% if result.findings %}
+            <div class="finding-grid">
+              {% for finding in result.findings %}
+              <article class="finding-card">
+                <span class="tag {{ finding.evidence_class }}">可信度 {{ finding.evidence }}</span>
+                <h3>{{ finding.title }}</h3>
+                <p>{{ finding.body }}</p>
+
+                {% if finding.key_numbers %}
+                <div class="numbers">
+                  {% for item in finding.key_numbers %}
+                  <div class="number-row">
+                    <span class="field-name">
+                      <strong>{{ item.label }}</strong>
+                      <span class="field-help">{{ item.help }}</span>
+                    </span>
+                    <strong>{{ item.value }}</strong>
+                  </div>
+                  {% endfor %}
+                </div>
+                {% endif %}
+
+                {% if finding.caveats %}
+                <ul class="note-list">
+                  {% for caveat in finding.caveats %}
+                  <li>{{ caveat }}</li>
+                  {% endfor %}
+                </ul>
+                {% endif %}
+
+                {% if finding.recommended_action %}
+                <p><strong>建议：</strong>{{ finding.recommended_action }}</p>
+                {% endif %}
+              </article>
+              {% endfor %}
+            </div>
+            {% endif %}
+
+            {% for table in result.table_views %}
+            <details class="table-details">
+              <summary>
+                <span>
+                  {{ table.label }}
+                  <span class="summary-meta">用户视图：{{ table.display_text }}</span>
+                </span>
+              </summary>
+              {% if table.row_count %}
+              <p class="table-caption">
+                用户视图只展示最适合经营判断的字段；完整字段和原始字段名在下方“技术追溯信息”里。
+              </p>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      {% for column in table.user_columns %}
+                      <th>
+                        <span class="field-name">
+                          <strong>{{ column.label }}</strong>
+                          <span class="field-help">{{ column.help }}</span>
+                        </span>
+                      </th>
+                      {% endfor %}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for row in table.user_rows %}
+                    <tr>
+                      {% for cell in row %}
+                      <td>{{ cell.value }}</td>
+                      {% endfor %}
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+              <details class="technical-details">
+                <summary>技术追溯信息</summary>
+                <p class="table-caption">
+                  这里保留完整字段名，方便复查数据来源或继续让 Codex 做二次分析。
+                </p>
+                <div class="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        {% for column in table.technical_columns %}
+                        <th>
+                          <span class="field-name">
+                            <strong>{{ column.label }}</strong>
+                            <code>{{ column.name }}</code>
+                            <span class="field-help">{{ column.help }}</span>
+                          </span>
+                        </th>
+                        {% endfor %}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for row in table.technical_rows %}
+                      <tr>
+                        {% for cell in row %}
+                        <td>{{ cell.value }}</td>
+                        {% endfor %}
+                      </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+              {% else %}
+              <p class="section-lede">这个模块没有可展示的明细行。</p>
+              {% endif %}
+            </details>
+            {% endfor %}
+          </section>
+          {% endfor %}
+        </div>
+      </article>
+      {% endfor %}
+    </section>
+
+    <section id="appendix" class="reveal" style="--index: 4">
+      <div class="section-heading">
+        <p class="section-kicker">Appendix</p>
+        <h2>数据附录</h2>
+        <p class="section-lede">
+          附录保留字段和机器表名，方便复查。普通读者可以只看中文解释；需要查数时再展开表格。
+        </p>
+      </div>
+      <div class="appendix-grid">
+        <article class="card">
+          <h3>可信度说明</h3>
+          {% for evidence in report.evidence_counts %}
+          <div class="numbers">
+            <div class="number-row"><span>{{ evidence.label }}</span><strong>{{ evidence.count }} 条</strong></div>
+            <p>{{ evidence.help }}</p>
+          </div>
+          {% endfor %}
+        </article>
+        <article class="card">
+          <h3>术语解释</h3>
+          {% for item in report.glossary %}
+          <div class="numbers">
+            <div class="number-row"><span>{{ item.term }}</span></div>
+            <p>{{ item.definition }}</p>
+          </div>
+          {% endfor %}
+        </article>
+      </div>
+    </section>
+
+    <section id="codex" class="reveal" style="--index: 5">
+      <div class="section-heading">
+        <p class="section-kicker">Assistant Questions</p>
+        <h2>可以问 Codex 的问题</h2>
+        <p class="section-lede">
+          报告本身负责稳定交付；Codex 更适合解释细节、改写成执行清单，或根据你的约束重新排优先级。
+        </p>
+      </div>
+      <ul class="codex-list">
+        {% for question in report.codex_questions %}
+        <li>{{ question }}</li>
+        {% endfor %}
+      </ul>
+    </section>
+  </main>
 </body>
 </html>

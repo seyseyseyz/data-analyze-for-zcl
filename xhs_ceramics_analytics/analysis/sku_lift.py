@@ -17,7 +17,7 @@ _LINK_REQUIRED_COLUMNS = {"note_id", "sku_id"}
 _SKUS_REQUIRED_COLUMNS = {"sku_id"}
 
 _REAL_LINK_CAVEAT = (
-    "观测到的提升只是笔记关联销售窗口的描述性结果，不能证明因果提升。"
+    "观测到的销量变化只是笔记关联销售窗口的描述性结果，不能证明因果。"
 )
 _CANDIDATE_LINK_CAVEAT = (
     "缺少显式 note_sku_links 表，笔记到 SKU 的匹配使用首个 SKU 候选兜底，归因较弱。"
@@ -33,7 +33,7 @@ def run(db_path: Path) -> AnalysisResult:
                 reason=sales_issue,
                 caveats=[_REAL_LINK_CAVEAT],
                 recommended_action=(
-                    "先导入包含 date、sku_id 和 units 的 daily_sku_sales，再读取提升窗口。"
+                    "先导入包含 date、sku_id 和 units 的 daily_sku_sales，再读取销量观察窗口。"
                 ),
             )
 
@@ -52,7 +52,7 @@ def run(db_path: Path) -> AnalysisResult:
     if not rows:
         return _missing_result(
             reason=(
-                "没有可用于提升窗口的 note-SKU 关联、publish_time 和匹配销售数据。"
+                "没有可用于销量观察窗口的 note-SKU 关联、publish_time 和匹配销售数据。"
             ),
             caveats=list(link_context["caveats"]),
             recommended_action=str(link_context["recommended_action"]),
@@ -65,11 +65,11 @@ def run(db_path: Path) -> AnalysisResult:
     )
     findings = [
         Finding(
-            title="笔记锚定的 SKU 描述性提升窗口",
+            title="笔记锚定的 SKU 销量响应窗口",
             conclusion=(
                 f"已基于笔记发布时间，为 "
                 f"{len({(row['note_id'], row['sku_id']) for row in rows})} 组 note-SKU 关联"
-                "生成描述性提升窗口。"
+                "生成发布前后的销量观察窗口。"
             ),
             evidence_strength=evidence_strength,
             key_numbers=_key_numbers(rows, str(link_context["source"])),
@@ -82,11 +82,11 @@ def run(db_path: Path) -> AnalysisResult:
 
     return AnalysisResult(
         task_id="sku_counterfactual_lift",
-        title="SKU 反事实提升",
+        title="SKU 销量响应",
         findings=findings,
         tables={"sku_lift": rows},
         limitations=[
-            "提升窗口是观测性结果，仍会受到季节性、价格、缺货和重叠营销活动影响。"
+            "销量响应窗口是观测性结果，仍会受到季节性、价格、缺货和重叠营销活动影响。"
         ],
     )
 
@@ -216,7 +216,7 @@ def _link_context(con) -> dict[str, object]:
             ),
             "recommended_action": (
                 "补齐 note_sku_links.note_id、note_sku_links.sku_id 和 notes.publish_time，"
-                "让提升窗口能锚定真实笔记日期。"
+                "让销量观察窗口能锚定真实笔记日期。"
             ),
         }
 
@@ -285,12 +285,12 @@ def _missing_result(
 ) -> AnalysisResult:
     return AnalysisResult(
         task_id="sku_counterfactual_lift",
-        title="SKU 反事实提升",
+        title="SKU 销量响应",
         findings=[
             Finding(
-                title="SKU 提升不可判断",
+                title="SKU 销量响应不可判断",
                 conclusion=(
-                    "无法从当前数据组装笔记锚定的 SKU 提升窗口。"
+                    "无法从当前数据组装笔记锚定的 SKU 销量观察窗口。"
                 ),
                 evidence_strength=EvidenceStrength.NOT_JUDGABLE,
                 key_numbers={"note_sku_links": 0, "windows": 0},

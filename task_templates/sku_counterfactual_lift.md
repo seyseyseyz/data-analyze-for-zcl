@@ -1,8 +1,8 @@
-# SKU Counterfactual Lift
+# SKU Sales Response
 
 ## Purpose
 
-Estimate whether linked SKU sales after note publication exceed expected baseline.
+Compare linked SKU sales before and after note publication as a directional response signal.
 
 ## Required Data
 
@@ -10,4 +10,4 @@ Uses notes, orders, daily_sku_sales, skus, note_sku_links when available, and ca
 
 ## Output Contract
 
-Returns 0-24h, 1-3d, 4-7d, and 7-14d lift estimates with weak-attribution language and evidence strength.
+Returns 0-24h, 1-3d, 4-7d, and 7-14d sales windows with weak-attribution language and evidence strength.

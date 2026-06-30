@@ -1,5 +1,5 @@
 ---
-name: xiaohongshu-ceramics-analytics
+name: data-analyze-for-zcl
 description: Use when analyzing exported Xiaohongshu content, cover, product, SKU, order, comment, or experiment data for a ceramics ecommerce account. Produces evidence-scored local reports and weekly experiment matrices.
 ---
 

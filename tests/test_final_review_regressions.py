@@ -113,7 +113,7 @@ def test_cli_run_writes_markdown_and_html(tmp_path: Path, fixture_dir: Path, mon
     assert report_path.exists()
     assert (tmp_path / ".xhs-ceramics-analytics" / "outputs" / "all.html").exists()
     report = report_path.read_text(encoding="utf-8")
-    assert "# 小红书陶瓷账号分析报告" in report
+    assert "# 小红书账号分析报告" in report
     assert "## 数据质量检查" in report
     assert "## 每周经营复盘" in report
     assert "# Xiaohongshu Ceramics Analytics Report" not in report

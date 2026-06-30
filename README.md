@@ -21,6 +21,20 @@ pytest -q
 `./scripts/bootstrap` creates `.venv`, installs the editable package with dev
 dependencies, and runs `xhs-ca doctor --strict`.
 
+## Skill Install
+
+List the published skill without installing:
+
+```bash
+npx skills add seyseyseyz/data-analyze-for-zcl -l
+```
+
+Install globally:
+
+```bash
+npx skills add seyseyseyz/data-analyze-for-zcl -g -y
+```
+
 ## Quick Start
 
 ```bash

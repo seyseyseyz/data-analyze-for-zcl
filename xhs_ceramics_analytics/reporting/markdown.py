@@ -5,7 +5,7 @@ _TITLE_LABELS = {
     "Data Quality Check": "数据质量检查",
     "Account Baseline": "账号基线",
     "Note Funnel": "笔记漏斗",
-    "SKU Counterfactual Lift": "SKU 反事实提升",
+    "SKU Counterfactual Lift": "SKU 销量响应",
     "Content Response Curve": "内容响应曲线",
     "Cover Style Effect": "封面风格效果",
     "Copy Angle Effect": "文案角度效果",
@@ -28,7 +28,7 @@ _EVIDENCE_LABELS = {
 
 
 def render_markdown(results: list[AnalysisResult]) -> str:
-    lines = ["# 小红书陶瓷账号分析报告", ""]
+    lines = ["# 小红书账号分析报告", ""]
     for result in results:
         lines.extend([f"## {_display_title(result.title)}", ""])
         if result.limitations:

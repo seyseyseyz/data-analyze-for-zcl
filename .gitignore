@@ -20,6 +20,7 @@ coverage/
 # Local analysis state and generated outputs
 .xhs-ceramics-analytics/
 outputs/
+output/
 reports/
 tmp/
 
@@ -27,4 +28,3 @@ tmp/
 data/
 *.duckdb
 *.duckdb.wal
-
