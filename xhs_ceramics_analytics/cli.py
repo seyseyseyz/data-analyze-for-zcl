@@ -6,6 +6,7 @@ import typer
 from xhs_ceramics_analytics.analysis.registry import TASKS, run_task
 from xhs_ceramics_analytics.db.build import build_database
 from xhs_ceramics_analytics.paths import outputs_dir, state_dir
+from xhs_ceramics_analytics.reporting.html import render_html
 from xhs_ceramics_analytics.reporting.markdown import render_markdown
 
 app = typer.Typer(help="Xiaohongshu ceramics analytics local runner.")
@@ -34,9 +35,13 @@ def run(
         results = [run_task(task_id, db_path) for task_id in TASKS]
     else:
         results = [run_task(task, db_path)]
-    out = outputs_dir() / f"{task}.md"
-    out.write_text(render_markdown(results), encoding="utf-8")
-    typer.echo(f"Wrote report: {out}")
+    output_dir = outputs_dir()
+    markdown_out = output_dir / f"{task}.md"
+    html_out = output_dir / f"{task}.html"
+    markdown_out.write_text(render_markdown(results), encoding="utf-8")
+    html_out.write_text(render_html(results), encoding="utf-8")
+    typer.echo(f"Wrote report: {markdown_out}")
+    typer.echo(f"Wrote report: {html_out}")
 
 
 if __name__ == "__main__":

@@ -165,7 +165,7 @@ def _product_opportunity_section(con) -> dict[str, object]:
     if not _table_exists(con, "daily_sku_sales"):
         return _missing_section(
             "product_opportunity",
-            "product_opportunity",
+            "product_opportunity_matrix",
             "daily_sku_sales table missing.",
         )
 
@@ -217,14 +217,14 @@ def _product_opportunity_section(con) -> dict[str, object]:
     if row is None:
         return _missing_section(
             "product_opportunity",
-            "product_opportunity",
+            "product_opportunity_matrix",
             "daily_sku_sales table empty.",
         )
 
     sku_id, sku_name, units, gmv, sales_days = row
     return {
         "section": "product_opportunity",
-        "source": "product_opportunity",
+        "source": "product_opportunity_matrix",
         "status": "ready",
         "metric": "top_sku_units",
         "value": round(float(units), 4) if units is not None else None,

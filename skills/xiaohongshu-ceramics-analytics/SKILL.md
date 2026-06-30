@@ -9,8 +9,8 @@ Use this skill for local Xiaohongshu ceramics ecommerce analysis.
 
 ## Workflow
 
-1. Ask the user for exported CSV/Excel files and cover image folders.
-2. Run file profiling and mapping before analysis.
+1. Ask the user for exported CSV files and any cover image folders they want to reference.
+2. Let the local importer profile CSV headers and apply the closest standard table mapping.
 3. Build the local DuckDB database under `.xhs-ceramics-analytics/`.
 4. Run the requested task, or run `all` for the full V1 report menu.
 5. Present conclusions with evidence strength, caveats, and next actions.
