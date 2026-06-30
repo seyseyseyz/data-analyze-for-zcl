@@ -69,10 +69,21 @@ def _angle_seed(con) -> dict[str, object]:
             "evidence_summary": "No content_features rows available.",
         }
 
+    content_columns = _table_columns(con, "content_features")
+    if "copy_angle" not in content_columns:
+        return {
+            "seed": "angle:unknown:collect_rate",
+            "theme": "copy_angle",
+            "label": "unknown",
+            "evidence_count": 0,
+            "metric": None,
+            "evidence_summary": "content_features.copy_angle missing.",
+        }
+
+    note_columns = _table_columns(con, "notes") if _table_exists(con, "notes") else set()
     can_join_notes = (
-        "note_id" in _table_columns(con, "content_features")
-        and _table_exists(con, "notes")
-        and "note_id" in _table_columns(con, "notes")
+        "note_id" in content_columns
+        and {"note_id", "reads", "collects"}.issubset(note_columns)
     )
     if can_join_notes:
         result = con.sql(
@@ -152,6 +163,16 @@ def _demand_seed(con) -> dict[str, object]:
         for (text,) in result.fetchall():
             counts[_classify_comment(text)] += 1
 
+    if max(counts.values(), default=0) == 0:
+        return {
+            "seed": "demand:unknown:comment_reply",
+            "theme": "comment_demand",
+            "label": "unknown",
+            "evidence_count": 0,
+            "metric": None,
+            "evidence_summary": "No comment demand evidence was available; collect and label comments first.",
+        }
+
     group, count = max(counts.items(), key=lambda item: (item[1], item[0]))
     return {
         "seed": f"demand:{group}:comment_reply",
@@ -165,21 +186,39 @@ def _demand_seed(con) -> dict[str, object]:
 
 def _sku_seed(con) -> dict[str, object]:
     if _table_exists(con, "daily_sku_sales"):
+        sales_columns = _table_columns(con, "daily_sku_sales")
+        if "sku_id" not in sales_columns:
+            return {
+                "seed": "sku:unknown:allocation",
+                "theme": "product_opportunity",
+                "label": "unknown",
+                "evidence_count": 0,
+                "metric": None,
+                "evidence_summary": "daily_sku_sales.sku_id missing.",
+            }
         has_skus = _table_exists(con, "skus")
+        sku_columns = _table_columns(con, "skus") if has_skus else set()
         join_clause = (
             "LEFT JOIN skus AS s ON CAST(d.sku_id AS VARCHAR) = CAST(s.sku_id AS VARCHAR)"
-            if has_skus
+            if has_skus and {"sku_id", "sku_name"}.issubset(sku_columns)
             else ""
         )
-        name_expr = "COALESCE(MAX(CAST(s.sku_name AS VARCHAR)), CAST(d.sku_id AS VARCHAR))"
-        if not has_skus:
-            name_expr = "CAST(d.sku_id AS VARCHAR)"
+        name_expr = (
+            "COALESCE(MAX(CAST(s.sku_name AS VARCHAR)), CAST(d.sku_id AS VARCHAR))"
+            if join_clause
+            else "CAST(d.sku_id AS VARCHAR)"
+        )
+        units_expr = (
+            "SUM(CAST(d.units AS DOUBLE))"
+            if "units" in sales_columns
+            else "NULL"
+        )
         result = con.sql(
             f"""
             SELECT
               CAST(d.sku_id AS VARCHAR) AS sku_id,
               {name_expr} AS sku_name,
-              SUM(CAST(d.units AS DOUBLE)) AS units,
+              {units_expr} AS units,
               COUNT(*) AS sales_days
             FROM daily_sku_sales AS d
             {join_clause}
@@ -199,7 +238,7 @@ def _sku_seed(con) -> dict[str, object]:
                 "evidence_count": int(sales_days),
                 "metric": units_value,
                 "evidence_summary": (
-                    f"{sku_name} led SKU sales with {units_value} units "
+                    f"{sku_name} led SKU sales with {_display_metric(units_value)} units "
                     f"across {int(sales_days)} days."
                 ),
             }
@@ -223,19 +262,22 @@ def _hypothesis_row(seed: dict[str, object]) -> dict[str, object]:
         "hypothesis_id": _stable_id(seed_text),
         "seed": seed_text,
         "theme": theme,
+        "label": label,
         "status": "active" if evidence_count else "needs_data",
-        "hypothesis": _hypothesis_text(theme, label),
+        "hypothesis": _hypothesis_text(theme, label, evidence_count),
         "evidence_count": evidence_count,
         "metric": seed["metric"],
         "evidence_strength": score_evidence(
             evidence_count, has_controls=False, confounder_count=1
         ).value,
         "evidence_summary": seed["evidence_summary"],
-        "next_test": _next_test(theme, label),
+        "next_test": _next_test(theme, label, evidence_count),
     }
 
 
-def _hypothesis_text(theme: str, label: str) -> str:
+def _hypothesis_text(theme: str, label: str, evidence_count: int) -> str:
+    if theme == "comment_demand" and evidence_count == 0:
+        return "Comment demand is still unknown until more comments are collected and labeled."
     if theme == "copy_angle":
         return f"{label} copy can create repeatable collect intent when paired with top SKUs."
     if theme == "comment_demand":
@@ -243,7 +285,9 @@ def _hypothesis_text(theme: str, label: str) -> str:
     return f"{label} deserves more controlled content allocation than the baseline mix."
 
 
-def _next_test(theme: str, label: str) -> str:
+def _next_test(theme: str, label: str, evidence_count: int) -> str:
+    if theme == "comment_demand" and evidence_count == 0:
+        return "Collect and label more comments before testing a visible reply pattern."
     if theme == "copy_angle":
         return f"Publish two {label} posts against one alternate angle and compare collect rate."
     if theme == "comment_demand":
@@ -257,6 +301,10 @@ def _classify_comment(text: str) -> str:
         if any(keyword in normalized for keyword in _DEMAND_KEYWORDS[group]):
             return group
     return "other"
+
+
+def _display_metric(value: object | None) -> str:
+    return "unknown" if value is None else str(value)
 
 
 def _stable_id(seed: str) -> str:

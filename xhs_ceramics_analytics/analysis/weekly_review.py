@@ -112,7 +112,7 @@ def _baseline_section(con) -> dict[str, object]:
         "evidence_count": int(posts),
         "summary": (
             f"{int(posts)} posts across {int(active_days)} active days "
-            f"from {first_date} to {last_date}; avg reads {avg_reads_value}."
+            f"from {first_date} to {last_date}; avg reads {_display_number(avg_reads_value)}."
         )
         if posts
         else "No dated posts were available.",
@@ -153,8 +153,8 @@ def _funnel_section(con) -> dict[str, object]:
         "value": collect_rate,
         "evidence_count": int(notes),
         "summary": (
-            f"Average read rate {read_rate}, like rate {like_rate}, "
-            f"collect rate {collect_rate}, comment rate {comment_rate}."
+            f"Average read rate {_display_number(read_rate)}, like rate {_display_number(like_rate)}, "
+            f"collect rate {_display_number(collect_rate)}, comment rate {_display_number(comment_rate)}."
         )
         if notes
         else "No note funnel rows were available.",
@@ -169,22 +169,43 @@ def _product_opportunity_section(con) -> dict[str, object]:
             "daily_sku_sales table missing.",
         )
 
+    sales_columns = _table_columns(con, "daily_sku_sales")
+    if "sku_id" not in sales_columns:
+        return _missing_section(
+            "product_opportunity",
+            "product_opportunity",
+            "daily_sku_sales.sku_id missing.",
+        )
+
     has_skus = _table_exists(con, "skus")
+    sku_columns = _table_columns(con, "skus") if has_skus else set()
     join_clause = (
         "LEFT JOIN skus AS s ON CAST(d.sku_id AS VARCHAR) = CAST(s.sku_id AS VARCHAR)"
-        if has_skus
+        if has_skus and {"sku_id", "sku_name"}.issubset(sku_columns)
         else ""
     )
-    name_expr = "COALESCE(MAX(CAST(s.sku_name AS VARCHAR)), CAST(d.sku_id AS VARCHAR))"
-    if not has_skus:
-        name_expr = "CAST(d.sku_id AS VARCHAR)"
+    name_expr = (
+        "COALESCE(MAX(CAST(s.sku_name AS VARCHAR)), CAST(d.sku_id AS VARCHAR))"
+        if join_clause
+        else "CAST(d.sku_id AS VARCHAR)"
+    )
+    units_expr = (
+        "SUM(CAST(d.units AS DOUBLE))"
+        if "units" in sales_columns
+        else "NULL"
+    )
+    gmv_expr = (
+        "SUM(CAST(d.gmv AS DOUBLE))"
+        if "gmv" in sales_columns
+        else "NULL"
+    )
     row = con.sql(
         f"""
         SELECT
           CAST(d.sku_id AS VARCHAR) AS sku_id,
           {name_expr} AS sku_name,
-          SUM(CAST(d.units AS DOUBLE)) AS units,
-          SUM(CAST(d.gmv AS DOUBLE)) AS gmv,
+          {units_expr} AS units,
+          {gmv_expr} AS gmv,
           COUNT(*) AS sales_days
         FROM daily_sku_sales AS d
         {join_clause}
@@ -210,7 +231,7 @@ def _product_opportunity_section(con) -> dict[str, object]:
         "evidence_count": int(sales_days),
         "summary": (
             f"{sku_name} ({sku_id}) leads observed SKU sales with "
-            f"{round(float(units), 4)} units and {round(float(gmv), 2)} GMV."
+            f"{_display_number(_rounded(units))} units and {_display_number(_rounded(gmv, 2))} GMV."
         ),
     }
 
@@ -245,8 +266,12 @@ def _table_columns(con, table_name: str) -> set[str]:
     return {row[1] for row in con.sql(f"PRAGMA table_info('{table_name}')").fetchall()}
 
 
-def _rounded(value: object | None) -> float | None:
-    return round(float(value), 4) if value is not None else None
+def _rounded(value: object | None, digits: int = 4) -> float | None:
+    return round(float(value), digits) if value is not None else None
+
+
+def _display_number(value: object | None) -> str:
+    return "unknown" if value is None else str(value)
 
 
 def _quote_identifier(identifier: str) -> str:

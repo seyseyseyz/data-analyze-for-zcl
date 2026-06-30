@@ -5,6 +5,9 @@ from xhs_ceramics_analytics.db.duck import connect
 from xhs_ceramics_analytics.evidence import score_evidence
 
 
+_MIN_CONFIDENT_READS = 50.0
+
+
 def run(db_path: Path) -> AnalysisResult:
     con = connect(db_path)
     try:
@@ -33,7 +36,9 @@ def run(db_path: Path) -> AnalysisResult:
                 },
                 caveats=[
                     "High collect rate can reflect niche intent; reshoot priority still needs "
-                    "creative review."
+                    "creative review.",
+                    "Tiny-sample notes are downweighted and marked for more data before they "
+                    "lead the queue.",
                 ],
                 recommended_action=(
                     "Reshoot the top candidate with a clearer opening frame and compare "
@@ -83,8 +88,11 @@ def _rank_candidates(metrics: list[dict[str, object]]) -> list[dict[str, object]
         reads = float(row["reads"])
         collects = float(row["collects"])
         collect_rate = collects / reads if reads else 0.0
+        confidence_weight = reads / (reads + _MIN_CONFIDENT_READS)
+        conservative_collect_rate = collect_rate * confidence_weight
         read_gap_to_max = (max_reads - reads) / max_reads if max_reads else 0.0
-        opportunity_score = collect_rate * 100 + read_gap_to_max
+        needs_more_data = reads < _MIN_CONFIDENT_READS
+        opportunity_score = conservative_collect_rate * 100 + read_gap_to_max * 0.25
         ranked.append(
             {
                 "note_id": row["note_id"],
@@ -92,17 +100,26 @@ def _rank_candidates(metrics: list[dict[str, object]]) -> list[dict[str, object]
                 "reads": int(reads),
                 "collects": int(collects),
                 "collect_rate": round(collect_rate, 4),
+                "conservative_collect_rate": round(conservative_collect_rate, 4),
+                "confidence_weight": round(confidence_weight, 4),
                 "read_gap_to_max": round(read_gap_to_max, 4),
                 "opportunity_score": round(opportunity_score, 4),
-                "reason": "high_collect_rate_low_read_ceiling",
+                "needs_more_data": needs_more_data,
+                "reason": (
+                    "high_collect_rate_low_read_ceiling"
+                    if not needs_more_data
+                    else "promising_but_needs_more_reads"
+                ),
             }
         )
 
     ranked.sort(
         key=lambda row: (
+            bool(row["needs_more_data"]),
             -float(row["opportunity_score"]),
+            -float(row["conservative_collect_rate"]),
             -float(row["collect_rate"]),
-            int(row["reads"]),
+            -int(row["reads"]),
             str(row["note_id"]),
         )
     )

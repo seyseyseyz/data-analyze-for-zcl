@@ -8,13 +8,18 @@ from xhs_ceramics_analytics.evidence import score_evidence
 def run(db_path: Path) -> AnalysisResult:
     con = connect(db_path)
     try:
-        rows = _fetch_portfolio_mix(con) if _table_exists(con, "content_features") else []
+        rows, limitations = (
+            _fetch_portfolio_mix(con)
+            if _table_exists(con, "content_features")
+            else ([], ["content_features table missing."])
+        )
     finally:
         con.close()
 
     sample_size = sum(int(row["notes"]) for row in rows)
     top_role = rows[0]["copy_angle"] if rows else None
-    limitations = [] if rows else ["No content_features.copy_angle rows were available."]
+    if not rows:
+        limitations.append("No content_features.copy_angle rows were available.")
 
     return AnalysisResult(
         task_id="content_portfolio_optimization",
@@ -49,15 +54,15 @@ def run(db_path: Path) -> AnalysisResult:
     )
 
 
-def _fetch_portfolio_mix(con) -> list[dict[str, object]]:
+def _fetch_portfolio_mix(con) -> tuple[list[dict[str, object]], list[str]]:
     content_columns = _table_columns(con, "content_features")
     if "copy_angle" not in content_columns:
-        return []
+        return [], ["content_features.copy_angle missing; portfolio mix unavailable."]
 
+    note_columns = _table_columns(con, "notes") if _table_exists(con, "notes") else set()
     can_join_notes = (
         "note_id" in content_columns
-        and _table_exists(con, "notes")
-        and "note_id" in _table_columns(con, "notes")
+        and {"note_id", "reads", "collects"}.issubset(note_columns)
     )
     if can_join_notes:
         result = con.sql(
@@ -76,6 +81,7 @@ def _fetch_portfolio_mix(con) -> list[dict[str, object]]:
             ORDER BY notes DESC, avg_reads DESC NULLS LAST, copy_angle
             """
         )
+        limitations: list[str] = []
     else:
         result = con.sql(
             """
@@ -91,9 +97,15 @@ def _fetch_portfolio_mix(con) -> list[dict[str, object]]:
             ORDER BY notes DESC, copy_angle
             """
         )
+        limitations = []
+        if _table_exists(con, "notes"):
+            limitations.append(
+                "notes.note_id, notes.reads, or notes.collects missing; portfolio metrics left null."
+            )
 
     columns = result.columns
-    return [_clean_row(dict(zip(columns, row, strict=True))) for row in result.fetchall()]
+    rows = [_clean_row(dict(zip(columns, row, strict=True))) for row in result.fetchall()]
+    return rows, limitations
 
 
 def _clean_row(row: dict[str, object]) -> dict[str, object]:
