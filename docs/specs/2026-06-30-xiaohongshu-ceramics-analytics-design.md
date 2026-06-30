@@ -573,7 +573,7 @@ Methods, chosen by data availability:
 - rolling historical baseline,
 - similar SKU control group,
 - regression baseline with calendar controls,
-- Bayesian or time-series baseline later if data supports it.
+- Bayesian or time-series baseline when data supports it.
 
 Output must use weak attribution language:
 
