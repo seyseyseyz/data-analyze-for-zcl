@@ -44,6 +44,47 @@ def test_note_funnel_task_reports_rates(tmp_path, fixture_dir):
     assert "note_funnel" in result.tables
 
 
+def test_sku_lift_task_runs(tmp_path, fixture_dir):
+    result = run_task("sku_counterfactual_lift", _db(tmp_path, fixture_dir))
+    assert result.task_id == "sku_counterfactual_lift"
+    assert "sku_lift" in result.tables
+
+
+def test_response_curve_task_runs(tmp_path, fixture_dir):
+    result = run_task("content_response_curve", _db(tmp_path, fixture_dir))
+    assert result.task_id == "content_response_curve"
+    assert "response_windows" in result.tables
+
+
+def test_content_and_product_tasks_run(tmp_path, fixture_dir):
+    db_path = _db(tmp_path, fixture_dir)
+    for task_id, table_name in [
+        ("cover_style_effect", "cover_effects"),
+        ("copy_angle_effect", "copy_effects"),
+        ("product_content_interaction", "product_interactions"),
+        ("product_opportunity_matrix", "product_opportunities"),
+    ]:
+        result = run_task(task_id, db_path)
+        assert result.task_id == task_id
+        assert table_name in result.tables
+
+
+def test_decision_and_knowledge_tasks_run(tmp_path, fixture_dir):
+    db_path = _db(tmp_path, fixture_dir)
+    expected = {
+        "comment_demand_mining": "comment_demands",
+        "content_portfolio_optimization": "portfolio_mix",
+        "weekly_experiment_matrix": "experiment_plan",
+        "reshoot_repost_candidates": "reshoot_candidates",
+        "hypothesis_knowledge_base": "hypotheses",
+        "weekly_business_review": "weekly_sections",
+    }
+    for task_id, table_name in expected.items():
+        result = run_task(task_id, db_path)
+        assert result.task_id == task_id
+        assert table_name in result.tables
+
+
 def test_note_funnel_returns_none_for_zero_denominators(tmp_path):
     db_path = tmp_path / "analytics.duckdb"
     con = connect(db_path)
