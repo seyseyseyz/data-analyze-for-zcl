@@ -14,24 +14,18 @@ def run(db_path: Path) -> AnalysisResult:
 
     return AnalysisResult(
         task_id="product_opportunity_matrix",
-        title="Product Opportunity Matrix",
+        title="商品机会矩阵",
         findings=[
             Finding(
-                title="SKU opportunities ranked",
-                conclusion=(
-                    "The task ranked SKUs by sales response and flagged initial "
-                    "opportunity types."
-                ),
+                title="SKU 机会已排序",
+                conclusion="已按销售响应对 SKU 排序，并标记初步机会类型。",
                 evidence_strength=(
                     EvidenceStrength.MEDIUM
                     if rows and has_sales
                     else EvidenceStrength.NOT_JUDGABLE
                 ),
                 key_numbers={"sku_count": len(rows)},
-                caveats=[
-                    "Content performance quadrants become stronger after note-SKU "
-                    "links are available."
-                ],
+                caveats=["有显式 note-SKU 关联后，内容表现象限会更可靠。"],
             )
         ],
         tables={"product_opportunities": rows},
@@ -49,7 +43,7 @@ def _fetch_product_opportunities(
     if _table_exists(con, "skus"):
         sku_columns = _table_columns(con, "skus")
         if "sku_id" not in sku_columns:
-            return [], ["skus.sku_id column missing."], False
+            return [], ["skus 表缺少 sku_id 字段。"], False
 
         name_expr = (
             "COALESCE(CAST(s.sku_name AS VARCHAR), CAST(s.sku_id AS VARCHAR))"
@@ -96,9 +90,9 @@ def _fetch_product_opportunities(
             """
         )
         limitation = (
-            "daily_sku_sales units/gmv columns incomplete."
+            "daily_sku_sales 表的 units/gmv 字段不完整。"
             if has_sales_table
-            else "daily_sku_sales table missing."
+            else "缺少 daily_sku_sales 表。"
         )
         return _rows(result), [limitation], False
 
@@ -119,9 +113,9 @@ def _fetch_product_opportunities(
             ORDER BY gmv DESC NULLS LAST, units DESC NULLS LAST, sku_id
             """
         )
-        return _rows(result), ["skus table missing; SKU names use sku_id."], True
+        return _rows(result), ["缺少 skus 表，SKU 名称使用 sku_id。"], True
 
-    return [], ["skus and usable daily_sku_sales data missing."], False
+    return [], ["缺少 skus 表和可用的 daily_sku_sales 数据。"], False
 
 
 def _rows(result) -> list[dict[str, object]]:

@@ -9,10 +9,10 @@ def run(db_path: Path) -> AnalysisResult:
     con = connect(db_path)
     try:
         if not _table_exists(con, "notes"):
-            return _missing_result("notes table missing.")
+            return _missing_result("缺少 notes 表。")
         columns = _table_columns(con, "notes")
         if "note_id" not in columns:
-            return _missing_result("notes.note_id column missing.")
+            return _missing_result("notes 表缺少 note_id 字段。")
 
         reads_expr = "CAST(reads AS DOUBLE)" if "reads" in columns else "NULL"
         impressions_expr = (
@@ -46,13 +46,12 @@ def run(db_path: Path) -> AnalysisResult:
         con.close()
     return AnalysisResult(
         task_id="note_funnel",
-        title="Note Funnel",
+        title="笔记漏斗",
         findings=[
             Finding(
-                title="Funnel metrics calculated",
+                title="漏斗指标已计算",
                 conclusion=(
-                    "The skill calculated read, like, collect, and comment rates where "
-                    "denominators exist."
+                    "已在分母可用的情况下计算阅读率、点赞率、收藏率和评论率。"
                 ),
                 evidence_strength=(
                     EvidenceStrength.MEDIUM
@@ -71,15 +70,15 @@ def run(db_path: Path) -> AnalysisResult:
 def _missing_result(reason: str) -> AnalysisResult:
     return AnalysisResult(
         task_id="note_funnel",
-        title="Note Funnel",
+        title="笔记漏斗",
         findings=[
             Finding(
-                title="Funnel metrics unavailable",
-                conclusion="Note funnel needs note IDs and engagement metrics before rates can be calculated.",
+                title="漏斗指标不可计算",
+                conclusion="需要笔记 ID 和互动指标后，才能计算笔记漏斗。",
                 evidence_strength=EvidenceStrength.NOT_JUDGABLE,
                 key_numbers={"notes": 0},
-                caveats=["Missing funnel data should be treated as an import gap."],
-                recommended_action="Export notes with impressions, reads, likes, collects, and comments.",
+                caveats=["漏斗数据缺失应视为导入缺口。"],
+                recommended_action="导出包含 impressions、reads、likes、collects 和 comments 的 notes 数据。",
             )
         ],
         tables={"note_funnel": []},
@@ -93,7 +92,7 @@ def _metric_limitations(columns: set[str]) -> list[str]:
         for column in ("impressions", "reads", "likes", "collects", "comments")
         if column not in columns
     ]
-    return [f"notes columns missing for funnel rates: {', '.join(missing)}."] if missing else []
+    return [f"笔记表缺少漏斗指标字段：{', '.join(missing)}。"] if missing else []
 
 
 def _table_exists(con, table_name: str) -> bool:

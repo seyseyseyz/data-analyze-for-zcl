@@ -20,19 +20,14 @@ def run(db_path: Path) -> AnalysisResult:
     )
     return AnalysisResult(
         task_id="copy_angle_effect",
-        title="Copy Angle Effect",
+        title="文案角度效果",
         findings=[
             Finding(
-                title="Copy angles ranked",
-                conclusion=(
-                    "Copy angle groups were ranked by average reads and collects."
-                ),
+                title="文案角度已排序",
+                conclusion="已按平均阅读数和收藏数对文案角度分组进行排序。",
                 evidence_strength=evidence_strength,
                 key_numbers={"copy_groups": len(rows)},
-                caveats=[
-                    "This ranking is descriptive until product and timing controls "
-                    "are added."
-                ],
+                caveats=["在加入商品和发布时间控制前，这个排序仍是描述性结果。"],
             )
         ],
         tables={"copy_effects": rows},
@@ -42,11 +37,11 @@ def run(db_path: Path) -> AnalysisResult:
 
 def _fetch_copy_effects(con) -> tuple[list[dict[str, object]], list[str]]:
     if not _table_exists(con, "content_features"):
-        return [], ["content_features table missing."]
+        return [], ["缺少 content_features 表。"]
 
     content_columns = _table_columns(con, "content_features")
     if "copy_angle" not in content_columns:
-        return [], ["content_features.copy_angle column missing."]
+        return [], ["content_features 表缺少 copy_angle 字段。"]
 
     can_join_notes = (
         "note_id" in content_columns
@@ -67,7 +62,7 @@ def _fetch_copy_effects(con) -> tuple[list[dict[str, object]], list[str]]:
             ORDER BY notes DESC, copy_angle
             """
         )
-        return _rows(result), ["notes metrics unavailable; copy ranking uses feature counts only."]
+        return _rows(result), ["笔记指标不可用，文案排序仅使用特征计数。"]
 
     note_columns = _table_columns(con, "notes")
     avg_reads = "AVG(CAST(n.reads AS DOUBLE))" if "reads" in note_columns else "NULL"
@@ -90,7 +85,7 @@ def _fetch_copy_effects(con) -> tuple[list[dict[str, object]], list[str]]:
     )
     limitations = []
     if "reads" not in note_columns or "collects" not in note_columns:
-        limitations.append("notes read/collect metrics incomplete.")
+        limitations.append("notes 表的阅读/收藏指标不完整。")
     return _rows(result), limitations
 
 

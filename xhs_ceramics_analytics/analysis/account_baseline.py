@@ -10,10 +10,10 @@ def run(db_path: Path) -> AnalysisResult:
     con = connect(db_path)
     try:
         if not _table_exists(con, "notes"):
-            return _missing_result("notes table missing.")
+            return _missing_result("缺少 notes 表。")
         columns = _table_columns(con, "notes")
         if "publish_time" not in columns:
-            return _missing_result("notes.publish_time column missing.")
+            return _missing_result("notes 表缺少 publish_time 字段。")
         reads_expr = "AVG(CAST(reads AS DOUBLE))" if "reads" in columns else "NULL"
         result = con.sql(
             f"""
@@ -36,21 +36,20 @@ def run(db_path: Path) -> AnalysisResult:
     sample_size = int(sum(row["posts"] for row in daily_posts))
     return AnalysisResult(
         task_id="account_baseline",
-        title="Account Baseline",
+        title="账号基线",
         findings=[
             Finding(
-                title="Posting baseline",
+                title="发布基线",
                 conclusion=(
-                    f"The dataset contains {sample_size} posts across "
-                    f"{len(daily_posts)} active posting days."
+                    f"当前数据包含 {sample_size} 篇笔记，覆盖 "
+                    f"{len(daily_posts)} 个有发布记录的日期。"
                 ),
                 evidence_strength=score_evidence(
                     sample_size, has_controls=False, confounder_count=1
                 ),
                 key_numbers={"posts": sample_size, "active_days": len(daily_posts)},
                 caveats=[
-                    "Sample size and lack of control context limit causal interpretation of "
-                    "this baseline."
+                    "样本量和对照上下文有限，这个基线只能做描述性判断。"
                 ],
             )
         ],
@@ -61,15 +60,15 @@ def run(db_path: Path) -> AnalysisResult:
 def _missing_result(reason: str) -> AnalysisResult:
     return AnalysisResult(
         task_id="account_baseline",
-        title="Account Baseline",
+        title="账号基线",
         findings=[
             Finding(
-                title="Posting baseline unavailable",
-                conclusion="Account baseline needs dated note exports before it can be calculated.",
+                title="发布基线不可计算",
+                conclusion="需要带发布时间的笔记导出数据后，才能计算账号基线。",
                 evidence_strength=EvidenceStrength.NOT_JUDGABLE,
                 key_numbers={"posts": 0, "active_days": 0},
-                caveats=["Missing baseline data should be treated as an import gap."],
-                recommended_action="Export notes with publish_time and reads, then rebuild.",
+                caveats=["基线数据缺失应视为导入缺口。"],
+                recommended_action="导出包含 publish_time 和 reads 的 notes 数据，然后重新构建。"
             )
         ],
         tables={"daily_posts": []},

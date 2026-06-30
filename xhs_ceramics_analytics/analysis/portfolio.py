@@ -11,7 +11,7 @@ def run(db_path: Path) -> AnalysisResult:
         rows, limitations = (
             _fetch_portfolio_mix(con)
             if _table_exists(con, "content_features")
-            else ([], ["content_features table missing."])
+            else ([], ["缺少 content_features 表。"])
         )
     finally:
         con.close()
@@ -19,16 +19,16 @@ def run(db_path: Path) -> AnalysisResult:
     sample_size = sum(int(row["notes"]) for row in rows)
     top_role = rows[0]["copy_angle"] if rows else None
     if not rows:
-        limitations.append("No content_features.copy_angle rows were available.")
+        limitations.append("没有可用的 content_features.copy_angle 数据。")
 
     return AnalysisResult(
         task_id="content_portfolio_optimization",
-        title="Content Portfolio Optimization",
+        title="内容组合优化",
         findings=[
             Finding(
-                title="Copy-angle portfolio counted",
+                title="文案角度组合已统计",
                 conclusion=(
-                    f"Counted {sample_size} notes across {len(rows)} copy-angle roles."
+                    f"已统计 {sample_size} 篇笔记，覆盖 {len(rows)} 类文案角度。"
                 ),
                 evidence_strength=score_evidence(
                     sample_size, has_controls=False, confounder_count=1
@@ -38,15 +38,12 @@ def run(db_path: Path) -> AnalysisResult:
                     "roles": len(rows),
                     "top_role": top_role,
                 },
-                caveats=[
-                    "Role mix describes observed publishing supply, not controlled demand."
-                ],
+                caveats=["角度占比描述的是已发布内容供给，不是受控需求。"],
                 recommended_action=(
-                    "Use underrepresented roles with stronger read or collect rates as "
-                    "candidates for next-week content slots."
+                    "将占比不足且阅读率或收藏率更强的角度，作为下周内容档期候选。"
                 )
                 if rows
-                else "Add content_features rows with copy_angle before optimizing mix.",
+                else "先补充带 copy_angle 的 content_features 数据，再优化内容组合。",
             )
         ],
         tables={"portfolio_mix": rows},
@@ -57,7 +54,7 @@ def run(db_path: Path) -> AnalysisResult:
 def _fetch_portfolio_mix(con) -> tuple[list[dict[str, object]], list[str]]:
     content_columns = _table_columns(con, "content_features")
     if "copy_angle" not in content_columns:
-        return [], ["content_features.copy_angle missing; portfolio mix unavailable."]
+        return [], ["content_features 表缺少 copy_angle，无法生成组合分析。"]
 
     note_columns = _table_columns(con, "notes") if _table_exists(con, "notes") else set()
     can_join_notes = (
@@ -100,7 +97,7 @@ def _fetch_portfolio_mix(con) -> tuple[list[dict[str, object]], list[str]]:
         limitations = []
         if _table_exists(con, "notes"):
             limitations.append(
-                "notes.note_id, notes.reads, or notes.collects missing; portfolio metrics left null."
+                "notes 表缺少 note_id、reads 或 collects，组合指标留空。"
             )
 
     columns = result.columns

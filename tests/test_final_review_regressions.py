@@ -42,13 +42,13 @@ def test_account_and_funnel_degrade_for_incomplete_notes(tmp_path: Path):
     funnel = run_task("note_funnel", db_path)
 
     assert baseline.findings[0].evidence_strength == EvidenceStrength.NOT_JUDGABLE
-    assert baseline.limitations == ["notes.publish_time column missing."]
+    assert baseline.limitations == ["notes 表缺少 publish_time 字段。"]
     assert baseline.tables["daily_posts"] == []
 
     assert funnel.findings[0].evidence_strength == EvidenceStrength.NOT_JUDGABLE
     assert funnel.tables["note_funnel"][0]["reads"] is None
     assert funnel.limitations == [
-        "notes columns missing for funnel rates: impressions, reads, likes, collects, comments."
+        "笔记表缺少漏斗指标字段：impressions, reads, likes, collects, comments。"
     ]
 
 
@@ -69,7 +69,7 @@ def test_build_and_run_all_tolerates_partial_note_export(tmp_path: Path):
     assert baseline.tables["daily_posts"][0]["avg_reads"] is None
     assert funnel.findings[0].evidence_strength == EvidenceStrength.NOT_JUDGABLE
     assert funnel.limitations == [
-        "notes columns missing for funnel rates: impressions, reads, likes, collects, comments."
+        "笔记表缺少漏斗指标字段：impressions, reads, likes, collects, comments。"
     ]
 
 

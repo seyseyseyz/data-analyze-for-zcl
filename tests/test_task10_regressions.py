@@ -34,9 +34,7 @@ def test_cover_effect_uses_feature_counts_without_notes(tmp_path: Path):
     assert result.tables["cover_effects"][0]["composition_type"] == "single_product"
     assert result.tables["cover_effects"][0]["notes"] == 2
     assert result.tables["cover_effects"][0]["avg_reads"] is None
-    assert result.limitations == [
-        "notes metrics unavailable; cover ranking uses feature counts only."
-    ]
+    assert result.limitations == ["笔记指标不可用，封面排序仅使用特征计数。"]
 
 
 def test_copy_effect_missing_metric_columns_does_not_crash(tmp_path: Path):
@@ -63,7 +61,7 @@ def test_copy_effect_missing_metric_columns_does_not_crash(tmp_path: Path):
     assert row["copy_angle"] == "gift"
     assert row["avg_reads"] == 100
     assert row["avg_collects"] is None
-    assert result.limitations == ["notes read/collect metrics incomplete."]
+    assert result.limitations == ["notes 表的阅读/收藏指标不完整。"]
 
 
 def test_content_product_effects_degrade_when_feature_columns_missing(tmp_path: Path):
@@ -103,7 +101,7 @@ def test_product_opportunity_lists_skus_without_sales(tmp_path: Path):
     assert row["units"] is None
     assert row["opportunity_type"] == "needs_sales_data"
     assert result.findings[0].evidence_strength == EvidenceStrength.NOT_JUDGABLE
-    assert result.limitations == ["daily_sku_sales table missing."]
+    assert result.limitations == ["缺少 daily_sku_sales 表。"]
 
 
 def test_product_opportunity_uses_sales_without_sku_table(tmp_path: Path):
@@ -138,4 +136,4 @@ def test_product_opportunity_uses_sales_without_sku_table(tmp_path: Path):
     assert row["units"] == 4
     assert row["opportunity_type"] == "sales_response_present"
     assert result.findings[0].evidence_strength == EvidenceStrength.MEDIUM
-    assert result.limitations == ["skus table missing; SKU names use sku_id."]
+    assert result.limitations == ["缺少 skus 表，SKU 名称使用 sku_id。"]

@@ -20,20 +20,14 @@ def run(db_path: Path) -> AnalysisResult:
     )
     return AnalysisResult(
         task_id="cover_style_effect",
-        title="Cover Style Effect",
+        title="封面风格效果",
         findings=[
             Finding(
-                title="Cover archetypes ranked",
-                conclusion=(
-                    "Cover composition groups were ranked by average reads and "
-                    "collects."
-                ),
+                title="封面类型已排序",
+                conclusion="已按平均阅读数和收藏数对封面构图类型进行排序。",
                 evidence_strength=evidence_strength,
                 key_numbers={"cover_groups": len(rows)},
-                caveats=[
-                    "This ranking is descriptive until SKU and timing controls are "
-                    "added."
-                ],
+                caveats=["在加入 SKU 和发布时间控制前，这个排序仍是描述性结果。"],
             )
         ],
         tables={"cover_effects": rows},
@@ -43,11 +37,11 @@ def run(db_path: Path) -> AnalysisResult:
 
 def _fetch_cover_effects(con) -> tuple[list[dict[str, object]], list[str]]:
     if not _table_exists(con, "content_features"):
-        return [], ["content_features table missing."]
+        return [], ["缺少 content_features 表。"]
 
     content_columns = _table_columns(con, "content_features")
     if "composition_type" not in content_columns:
-        return [], ["content_features.composition_type column missing."]
+        return [], ["content_features 表缺少 composition_type 字段。"]
 
     can_join_notes = (
         "note_id" in content_columns
@@ -68,7 +62,7 @@ def _fetch_cover_effects(con) -> tuple[list[dict[str, object]], list[str]]:
             ORDER BY notes DESC, composition_type
             """
         )
-        return _rows(result), ["notes metrics unavailable; cover ranking uses feature counts only."]
+        return _rows(result), ["笔记指标不可用，封面排序仅使用特征计数。"]
 
     note_columns = _table_columns(con, "notes")
     avg_reads = "AVG(CAST(n.reads AS DOUBLE))" if "reads" in note_columns else "NULL"
@@ -91,7 +85,7 @@ def _fetch_cover_effects(con) -> tuple[list[dict[str, object]], list[str]]:
     )
     limitations = []
     if "reads" not in note_columns or "collects" not in note_columns:
-        limitations.append("notes read/collect metrics incomplete.")
+        limitations.append("notes 表的阅读/收藏指标不完整。")
     return _rows(result), limitations
 
 

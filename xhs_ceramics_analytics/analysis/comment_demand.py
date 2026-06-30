@@ -26,22 +26,22 @@ def run(db_path: Path) -> AnalysisResult:
     detected_groups = [row["demand_group"] for row in rows if row["comments"]]
     top_group = detected_groups[0] if detected_groups else None
 
-    limitations = [] if comments else ["No comment rows were available for demand mining."]
+    limitations = [] if comments else ["没有可用于需求挖掘的评论数据。"]
     caveats = [
-        "Comment intent is keyword grouped and should be reviewed before changing product copy."
+        "评论意图基于关键词分组，调整商品文案前需要人工复核。"
     ]
     if total_comments < 10:
-        caveats.append("Small comment volume makes demand proportions directional only.")
+        caveats.append("评论量较小，需求占比只能作为方向性参考。")
 
     return AnalysisResult(
         task_id="comment_demand_mining",
-        title="Comment Demand Mining",
+        title="评论需求挖掘",
         findings=[
             Finding(
-                title="Comment demand groups extracted",
+                title="评论需求分组已提取",
                 conclusion=(
-                    f"Grouped {total_comments} comments into "
-                    f"{len(detected_groups)} observed demand buckets."
+                    f"已将 {total_comments} 条评论归入 "
+                    f"{len(detected_groups)} 个有观测数据的需求分组。"
                 ),
                 evidence_strength=score_evidence(
                     total_comments, has_controls=False, confounder_count=1
@@ -53,11 +53,10 @@ def run(db_path: Path) -> AnalysisResult:
                 },
                 caveats=caveats,
                 recommended_action=(
-                    "Use the top demand buckets to update note replies, product detail copy, "
-                    "and next-week FAQ content."
+                    "用排名靠前的需求分组更新笔记回复、商品详情文案和下周 FAQ 内容。"
                 )
                 if total_comments
-                else "Collect more comments before changing demand assumptions.",
+                else "先收集更多评论，再调整需求假设。",
             )
         ],
         tables={"comment_demands": rows},
