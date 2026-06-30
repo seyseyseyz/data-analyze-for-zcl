@@ -26,17 +26,17 @@ def run(db_path: Path) -> AnalysisResult:
     evidence_inputs = 0 if uses_fallback else len(skus) + len(angles)
     limitations = [*sku_limitations, *angle_limitations, *planning_limitations]
     if uses_fallback:
-        limitations.append("Fallback SKU or angle was used.")
+        limitations.append("使用了兜底 SKU 或兜底文案角度。")
 
     return AnalysisResult(
         task_id="weekly_experiment_matrix",
-        title="Weekly Experiment Matrix",
+        title="每周实验矩阵",
         findings=[
             Finding(
-                title="Seven-day experiment plan generated",
+                title="七天实验计划已生成",
                 conclusion=(
-                    f"Generated {len(rows)} deterministic test slots across "
-                    f"7 days and {len(_SLOTS)} daily slots."
+                    f"已生成 {len(rows)} 个确定性测试档期，覆盖 "
+                    f"7 天、每天 {len(_SLOTS)} 个时段。"
                 ),
                 evidence_strength=score_evidence(
                     evidence_inputs, has_controls=False, confounder_count=2
@@ -48,12 +48,9 @@ def run(db_path: Path) -> AnalysisResult:
                     "unique_skus": len({row["sku_id"] for row in rows}),
                     "content_angles": len({row["copy_angle"] for row in rows}),
                 },
-                caveats=[
-                    "This is a deterministic planning matrix, not evidence that slots will win."
-                ],
+                caveats=["这是确定性排期矩阵，不代表这些档期一定会胜出。"],
                 recommended_action=(
-                    "Publish the matrix as controlled weekly slots and compare each slot "
-                    "against read, collect, and comment demand metrics."
+                    "按矩阵发布受控周档期，并用阅读、收藏和评论需求指标比较每个档期。"
                 ),
             )
         ],
@@ -67,8 +64,8 @@ def _fetch_top_skus(con) -> tuple[list[dict[str, object]], list[str]]:
         sales_columns = _table_columns(con, "daily_sku_sales")
         if "sku_id" not in sales_columns:
             return (
-                [_sku_row("unassigned", "Unassigned SKU", None, None)],
-                ["daily_sku_sales.sku_id missing; using fallback SKU."],
+                [_sku_row("unassigned", "未分配 SKU", None, None)],
+                ["daily_sku_sales 表缺少 sku_id，使用兜底 SKU。"],
             )
         has_skus = _table_exists(con, "skus")
         sku_columns = _table_columns(con, "skus") if has_skus else set()
@@ -114,15 +111,15 @@ def _fetch_top_skus(con) -> tuple[list[dict[str, object]], list[str]]:
             limitations = []
             if "units" not in sales_columns:
                 limitations.append(
-                    "daily_sku_sales.units missing; experiment SKU metrics left null."
+                    "daily_sku_sales 表缺少 units，实验 SKU 指标留空。"
                 )
             if "gmv" not in sales_columns:
                 limitations.append(
-                    "daily_sku_sales.gmv missing; experiment SKU metrics left null."
+                    "daily_sku_sales 表缺少 gmv，实验 SKU 指标留空。"
                 )
             if has_skus and not join_clause:
                 limitations.append(
-                    "skus missing sku_id or sku_name; using sku_id as experiment SKU label."
+                    "skus 表缺少 sku_id 或 sku_name，使用 sku_id 作为实验 SKU 名称。"
                 )
             return rows, limitations
 
@@ -130,8 +127,8 @@ def _fetch_top_skus(con) -> tuple[list[dict[str, object]], list[str]]:
         sku_columns = _table_columns(con, "skus")
         if "sku_id" not in sku_columns:
             return (
-                [_sku_row("unassigned", "Unassigned SKU", None, None)],
-                ["skus.sku_id missing; using fallback SKU."],
+                [_sku_row("unassigned", "未分配 SKU", None, None)],
+                ["skus 表缺少 sku_id，使用兜底 SKU。"],
             )
         result = con.sql(
             f"""
@@ -152,23 +149,23 @@ def _fetch_top_skus(con) -> tuple[list[dict[str, object]], list[str]]:
         if rows:
             limitations = []
             if "sku_name" not in sku_columns:
-                limitations.append("skus.sku_name missing; using sku_id as experiment SKU label.")
+                limitations.append("skus 表缺少 sku_name，使用 sku_id 作为实验 SKU 名称。")
             if "price" not in sku_columns:
-                limitations.append("skus.price missing; experiment SKU GMV left null.")
+                limitations.append("skus 表缺少 price，实验 SKU GMV 留空。")
             return rows, limitations
 
-    return [_sku_row("unassigned", "Unassigned SKU", None, None)], [
-        "No SKU tables were available; using fallback SKU."
+    return [_sku_row("unassigned", "未分配 SKU", None, None)], [
+        "没有可用的 SKU 表，使用兜底 SKU。"
     ]
 
 
 def _fetch_top_angles(con) -> tuple[list[str], list[str]]:
     if not _table_exists(con, "content_features"):
-        return ["lifestyle"], ["content_features missing; using fallback copy angle."]
+        return ["lifestyle"], ["缺少 content_features 表，使用兜底文案角度。"]
 
     content_columns = _table_columns(con, "content_features")
     if "copy_angle" not in content_columns:
-        return ["lifestyle"], ["content_features.copy_angle missing; using fallback copy angle."]
+        return ["lifestyle"], ["content_features 表缺少 copy_angle，使用兜底文案角度。"]
 
     can_join_notes = (
         "note_id" in content_columns
@@ -207,18 +204,18 @@ def _fetch_top_angles(con) -> tuple[list[str], list[str]]:
         limitations = []
         if _table_exists(con, "notes"):
             limitations.append(
-                "notes.note_id or notes.reads missing; copy-angle ranking used content-only counts."
+                "notes 表缺少 note_id 或 reads，文案角度排序仅使用内容计数。"
             )
     angles = [row[0] for row in result.fetchall()]
     if angles:
         return angles, limitations
-    return ["lifestyle"], limitations + ["No copy_angle values were available; using fallback copy angle."]
+    return ["lifestyle"], limitations + ["没有可用的 copy_angle 值，使用兜底文案角度。"]
 
 
 def _next_planning_date(con) -> tuple[date, list[str]]:
     if not _table_exists(con, "notes") or "publish_time" not in _table_columns(con, "notes"):
         return DEFAULT_PLANNING_START, [
-            f"notes.publish_time missing; planning starts at {DEFAULT_PLANNING_START.isoformat()}."
+            f"notes 表缺少 publish_time，计划从 {DEFAULT_PLANNING_START.isoformat()} 开始。"
         ]
 
     value = con.sql(
@@ -230,7 +227,7 @@ def _next_planning_date(con) -> tuple[date, list[str]]:
     ).fetchone()[0]
     if value is None:
         return DEFAULT_PLANNING_START, [
-            f"No publish_time values were available; planning starts at {DEFAULT_PLANNING_START.isoformat()}."
+            f"没有可用的 publish_time 值，计划从 {DEFAULT_PLANNING_START.isoformat()} 开始。"
         ]
 
     candidate = date.fromisoformat(value) + timedelta(days=1)

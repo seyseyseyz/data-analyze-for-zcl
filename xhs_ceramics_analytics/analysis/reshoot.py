@@ -20,12 +20,12 @@ def run(db_path: Path) -> AnalysisResult:
 
     return AnalysisResult(
         task_id="reshoot_repost_candidates",
-        title="Reshoot Repost Candidates",
+        title="重拍与重发候选",
         findings=[
             Finding(
-                title="Collect-heavy notes ranked for reshoot",
+                title="高收藏笔记重拍候选已排序",
                 conclusion=(
-                    f"Ranked {len(rows)} notes by collect rate with a lower-read bonus."
+                    f"已按收藏率并结合低阅读补偿，对 {len(rows)} 篇笔记排序。"
                 ),
                 evidence_strength=score_evidence(
                     len(metrics), has_controls=False, confounder_count=1
@@ -35,21 +35,18 @@ def run(db_path: Path) -> AnalysisResult:
                     "top_candidate": top_candidate,
                 },
                 caveats=[
-                    "High collect rate can reflect niche intent; reshoot priority still needs "
-                    "creative review.",
-                    "Tiny-sample notes are downweighted and marked for more data before they "
-                    "lead the queue.",
+                    "高收藏率可能代表小众强意图，重拍优先级仍需要创意复核。",
+                    "小样本笔记会被降权，进入队首前需要更多数据。",
                 ],
                 recommended_action=(
-                    "Reshoot the top candidate with a clearer opening frame and compare "
-                    "read rate before reposting more variants."
+                    "优先重拍队首候选，用更清晰的开场画面做对照；确认阅读率提升后再扩大重发。"
                 )
                 if rows
-                else "Collect readable note metrics before selecting reshoot candidates.",
+                else "先收集可读的笔记指标，再选择重拍候选。",
             )
         ],
         tables={"reshoot_candidates": rows},
-        limitations=[] if rows else ["No readable note metrics were available."],
+        limitations=[] if rows else ["没有可用的笔记阅读/收藏指标。"],
     )
 
 
