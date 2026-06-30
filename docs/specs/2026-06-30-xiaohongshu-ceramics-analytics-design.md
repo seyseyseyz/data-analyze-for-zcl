@@ -140,6 +140,7 @@ xiaohongshu-ceramics-analytics/
     report_contract.md
     evidence_strength.md
     experiment_matrix.md
+    implementation_decisions.md
     task_menu.md
   task_templates/
     data_quality_check.md
