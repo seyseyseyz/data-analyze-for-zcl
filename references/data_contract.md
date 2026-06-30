@@ -110,7 +110,9 @@ Allowed `link_type` values:
 
 ### `content_features`
 
-One row per note, optionally split into cover and copy feature groups.
+One row per note, optionally split into cover and copy feature groups. If cover and copy features are split into separate files, each row still carries `note_id`.
+
+- `note_id`
 
 Cover features:
 
@@ -143,6 +145,23 @@ Copy features:
 - `specific_noun_density_band`
 - `emotional_intensity_band`
 - `call_to_action_type`
+
+### `comments`
+
+One row per comment when comment-level exports are available.
+
+- `note_id`
+- `comment_time`
+- `comment_text`
+
+Optional:
+
+- `comment_id`
+- `parent_comment_id`
+- `comment_like_count`
+- `author_id_hash`
+- `raw_file`
+- `raw_row_id`
 
 ### `calendar_events`
 

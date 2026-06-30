@@ -72,6 +72,7 @@ references/
   report_contract.md
   evidence_strength.md
   experiment_matrix.md
+  implementation_decisions.md
   task_menu.md
 task_templates/
   data_quality_check.md
@@ -260,6 +261,7 @@ git commit -m "chore: add Python project foundation"
 - Create: `references/report_contract.md`
 - Create: `references/evidence_strength.md`
 - Create: `references/experiment_matrix.md`
+- Create: `references/implementation_decisions.md`
 - Create: `references/task_menu.md`
 
 - [ ] **Step 1: Write upstream source ledger**
@@ -331,7 +333,9 @@ Create `references/evidence_strength.md` from the "Evidence Strength" section.
 
 - [ ] **Step 5: Write experiment and task menu references**
 
-Create `references/experiment_matrix.md` from the "Weekly Experiment Matrix" task and first-version decisions.
+Create `references/experiment_matrix.md` from the "Weekly Experiment Matrix" task.
+
+Create `references/implementation_decisions.md` from the "First Version Implementation Decisions" section.
 
 Create `references/task_menu.md` listing the 15 tasks and their task IDs:
 
