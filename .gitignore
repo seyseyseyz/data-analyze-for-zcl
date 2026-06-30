@@ -1,0 +1,30 @@
+# OS/editor noise
+.DS_Store
+*.swp
+*.swo
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# Node/build outputs
+node_modules/
+dist/
+build/
+coverage/
+
+# Local analysis state and generated outputs
+.xhs-ceramics-analytics/
+outputs/
+reports/
+tmp/
+
+# Data exports and private business inputs
+data/
+*.duckdb
+*.duckdb.wal
+
