@@ -1,0 +1,87 @@
+from datetime import date, datetime
+from typing import Literal
+
+from pydantic import BaseModel, Field, field_validator
+
+
+NonNegativeInt = int | None
+NonNegativeFloat = float | None
+
+
+class Note(BaseModel):
+    note_id: str
+    publish_time: datetime | None = None
+    title: str | None = None
+    body: str | None = None
+    note_type: str | None = None
+    cover_image_path: str | None = None
+    impressions: NonNegativeInt = None
+    reads: NonNegativeInt = None
+    likes: NonNegativeInt = None
+    collects: NonNegativeInt = None
+    comments: NonNegativeInt = None
+    shares: NonNegativeInt = None
+    followers_gained: NonNegativeInt = None
+    raw_file: str | None = None
+    raw_row_id: str | None = None
+
+    @field_validator(
+        "impressions",
+        "reads",
+        "likes",
+        "collects",
+        "comments",
+        "shares",
+        "followers_gained",
+    )
+    @classmethod
+    def non_negative_counts(cls, value: int | None) -> int | None:
+        if value is not None and value < 0:
+            raise ValueError("count fields must be non-negative")
+        return value
+
+
+class Product(BaseModel):
+    product_id: str
+    product_name: str | None = None
+    category: str | None = None
+    vessel_type: str | None = None
+    series: str | None = None
+    color_family: str | None = None
+    pattern_style: str | None = None
+    price_band: str | None = None
+    launch_date: date | None = None
+    status: str | None = None
+
+
+class Sku(BaseModel):
+    sku_id: str
+    product_id: str | None = None
+    sku_name: str | None = None
+    price: NonNegativeFloat = None
+    inventory_optional: NonNegativeInt = None
+    cost_optional: NonNegativeFloat = None
+
+
+class OrderLine(BaseModel):
+    order_id: str
+    paid_time: datetime | None = None
+    sku_id: str
+    quantity: int = Field(default=1)
+    paid_amount: NonNegativeFloat = None
+    refund_status_optional: str | None = None
+
+    @field_validator("quantity")
+    @classmethod
+    def positive_quantity(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("quantity must be positive")
+        return value
+
+
+class NoteSkuLink(BaseModel):
+    note_id: str
+    sku_id: str
+    link_type: Literal["explicit", "manual", "inferred"]
+    confidence: float = Field(ge=0.0, le=1.0)
+    evidence: str | None = None
