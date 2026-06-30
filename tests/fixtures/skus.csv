@@ -1,0 +1,4 @@
+sku_id,product_id,sku_name,price,inventory_optional,cost_optional
+s1,p1,青釉咖啡杯 单只,129,80,45
+s2,p1,青釉咖啡杯 礼盒,188,40,70
+s3,p2,白瓷餐盘 单只,118,60,42

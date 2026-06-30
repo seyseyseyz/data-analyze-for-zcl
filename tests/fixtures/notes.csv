@@ -1,0 +1,4 @@
+note_id,publish_time,title,body,note_type,cover_image_path,impressions,reads,likes,collects,comments,shares,followers_gained
+n1,2026-06-01 09:00:00,夏天的青釉咖啡杯,低饱和青釉 适合冰咖啡,image,covers/n1.jpg,5000,1200,90,50,8,6,12
+n2,2026-06-02 12:00:00,一只适合送礼的杯子,礼盒装 杯口温润,image,covers/n2.jpg,4200,900,60,44,10,5,8
+n3,2026-06-03 20:00:00,餐桌上的白瓷盘,晚餐和甜点都适合,image,covers/n3.jpg,3000,700,30,20,3,2,3
