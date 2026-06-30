@@ -1,7 +1,22 @@
 from datetime import datetime
 
+import pytest
+
 from xhs_ceramics_analytics.contracts.normalize import normalize_order_rows
-from xhs_ceramics_analytics.contracts.schemas import Note, OrderLine
+from xhs_ceramics_analytics.contracts.schemas import Note, OrderLine, Sku
+
+
+def _order_row(**overrides: object) -> dict[str, object]:
+    row: dict[str, object] = {
+        "order_id": "o1",
+        "paid_time": "2026-06-02 12:00:00",
+        "sku_id": "s1",
+        "quantity": "2",
+        "paid_amount": "198.00",
+        "refund_status_optional": "none",
+    }
+    row.update(overrides)
+    return row
 
 
 def test_note_accepts_core_fields():
@@ -38,3 +53,58 @@ def test_normalize_order_rows_preserves_sku_lines():
     normalized = normalize_order_rows(rows)
     assert [line.sku_id for line in normalized] == ["s1", "s2"]
     assert sum(line.quantity for line in normalized) == 3
+
+
+def test_normalize_order_rows_rejects_missing_order_id():
+    with pytest.raises(ValueError, match="order_id"):
+        normalize_order_rows([_order_row(order_id=None)])
+
+
+def test_normalize_order_rows_rejects_missing_sku_id():
+    with pytest.raises(ValueError, match="sku_id"):
+        normalize_order_rows([_order_row(sku_id=None)])
+
+
+def test_normalize_order_rows_rejects_fractional_quantity():
+    with pytest.raises(ValueError, match="quantity"):
+        normalize_order_rows([_order_row(quantity="2.5")])
+
+
+def test_normalize_order_rows_accepts_decimal_integer_quantity():
+    normalized = normalize_order_rows([_order_row(quantity="2.0")])
+
+    assert normalized[0].quantity == 2
+
+
+@pytest.mark.parametrize(
+    ("field_name", "value"),
+    [
+        ("price", -1.0),
+        ("inventory_optional", -1),
+        ("cost_optional", -1.0),
+    ],
+)
+def test_sku_rejects_negative_numeric_fields(field_name: str, value: object):
+    with pytest.raises(ValueError, match=field_name):
+        Sku(sku_id="s1", **{field_name: value})
+
+
+def test_order_line_rejects_negative_paid_amount():
+    with pytest.raises(ValueError, match="paid_amount"):
+        OrderLine(order_id="o1", paid_time=datetime(2026, 6, 2), sku_id="s1", paid_amount=-1)
+
+
+def test_normalize_order_rows_treats_optional_missing_values_as_none():
+    normalized = normalize_order_rows(
+        [
+            _order_row(
+                paid_time=float("nan"),
+                paid_amount=float("nan"),
+                refund_status_optional="   ",
+            )
+        ]
+    )
+
+    assert normalized[0].paid_time is None
+    assert normalized[0].paid_amount is None
+    assert normalized[0].refund_status_optional is None

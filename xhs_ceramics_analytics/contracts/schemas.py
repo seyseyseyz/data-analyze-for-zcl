@@ -1,11 +1,11 @@
 from datetime import date, datetime
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
 
-NonNegativeInt = int | None
-NonNegativeFloat = float | None
+NonNegativeInt = Annotated[int, Field(ge=0)] | None
+NonNegativeFloat = Annotated[float, Field(ge=0)] | None
 
 
 class Note(BaseModel):
