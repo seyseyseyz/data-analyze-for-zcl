@@ -11,5 +11,4 @@ if [ ! -x "$venv_python" ]; then
 fi
 
 PATH="$runtime_dir/.venv/bin:$PATH" \
-XHS_CA_PROJECT_ROOT="$runtime_dir" \
 "$venv_python" -m xhs_ceramics_analytics.cli "$@"

@@ -1,0 +1,29 @@
+{
+  "skill_name": "data-analyze-for-zcl",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "我有小红书陶瓷账号后台导出的笔记、订单、SKU 和评论数据，帮我做这周复盘并告诉我下周发什么。",
+      "expected_output": "The skill should trigger for Chinese Xiaohongshu analytics, read the task menu and report contract, choose weekly_business_review or all depending on available data, build the local DuckDB database via bundled scripts, and summarize evidence-scored conclusions with next actions.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "帮我看 SKU 发文后销量有没有反应，但我现在只有 notes 表，没有 orders。",
+      "expected_output": "The skill should choose sku_counterfactual_lift or explain that it cannot be judged, produce a limitation and next-data-needed list, and avoid inventing sales results.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "这些笔记是不是直接带来了订单？我有 note_sku_links 和订单表。",
+      "expected_output": "The skill should use the note/SKU sales-response workflow but refuse deterministic attribution unless an explicit attribution source exists, using language like sales response window or observed association rather than causal order generation.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "评论里用户到底在问什么，能不能挖一下需求和下一步选题？",
+      "expected_output": "The skill should choose comment_demand_mining, request or use comments data, optionally connect findings to content ideas, and keep evidence strength and data limitations visible.",
+      "files": []
+    }
+  ]
+}

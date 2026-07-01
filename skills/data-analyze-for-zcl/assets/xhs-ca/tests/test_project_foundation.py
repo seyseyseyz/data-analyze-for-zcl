@@ -51,3 +51,13 @@ def test_published_skill_bundles_runtime_and_entrypoints():
     assert (runtime_dir / "task_templates" / "weekly_business_review.md").exists()
     assert os.access(skill_dir / "scripts" / "bootstrap", os.X_OK)
     assert os.access(skill_dir / "scripts" / "xhs-ca", os.X_OK)
+
+
+def test_skill_entrypoint_does_not_force_state_into_runtime():
+    repo_root = Path(__file__).resolve().parents[1]
+    skill_dir = repo_root / "skills" / "data-analyze-for-zcl"
+    script = skill_dir / "scripts" / "xhs-ca"
+    if not script.exists():
+        pytest.skip("source checkout skill package is not present")
+
+    assert 'XHS_CA_PROJECT_ROOT="$runtime_dir"' not in script.read_text(encoding="utf-8")

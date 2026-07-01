@@ -32,6 +32,35 @@ def test_render_markdown_uses_chinese_report_labels():
     assert "Proceed with analysis." in report
 
 
+def test_cli_keeps_markdown_when_html_rendering_fails(tmp_path, monkeypatch):
+    from typer.testing import CliRunner
+
+    from xhs_ceramics_analytics.cli import app
+    import xhs_ceramics_analytics.reporting.html as html_module
+
+    def fail_html(_results):
+        raise RuntimeError("chart dependency exploded")
+
+    monkeypatch.setattr(html_module, "render_html", fail_html)
+    output_dir = tmp_path / ".xhs-ceramics-analytics" / "outputs"
+    output_dir.mkdir(parents=True)
+    stale_html = output_dir / "data_quality_check.html"
+    stale_html.write_text("stale html", encoding="utf-8")
+
+    result = CliRunner().invoke(
+        app,
+        ["run", "data_quality_check", "--project-root", str(tmp_path)],
+    )
+
+    assert result.exit_code == 0
+    assert (output_dir / "data_quality_check.md").exists()
+    assert not stale_html.exists()
+    errors = output_dir / "render_errors.txt"
+    assert errors.exists()
+    assert "chart dependency exploded" in errors.read_text(encoding="utf-8")
+    assert "HTML rendering failed" in result.stderr
+
+
 def test_render_markdown_uses_reader_friendly_sku_lift_title():
     report = render_markdown(
         [

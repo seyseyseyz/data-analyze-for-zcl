@@ -53,7 +53,7 @@ Run this before analyzing real exports, especially on a new machine:
 xhs-ca doctor
 ```
 
-The doctor checks Python version, project root, virtual environment status,
+The doctor checks Python version, state/output root, virtual environment status,
 required Python dependencies, the `xhs-ca` command, and whether the local state
 directory is writable. Use strict mode in automation:
 

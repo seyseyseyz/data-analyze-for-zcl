@@ -97,12 +97,7 @@ def _python_check(python_version: object) -> Check:
 def _project_root_check(root: Path) -> Check:
     if (root / "pyproject.toml").exists():
         return Check("Project root", CheckStatus.OK, str(root))
-    return Check(
-        name="Project root",
-        status=CheckStatus.MISSING,
-        detail=f"pyproject.toml not found under {root}",
-        next_step="Run commands from the xiaohongshu-ceramics-analytics project root.",
-    )
+    return Check("Data/output root", CheckStatus.OK, str(root))
 
 
 def _virtualenv_check(in_virtualenv: bool) -> Check:

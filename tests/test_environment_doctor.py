@@ -24,6 +24,25 @@ def test_doctor_cli_reports_environment_status(tmp_path: Path, monkeypatch):
     assert "NEXT:" in result.output
 
 
+def test_doctor_strict_accepts_data_directory_without_pyproject(
+    tmp_path: Path, monkeypatch
+):
+    from xhs_ceramics_analytics.cli import app
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    xhs_ca = bin_dir / "xhs-ca"
+    xhs_ca.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+    xhs_ca.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+
+    result = CliRunner().invoke(app, ["doctor", "--strict", "--project-root", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert "Data/output root" in result.output
+    assert "pyproject.toml not found" not in result.output
+
+
 def test_cli_import_does_not_require_analytics_dependencies(monkeypatch):
     real_import = builtins.__import__
 

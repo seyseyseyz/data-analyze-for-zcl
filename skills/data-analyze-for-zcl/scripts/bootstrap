@@ -22,5 +22,4 @@ fi
 "$runtime_dir/.venv/bin/python" -m pip install -e "$runtime_dir[dev]"
 
 PATH="$runtime_dir/.venv/bin:$PATH" \
-XHS_CA_PROJECT_ROOT="$runtime_dir" \
-"$runtime_dir/.venv/bin/python" -m xhs_ceramics_analytics.cli doctor --strict
+"$runtime_dir/.venv/bin/python" -m xhs_ceramics_analytics.cli doctor --strict --project-root "$runtime_dir"

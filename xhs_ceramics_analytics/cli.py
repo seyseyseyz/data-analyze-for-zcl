@@ -13,10 +13,14 @@ app = typer.Typer(help="Xiaohongshu ceramics analytics local runner.")
 def build(
     files: Annotated[list[Path], typer.Argument(help="CSV files to import.")],
     db: Annotated[Path | None, typer.Option(help="Override DuckDB file path.")] = None,
+    project_root: Annotated[
+        Path | None,
+        typer.Option(help="Override local state/output root."),
+    ] = None,
 ) -> None:
     from xhs_ceramics_analytics.db.build import build_database
 
-    db_path = db or state_dir() / "analytics.duckdb"
+    db_path = db or state_dir(project_root) / "analytics.duckdb"
     build_database(db_path, files)
     typer.echo(f"Built DuckDB database: {db_path}")
 
@@ -27,8 +31,12 @@ def doctor(
         bool,
         typer.Option(help="Exit non-zero when required checks are missing."),
     ] = False,
+    project_root: Annotated[
+        Path | None,
+        typer.Option(help="Override local state/output root."),
+    ] = None,
 ) -> None:
-    checks = run_checks()
+    checks = run_checks(root=project_root)
     typer.echo("Environment Doctor")
     for check in checks:
         typer.echo(f"[{check.status.value.upper()}] {check.name}: {check.detail}")
@@ -47,23 +55,43 @@ def run(
         typer.Argument(help="Task id to run, or 'all' for the full report menu."),
     ] = "weekly_business_review",
     db: Annotated[Path | None, typer.Option(help="Override DuckDB file path.")] = None,
+    project_root: Annotated[
+        Path | None,
+        typer.Option(help="Override local state/output root."),
+    ] = None,
 ) -> None:
     from xhs_ceramics_analytics.analysis.registry import TASKS, run_task
     from xhs_ceramics_analytics.reporting.html import render_html
     from xhs_ceramics_analytics.reporting.markdown import render_markdown
 
-    db_path = db or state_dir() / "analytics.duckdb"
+    db_path = db or state_dir(project_root) / "analytics.duckdb"
     if task == "all":
         results = [run_task(task_id, db_path) for task_id in TASKS]
     else:
         results = [run_task(task, db_path)]
-    output_dir = outputs_dir()
+    output_dir = outputs_dir(project_root)
     markdown_out = output_dir / f"{task}.md"
     html_out = output_dir / f"{task}.html"
+    errors_out = output_dir / "render_errors.txt"
     markdown_out.write_text(render_markdown(results), encoding="utf-8")
-    html_out.write_text(render_html(results), encoding="utf-8")
     typer.echo(f"Wrote report: {markdown_out}")
+    if html_out.exists():
+        html_out.unlink()
+    try:
+        html_out.write_text(render_html(results), encoding="utf-8")
+    except Exception as exc:
+        errors_out.write_text(
+            f"HTML rendering failed for task {task}: {exc}\n",
+            encoding="utf-8",
+        )
+        typer.echo(
+            f"HTML rendering failed; kept Markdown report and wrote error: {errors_out}",
+            err=True,
+        )
+        return
     typer.echo(f"Wrote report: {html_out}")
+    if errors_out.exists():
+        errors_out.unlink()
 
 
 if __name__ == "__main__":
