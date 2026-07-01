@@ -1,0 +1,4 @@
+note_id,composition_type,scene_hint,copy_angle,purchase_motive,text_overlay_present,aesthetic_semantics
+n1,single_product,coffee,lifestyle,self_use,false,quiet
+n2,gift_box,gift,gift,gift,true,refined
+n3,table_setting,dinner,table_setting,self_use,false,calm

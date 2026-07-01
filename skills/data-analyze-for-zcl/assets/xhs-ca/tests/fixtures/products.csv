@@ -1,0 +1,3 @@
+product_id,product_name,category,vessel_type,series,color_family,pattern_style,price_band,launch_date,status
+p1,青釉咖啡杯,ceramics,cup,summer,green,solid,100-199,2026-05-20,active
+p2,白瓷餐盘,ceramics,plate,classic,white,solid,100-199,2026-05-01,active

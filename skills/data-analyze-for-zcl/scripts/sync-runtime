@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+skill_dir="$(cd "$(dirname "$0")/.." && pwd)"
+repo_root="$(cd "$skill_dir/../.." && pwd)"
+runtime_dir="$skill_dir/assets/xhs-ca"
+
+mkdir -p "$runtime_dir"
+rsync -a --delete \
+  "$repo_root/pyproject.toml" \
+  "$repo_root/xhs_ceramics_analytics" \
+  "$repo_root/references" \
+  "$repo_root/task_templates" \
+  "$repo_root/tests" \
+  "$runtime_dir/"
+
+find "$runtime_dir" -type d -name "__pycache__" -prune -exec rm -rf {} +
+find "$runtime_dir" -type d -name ".pytest_cache" -prune -exec rm -rf {} +
+find "$runtime_dir" -type d -name ".ruff_cache" -prune -exec rm -rf {} +

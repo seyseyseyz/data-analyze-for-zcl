@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+skill_dir="$(cd "$(dirname "$0")/.." && pwd)"
+runtime_dir="$skill_dir/assets/xhs-ca"
+venv_python="$runtime_dir/.venv/bin/python"
+
+if [ ! -x "$venv_python" ]; then
+  echo "Bundled xhs-ca runtime is not bootstrapped. Run: $skill_dir/scripts/bootstrap" >&2
+  exit 1
+fi
+
+PATH="$runtime_dir/.venv/bin:$PATH" \
+XHS_CA_PROJECT_ROOT="$runtime_dir" \
+"$venv_python" -m xhs_ceramics_analytics.cli "$@"
