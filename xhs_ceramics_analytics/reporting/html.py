@@ -407,7 +407,17 @@ _PERCENT_FIELDS = {
     "relative_lift",
 }
 
-_MONEY_FIELDS = {"gmv", "gmv_optional", "paid_amount", "price", "spend", "total_spend"}
+_MONEY_FIELDS = {
+    "cost_per_order_calc",
+    "cpc_calc",
+    "cpm_calc",
+    "gmv",
+    "gmv_optional",
+    "paid_amount",
+    "price",
+    "spend",
+    "total_spend",
+}
 
 
 def render_html(results: list[AnalysisResult]) -> str:
