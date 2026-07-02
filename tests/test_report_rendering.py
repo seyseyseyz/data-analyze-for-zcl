@@ -526,3 +526,32 @@ def test_render_html_labels_paid_traffic_fields():
     assert "点击率" in html
     assert "投产比" in html
     assert "增加预算" in html
+
+
+def test_evidence_chart_lands_in_guide_section():
+    html = render_html(
+        [
+            AnalysisResult(
+                task_id="cover_style_effect",
+                title="封面风格效果",
+                findings=[
+                    Finding(
+                        title="封面风格效果已比较",
+                        conclusion="生活方式类封面表现更好。",
+                        evidence_strength=EvidenceStrength.MEDIUM,
+                    )
+                ],
+                tables={
+                    "cover_effects": [
+                        {"composition_type": "flatlay", "notes": 5,
+                         "avg_reads": 1200.0, "avg_collects": 48.0},
+                        {"composition_type": "lifestyle", "notes": 4,
+                         "avg_reads": 800.0, "avg_collects": 60.0},
+                    ]
+                },
+            )
+        ]
+    )
+    guide = html.split('id="guide"', 1)[1].split('id="actions"', 1)[0]
+    assert 'class="chart"' in guide
+    assert "<svg" in guide

@@ -9,6 +9,7 @@ from xhs_ceramics_analytics.reporting.labels import (
     format_number as _format_number,
     format_percent as _format_percent,
 )
+from xhs_ceramics_analytics.reporting import charts
 
 
 _EVIDENCE_LABELS = {
@@ -383,6 +384,7 @@ def _build_report_context(results: list[AnalysisResult]) -> dict[str, object]:
         "actions": _business_actions(results, findings),
         "analysis_groups": _analysis_groups(result_views),
         "evidence_counts": _evidence_counts(findings),
+        "evidence_chart_svg": charts.evidence_distribution(_evidence_counts(findings)),
         "codex_questions": _codex_questions(results),
         "glossary": [
             {
