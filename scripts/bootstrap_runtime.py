@@ -161,8 +161,43 @@ def print_repair(reason: str, shell: str) -> None:
     print("```", file=sys.stderr)
 
 
-def run_command(command: list[str], env: Mapping[str, str] | None = None) -> bool:
-    result = subprocess.run(command, env=dict(env or os.environ), check=False)
+def write_command_log(log_path: Path | None, command: list[str], output: str) -> None:
+    if log_path is None:
+        return
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text(
+            "$ " + " ".join(command) + "\n" + output,
+            encoding="utf-8",
+        )
+    except OSError:
+        pass
+
+
+def run_command(
+    command: list[str],
+    env: Mapping[str, str] | None = None,
+    log_path: Path | None = None,
+    echo_success: bool = False,
+) -> bool:
+    try:
+        result = subprocess.run(
+            command,
+            env=dict(env or os.environ),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+    except OSError as exc:
+        write_command_log(log_path, command, f"Failed to start command: {exc}\n")
+        return False
+    output = result.stdout or ""
+    if result.returncode != 0:
+        write_command_log(log_path, command, output)
+        return False
+    if echo_success and output:
+        print(output, end="")
     return result.returncode == 0
 
 
@@ -175,15 +210,22 @@ def ensure_venv(runtime_dir: Path, python: PythonCandidate) -> bool:
 
 def install_dependencies(runtime_dir: Path) -> bool:
     cache_dir = runtime_dir / ".runtime" / "pip-cache"
-    cache_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return False
     env = dict(os.environ)
     env["PIP_CACHE_DIR"] = str(cache_dir)
     python_bin = str(venv_python(runtime_dir))
     commands = [
-        [python_bin, "-m", "pip", "install", "-U", "pip"],
-        [python_bin, "-m", "pip", "install", "-e", f"{runtime_dir}[dev]"],
+        ("pip-upgrade.log", [python_bin, "-m", "pip", "install", "-U", "pip"]),
+        ("pip-install.log", [python_bin, "-m", "pip", "install", "-e", f"{runtime_dir}[dev]"]),
     ]
-    return all(run_command(command, env=env) for command in commands)
+    log_dir = runtime_dir / ".runtime" / "logs"
+    return all(
+        run_command(command, env=env, log_path=log_dir / log_name)
+        for log_name, command in commands
+    )
 
 
 def run_doctor(runtime_dir: Path, doctor_root: Path) -> bool:
@@ -198,7 +240,12 @@ def run_doctor(runtime_dir: Path, doctor_root: Path) -> bool:
         "--project-root",
         str(doctor_root),
     ]
-    return run_command(command, env=env)
+    return run_command(
+        command,
+        env=env,
+        log_path=runtime_dir / ".runtime" / "logs" / "doctor.log",
+        echo_success=True,
+    )
 
 
 def bootstrap(runtime_dir: Path, skill_dir: Path, doctor_root: Path) -> int:
