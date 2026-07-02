@@ -5,6 +5,12 @@ from xhs_ceramics_analytics.db.duck import connect
 from xhs_ceramics_analytics.db.sql_helpers import numeric_expr
 from xhs_ceramics_analytics.evidence import EvidenceStrength, score_evidence
 
+MIN_SPEND_FOR_ACTION = 100
+HIGH_ROAS_THRESHOLD = 3
+LOW_ROAS_THRESHOLD = 1
+LOW_CLICK_THRESHOLD = 20
+MIN_ACTIVE_DAYS_FOR_ACTION = 2
+
 
 def classify_budget_action(
     spend: float | None,
@@ -17,11 +23,19 @@ def classify_budget_action(
         return "needs_data"
     if gmv is None or roas is None:
         return "needs_data"
-    if active_days < 2 and roas >= 3:
+    if active_days < MIN_ACTIVE_DAYS_FOR_ACTION and roas >= HIGH_ROAS_THRESHOLD:
         return "hold"
-    if spend >= 100 and roas >= 3 and gmv > 0:
+    if (
+        spend >= MIN_SPEND_FOR_ACTION
+        and roas >= HIGH_ROAS_THRESHOLD
+        and gmv > 0
+    ):
         return "increase"
-    if spend >= 100 and (clicks < 20 or gmv <= 0 or roas < 1):
+    if spend >= MIN_SPEND_FOR_ACTION and (
+        clicks < LOW_CLICK_THRESHOLD
+        or gmv <= 0
+        or roas < LOW_ROAS_THRESHOLD
+    ):
         return "reduce"
     return "hold"
 
