@@ -1,3 +1,4 @@
+from xhs_ceramics_analytics.analysis.paid_traffic import classify_budget_action
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.evidence import EvidenceStrength, score_evidence
 
@@ -79,9 +80,6 @@ def test_analysis_result_default_mutable_fields_are_isolated():
 
     assert second.tables == {}
     assert second.limitations == []
-
-
-from xhs_ceramics_analytics.analysis.paid_traffic import classify_budget_action
 
 
 def test_classify_budget_action_increase():
