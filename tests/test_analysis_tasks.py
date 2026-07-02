@@ -199,7 +199,7 @@ def test_all_tasks_include_paid_traffic_tasks_when_ad_data_missing(tmp_path, fix
         assert result.findings
 
 
-def test_ad_data_quality_check_detects_creative_grain(tmp_path, fixture_dir):
+def test_ad_data_quality_check_reports_creative_export_details(tmp_path, fixture_dir):
     db_path = tmp_path / "analytics.duckdb"
     build_database(db_path, [fixture_dir / "ads_creative.csv"])
 
