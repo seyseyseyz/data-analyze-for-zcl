@@ -41,14 +41,14 @@ def run(db_path: Path) -> AnalysisResult:
             _float_or_none(row.get("clicks")),
             _float_or_none(row.get("gmv_optional")),
             _float_or_none(row.get("roas_calc")),
-            int(row.get("active_days") or 0),
+            int(row.get("paid_active_days") or 0),
         )
 
     total_spend = sum(float(row.get("spend") or 0) for row in rows)
     total_gmv = sum(float(row.get("gmv_optional") or 0) for row in rows)
     has_return = any(row.get("gmv_optional") is not None for row in rows)
     evidence_strength = score_evidence(
-        sample_size=sum(int(row.get("active_days") or 0) for row in rows),
+        sample_size=sum(int(row.get("paid_active_days") or 0) for row in rows),
         has_controls=has_return,
         confounder_count=1 if has_return else 3,
     )
@@ -107,7 +107,7 @@ def _efficiency_rows(con, source: str) -> list[dict[str, object]]:
         f"""
         SELECT
           {select_dimensions}
-          COUNT(DISTINCT CAST(date AS DATE)) AS active_days,
+          COUNT(DISTINCT CAST(date AS DATE)) AS paid_active_days,
           SUM({spend_expr}) AS spend,
           SUM({impressions_expr}) AS impressions,
           SUM({clicks_expr}) AS clicks,
@@ -135,8 +135,8 @@ def _clean_row(row: dict[str, object]) -> dict[str, object]:
     for key in ("spend", "impressions", "clicks", "gmv_optional", "roas_calc", "ctr_calc", "cpc_calc"):
         if cleaned.get(key) is not None:
             cleaned[key] = round(float(cleaned[key]), 4)
-    if cleaned.get("active_days") is not None:
-        cleaned["active_days"] = int(cleaned["active_days"])
+    if cleaned.get("paid_active_days") is not None:
+        cleaned["paid_active_days"] = int(cleaned["paid_active_days"])
     return cleaned
 
 
@@ -158,7 +158,7 @@ def _caveats(rows: list[dict[str, object]], has_return: bool) -> list[str]:
     caveats = ["投放效率来自后台导出，不等同于内容或商品的因果影响。"]
     if not has_return:
         caveats.append("缺少成交金额或投产字段，不能判断 ROAS。")
-    if any(int(row.get("active_days") or 0) < 2 for row in rows):
+    if any(int(row.get("paid_active_days") or 0) < 2 for row in rows):
         caveats.append("部分对象只有单日数据，预算动作需要保守执行。")
     return caveats
 

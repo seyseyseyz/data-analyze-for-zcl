@@ -22,7 +22,7 @@ _EVIDENCE_HELP = {
 
 _FIELD_LABELS = {
     "absolute_lift": ("绝对提升", "发布后销量减去发布前销量。"),
-    "active_days": ("活跃投放天数", "该投放对象出现数据的天数。"),
+    "active_days": ("活跃发布天数", "有笔记发布记录的天数。"),
     "avg_collect_rate": ("平均收藏率", "收藏数除以阅读数后的平均值。"),
     "avg_collects": ("平均收藏数", "每组内容平均获得的收藏数。"),
     "avg_comment_rate": ("平均评论率", "评论数除以阅读数后的平均值。"),
@@ -93,6 +93,7 @@ _FIELD_LABELS = {
     "observed_groups": ("观察到的需求组数", "评论中实际出现的需求类型数量。"),
     "opportunity_score": ("机会分", "综合收藏率和阅读空间计算的候选优先级。"),
     "opportunity_type": ("机会类型", "系统给商品机会的初步分类。"),
+    "paid_active_days": ("活跃投放天数", "该投放对象出现数据的天数。"),
     "paid_amount": ("成交金额", "订单实际支付金额。"),
     "planned_rows": ("计划档期数", "下周实验矩阵生成的发布档期数量。"),
     "platform_source": ("投放平台", "聚光、薯条、商家后台或其他来源。"),
