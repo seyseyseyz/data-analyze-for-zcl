@@ -96,11 +96,18 @@ xhs-ca run all
 
 5. Open the generated Markdown or HTML report under `.xhs-ceramics-analytics/outputs/`.
 
+If you create a custom integrated Markdown report outside the built-in task menu, convert it before delivery:
+
+```bash
+xhs-ca render-html .xhs-ceramics-analytics/outputs/经营诊断报告.md
+```
+
 You can also run the CLI without installation:
 
 ```bash
 python -m xhs_ceramics_analytics.cli build path/to/notes.csv path/to/orders.csv
 python -m xhs_ceramics_analytics.cli run all
+python -m xhs_ceramics_analytics.cli render-html .xhs-ceramics-analytics/outputs/经营诊断报告.md
 ```
 
 ## Analysis Menu
@@ -124,7 +131,7 @@ python -m xhs_ceramics_analytics.cli run all
 ## What The Tool Produces
 
 - A local DuckDB project state under `.xhs-ceramics-analytics/`
-- Markdown reports that summarize findings, evidence strength, caveats, and suggested next actions
+- Markdown and single-file HTML reports that summarize findings, evidence strength, caveats, and suggested next actions
 - A full `all` report that combines the current V1 task registry into one operating review
 
 ## Evidence Rule

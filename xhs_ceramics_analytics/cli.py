@@ -54,6 +54,35 @@ def doctor(
         raise typer.Exit(1)
 
 
+@app.command("render-html")
+def render_html_command(
+    markdown_file: Annotated[
+        Path,
+        typer.Argument(help="Markdown report to convert into a single-file HTML report."),
+    ],
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", "-o", help="Output HTML path. Defaults to <report>.html."),
+    ] = None,
+    title: Annotated[
+        str | None,
+        typer.Option(help="Override the report title. Defaults to the first H1."),
+    ] = None,
+) -> None:
+    from xhs_ceramics_analytics.reporting.html import render_markdown_document_html
+
+    html_out = output or markdown_file.with_suffix(".html")
+    html_out.parent.mkdir(parents=True, exist_ok=True)
+    if html_out.exists():
+        html_out.unlink()
+    markdown_text = markdown_file.read_text(encoding="utf-8")
+    html_out.write_text(
+        render_markdown_document_html(markdown_text, title=title),
+        encoding="utf-8",
+    )
+    typer.echo(f"Wrote report: {html_out}")
+
+
 @app.command()
 def run(
     task: Annotated[

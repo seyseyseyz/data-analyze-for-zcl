@@ -1,6 +1,9 @@
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.evidence import EvidenceStrength
-from xhs_ceramics_analytics.reporting.html import render_html
+from xhs_ceramics_analytics.reporting.html import (
+    render_html,
+    render_markdown_document_html,
+)
 from xhs_ceramics_analytics.reporting.markdown import render_markdown
 
 
@@ -124,6 +127,76 @@ def test_render_html_escapes_unsafe_markdown_content():
     assert "<!doctype html>" in html
     assert "<script>alert(1)</script>" not in html
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
+
+
+def test_render_markdown_document_html_wraps_custom_report():
+    html = render_markdown_document_html(
+        "\n".join(
+            [
+                "# 经营诊断报告",
+                "",
+                "## 关键结论",
+                "",
+                "自定义整合报告也要交付 HTML。",
+                "",
+                "| 模块 | 状态 |",
+                "| --- | --- |",
+                "| 店铺漏斗 | 可判断 |",
+                "",
+                "<script>alert(1)</script>",
+            ]
+        )
+    )
+
+    assert "<!doctype html>" in html
+    assert "<title>经营诊断报告</title>" in html
+    assert "<h1>经营诊断报告</h1>" in html
+    assert "<h2>关键结论</h2>" in html
+    assert "<table>" in html
+    assert "<td>店铺漏斗</td>" in html
+    assert "<script>alert(1)</script>" not in html
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
+
+
+def test_cli_render_html_converts_custom_markdown_report(tmp_path):
+    from typer.testing import CliRunner
+
+    from xhs_ceramics_analytics.cli import app
+
+    markdown_path = tmp_path / "经营诊断报告.md"
+    markdown_path.write_text("# 经营诊断报告\n\n自定义整合报告。\n", encoding="utf-8")
+
+    result = CliRunner().invoke(app, ["render-html", str(markdown_path)])
+
+    html_path = tmp_path / "经营诊断报告.html"
+    assert result.exit_code == 0
+    assert html_path.exists()
+    html = html_path.read_text(encoding="utf-8")
+    assert "<!doctype html>" in html
+    assert "<h1>经营诊断报告</h1>" in html
+    assert f"Wrote report: {html_path}" in result.stdout
+
+
+def test_cli_render_html_removes_stale_output_when_conversion_fails(tmp_path):
+    from typer.testing import CliRunner
+
+    from xhs_ceramics_analytics.cli import app
+
+    stale_html = tmp_path / "经营诊断报告.html"
+    stale_html.write_text("old report", encoding="utf-8")
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "render-html",
+            str(tmp_path / "missing.md"),
+            "--output",
+            str(stale_html),
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert not stale_html.exists()
 
 
 def test_render_html_builds_reader_friendly_editorial_report():

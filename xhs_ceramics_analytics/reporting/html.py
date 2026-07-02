@@ -1,3 +1,5 @@
+import re
+from html import escape
 from numbers import Number
 
 from jinja2 import Environment, PackageLoader
@@ -369,6 +371,334 @@ def render_html(results: list[AnalysisResult]) -> str:
         report=_build_report_context(results),
         results=results,
     )
+
+
+def render_markdown_document_html(markdown_text: str, title: str | None = None) -> str:
+    report_title = title or _extract_markdown_title(markdown_text) or "小红书账号分析报告"
+    body_html = _markdown_document_body(markdown_text)
+    escaped_title = escape(report_title)
+    return f"""<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{escaped_title}</title>
+  <style>
+    :root {{
+      --canvas: #F7F6F3;
+      --surface: #FFFFFF;
+      --ink: #2F3437;
+      --ink-strong: #111111;
+      --muted: #787774;
+      --line: #EAEAEA;
+      --yellow-bg: #FBF3DB;
+      --yellow-text: #956400;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      background: var(--canvas);
+      color: var(--ink);
+      font-family: 'SF Pro Display', 'Geist Sans', 'Helvetica Neue', sans-serif;
+      line-height: 1.68;
+    }}
+    .report-shell {{
+      width: min(960px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 32px 0 72px;
+    }}
+    .topbar {{
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 14px 0 28px;
+      color: var(--muted);
+      font-size: 13px;
+    }}
+    .brand {{
+      color: var(--ink-strong);
+      font-weight: 700;
+    }}
+    .report-card {{
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: clamp(24px, 5vw, 56px);
+    }}
+    .eyebrow {{
+      display: inline-flex;
+      width: fit-content;
+      border-radius: 9999px;
+      padding: 5px 10px;
+      background: var(--yellow-bg);
+      color: var(--yellow-text);
+      font-family: 'Geist Mono', 'SF Mono', monospace;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }}
+    h1, h2, h3, h4, h5, h6 {{
+      color: var(--ink-strong);
+      letter-spacing: 0;
+      line-height: 1.18;
+    }}
+    h1 {{
+      margin: 22px 0 28px;
+      font-family: 'Lyon Text', 'Newsreader', 'Playfair Display', serif;
+      font-size: clamp(40px, 7vw, 68px);
+    }}
+    h2 {{ margin: 42px 0 14px; font-size: 30px; }}
+    h3 {{ margin: 30px 0 12px; font-size: 22px; }}
+    p {{ margin: 12px 0; }}
+    ul, ol {{ padding-left: 24px; }}
+    li + li {{ margin-top: 6px; }}
+    code {{
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      padding: 2px 5px;
+      background: var(--canvas);
+      font-family: 'Geist Mono', 'SF Mono', monospace;
+      font-size: 0.92em;
+    }}
+    pre {{
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      background: var(--canvas);
+    }}
+    pre code {{ border: 0; padding: 0; background: transparent; }}
+    .table-wrap {{
+      width: 100%;
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      margin: 18px 0;
+    }}
+    table {{
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 560px;
+    }}
+    th, td {{
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+      font-size: 14px;
+    }}
+    th {{
+      color: var(--muted);
+      background: #F9F9F8;
+      font-family: 'Geist Mono', 'SF Mono', monospace;
+      font-weight: 700;
+    }}
+    blockquote {{
+      margin: 18px 0;
+      padding: 2px 0 2px 16px;
+      border-left: 3px solid var(--line);
+      color: var(--muted);
+    }}
+    hr {{
+      border: 0;
+      border-top: 1px solid var(--line);
+      margin: 32px 0;
+    }}
+    @media (max-width: 700px) {{
+      .report-shell {{ width: min(100% - 24px, 960px); }}
+      .report-card {{ border-radius: 8px; }}
+      h2 {{ font-size: 26px; }}
+    }}
+  </style>
+</head>
+<body>
+  <main class="report-shell">
+    <header class="topbar">
+      <div class="brand">小红书经营分析</div>
+      <div>Single-file HTML</div>
+    </header>
+    <article class="report-card">
+      <span class="eyebrow">Integrated Report</span>
+{body_html}
+    </article>
+  </main>
+</body>
+</html>
+"""
+
+
+def _extract_markdown_title(markdown_text: str) -> str | None:
+    for line in markdown_text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("# "):
+            title = stripped[2:].strip()
+            return title or None
+    return None
+
+
+def _markdown_document_body(markdown_text: str) -> str:
+    lines = markdown_text.splitlines()
+    blocks: list[str] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        stripped = line.strip()
+        if not stripped:
+            index += 1
+            continue
+
+        if stripped.startswith("```"):
+            code_lines: list[str] = []
+            index += 1
+            while index < len(lines) and not lines[index].strip().startswith("```"):
+                code_lines.append(lines[index])
+                index += 1
+            if index < len(lines):
+                index += 1
+            blocks.append(f"<pre><code>{escape(chr(10).join(code_lines))}</code></pre>")
+            continue
+
+        if stripped == "---":
+            blocks.append("<hr>")
+            index += 1
+            continue
+
+        heading_level = _heading_level(stripped)
+        if heading_level is not None:
+            text = stripped[heading_level + 1 :].strip()
+            blocks.append(f"<h{heading_level}>{_inline_markdown(text)}</h{heading_level}>")
+            index += 1
+            continue
+
+        if _is_table_start(lines, index):
+            table_html, index = _render_markdown_table(lines, index)
+            blocks.append(table_html)
+            continue
+
+        if _is_unordered_item(stripped):
+            items: list[str] = []
+            while index < len(lines) and _is_unordered_item(lines[index].strip()):
+                items.append(lines[index].strip()[2:].strip())
+                index += 1
+            blocks.append(
+                "<ul>"
+                + "".join(f"<li>{_inline_markdown(item)}</li>" for item in items)
+                + "</ul>"
+            )
+            continue
+
+        if _is_ordered_item(stripped):
+            items = []
+            while index < len(lines) and _is_ordered_item(lines[index].strip()):
+                items.append(re.sub(r"^\d+\.\s+", "", lines[index].strip()).strip())
+                index += 1
+            blocks.append(
+                "<ol>"
+                + "".join(f"<li>{_inline_markdown(item)}</li>" for item in items)
+                + "</ol>"
+            )
+            continue
+
+        if stripped.startswith(">"):
+            quote_lines: list[str] = []
+            while index < len(lines) and lines[index].strip().startswith(">"):
+                quote_lines.append(lines[index].strip().lstrip(">").strip())
+                index += 1
+            blocks.append(f"<blockquote>{_inline_markdown(' '.join(quote_lines))}</blockquote>")
+            continue
+
+        paragraph_lines = [stripped]
+        index += 1
+        while index < len(lines) and _is_paragraph_continuation(lines, index):
+            paragraph_lines.append(lines[index].strip())
+            index += 1
+        blocks.append(f"<p>{_inline_markdown(' '.join(paragraph_lines))}</p>")
+
+    return "\n".join(f"      {block}" for block in blocks)
+
+
+def _heading_level(stripped: str) -> int | None:
+    match = re.match(r"^(#{1,6})\s+(.+)$", stripped)
+    if match is None:
+        return None
+    return len(match.group(1))
+
+
+def _is_table_start(lines: list[str], index: int) -> bool:
+    if index + 1 >= len(lines):
+        return False
+    return "|" in lines[index] and _is_table_separator(lines[index + 1])
+
+
+def _is_table_separator(line: str) -> bool:
+    cells = _split_table_row(line)
+    if not cells:
+        return False
+    return all(re.match(r"^:?-{3,}:?$", cell.strip()) for cell in cells)
+
+
+def _render_markdown_table(lines: list[str], index: int) -> tuple[str, int]:
+    headers = _split_table_row(lines[index])
+    index += 2
+    rows: list[list[str]] = []
+    while index < len(lines) and "|" in lines[index].strip():
+        rows.append(_split_table_row(lines[index]))
+        index += 1
+
+    header_html = "".join(f"<th>{_inline_markdown(cell)}</th>" for cell in headers)
+    row_html = []
+    for row in rows:
+        padded = row + [""] * max(0, len(headers) - len(row))
+        cells = "".join(f"<td>{_inline_markdown(cell)}</td>" for cell in padded[: len(headers)])
+        row_html.append(f"<tr>{cells}</tr>")
+    return (
+        "<div class=\"table-wrap\"><table>"
+        f"<thead><tr>{header_html}</tr></thead>"
+        f"<tbody>{''.join(row_html)}</tbody>"
+        "</table></div>",
+        index,
+    )
+
+
+def _split_table_row(line: str) -> list[str]:
+    return [cell.strip() for cell in line.strip().strip("|").split("|")]
+
+
+def _is_unordered_item(stripped: str) -> bool:
+    return stripped.startswith("- ") or stripped.startswith("* ")
+
+
+def _is_ordered_item(stripped: str) -> bool:
+    return re.match(r"^\d+\.\s+", stripped) is not None
+
+
+def _is_paragraph_continuation(lines: list[str], index: int) -> bool:
+    stripped = lines[index].strip()
+    if not stripped:
+        return False
+    return not (
+        stripped.startswith("```")
+        or stripped == "---"
+        or _heading_level(stripped) is not None
+        or _is_table_start(lines, index)
+        or _is_unordered_item(stripped)
+        or _is_ordered_item(stripped)
+        or stripped.startswith(">")
+    )
+
+
+def _inline_markdown(text: str) -> str:
+    parts = re.split(r"(`[^`]+`)", text)
+    rendered: list[str] = []
+    for part in parts:
+        if part.startswith("`") and part.endswith("`") and len(part) >= 2:
+            rendered.append(f"<code>{escape(part[1:-1])}</code>")
+            continue
+        escaped = escape(part)
+        escaped = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escaped)
+        rendered.append(escaped)
+    return "".join(rendered)
 
 
 def _build_report_context(results: list[AnalysisResult]) -> dict[str, object]:

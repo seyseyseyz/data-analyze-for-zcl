@@ -21,4 +21,4 @@ Tone:
 - no statistics jargon unless necessary,
 - concrete next actions.
 
-The first version must always write a Markdown report and should also write a single-file HTML report with charts and tables when local chart dependencies are available. If HTML rendering fails, the skill must keep the Markdown report, report the rendering error, and keep all generated tables in reproducible output files.
+Every delivered report must include a Markdown report and a single-file HTML report. Built-in `xhs-ca run <task>` reports write both files automatically. If the agent creates a custom integrated Markdown report outside the built-in task registry, it must run `xhs-ca render-html <report.md>` before delivery and verify the HTML file exists. If HTML rendering fails, the skill must keep the Markdown report, report the rendering error, and keep all generated tables in reproducible output files.

@@ -23,9 +23,13 @@ Use this skill when the user provides Xiaohongshu (小红书 / 千帆) exported 
 
 6. **Data quality** — always run `xhs-ca run data_quality_check` first. If paid-traffic data was provided, also run `ad_data_quality_check`. Surface any empty tables or missing required columns before proceeding to analysis tasks.
 
-7. **Run selected task(s)** — execute `scripts/xhs-ca run <slug>` for each confirmed task. Before summarizing each report, read the matching `assets/xhs-ca/task_templates/<slug>.md` and `assets/xhs-ca/references/cheatsheet.md` for metric definitions, evidence rules, and report structure.
+7. **Run selected task(s)** — execute `scripts/xhs-ca run <slug>` for each confirmed task. Built-in tasks write both `<slug>.md` and `<slug>.html` under `.xhs-ceramics-analytics/outputs/`. Before summarizing each report, read the matching `assets/xhs-ca/task_templates/<slug>.md` and `assets/xhs-ca/references/cheatsheet.md` for metric definitions, evidence rules, and report structure.
 
-8. **Summarize** — present findings with: evidence tier (Strong/Medium/Weak/Not-judgable), key numbers, caveats verbatim from the report, next-data-needed, and recommended action. NEVER claim deterministic note-to-order attribution.
+8. **Custom integrated reports** — if you create any report outside the built-in task registry (for example a 千帆经营诊断 that combines non-standard sheets such as 经营总览、退款、搜索、店铺漏斗), write the Markdown report first, then immediately run `scripts/xhs-ca render-html <report.md>` or `scripts/xhs-ca render-html <report.md> --output <report.html>`. Keep any Excel/CSV companion tables, but they do not replace the HTML report.
+
+9. **Delivery verification (REQUIRED)** — before the final response, verify every delivered Markdown report has a matching single-file HTML report. For built-in tasks, check the generated `<slug>.html`; for custom integrated reports, check the `render-html` output. If HTML rendering fails, keep the Markdown report, report the error path/message, and do not imply HTML was delivered.
+
+10. **Summarize** — present findings with: evidence tier (Strong/Medium/Weak/Not-judgable), key numbers, caveats verbatim from the report, next-data-needed, recommended action, and the Markdown + HTML file paths. NEVER claim deterministic note-to-order attribution.
 
 ## Commands
 
@@ -50,6 +54,9 @@ Use this skill when the user provides Xiaohongshu (小红书 / 千帆) exported 
 
 # Run full report suite (only when user requests complete review)
 <skill-dir>/scripts/xhs-ca run all
+
+# Convert a custom Markdown/integrated report into single-file HTML
+<skill-dir>/scripts/xhs-ca render-html .xhs-ceramics-analytics/outputs/经营诊断报告.md
 ```
 
 ## Files this skill loads on demand
@@ -70,3 +77,4 @@ Use this skill when the user provides Xiaohongshu (小红书 / 千帆) exported 
 5. **Prefer DuckDB and bundled tasks** — use `scripts/xhs-ca run` over ad-hoc Python/SQL scripts. The bundled tasks enforce evidence scoring, report structure, and metric definitions consistently.
 6. **Never mention troubleshooting steps preemptively** — only surface repair commands from `references/troubleshooting.md` when bootstrap or doctor actually fails.
 7. **Do not invent metrics** — all metrics in reports must trace back to `references/metric_definitions.md` (consolidated in cheatsheet). If a metric is needed but absent, flag it rather than fabricating a formula.
+8. **HTML is part of the deliverable** — Markdown-only delivery is incomplete unless HTML rendering failed and the failure was explicitly reported.
