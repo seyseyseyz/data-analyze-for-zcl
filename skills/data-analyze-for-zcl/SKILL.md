@@ -10,7 +10,7 @@ Use this skill for local Xiaohongshu ceramics ecommerce analysis.
 ## Workflow
 
 1. Resolve this skill directory first. Use the bundled runtime under `assets/xhs-ca/`; do not assume the user has cloned the source repo separately.
-2. On first use, run this skill's `scripts/bootstrap`. It creates `assets/xhs-ca/.venv`, installs the bundled Python package, and verifies the environment.
+2. On first use, run this skill's `scripts/bootstrap`. It creates or repairs `assets/xhs-ca/.venv`, installs the bundled Python package, verifies the environment, and prints a Terminal repair command if the runtime cannot be prepared automatically.
 3. Ask the user for exported CSV files and any cover image folders they want to reference.
 4. Run this skill's `scripts/xhs-ca build ...` from the user's project/data directory to profile CSV headers, apply the closest standard table mapping, and build the local DuckDB database under that directory's `.xhs-ceramics-analytics/`.
 5. Run this skill's `scripts/xhs-ca run <task>` or `scripts/xhs-ca run all` for the full V1 report menu.

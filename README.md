@@ -18,8 +18,11 @@ The project is designed to turn exported Xiaohongshu content data, product/SKU d
 pytest -q
 ```
 
-`./scripts/bootstrap` creates `.venv`, installs the editable package with dev
-dependencies, and runs `xhs-ca doctor --strict`.
+`./scripts/bootstrap` creates or repairs `.venv`, installs the editable package
+with dev dependencies, and runs `xhs-ca doctor --strict`. If the local machine
+does not have Python 3.11+ or dependency installation fails, bootstrap prints a
+short command block to copy into macOS Terminal instead of showing a raw pip
+traceback.
 
 ## Skill Install
 

@@ -89,3 +89,28 @@ def test_python_version_returns_none_for_non_executable_file(tmp_path):
     binary.write_text("not executable\n", encoding="utf-8")
 
     assert helper.python_version(binary) is None
+
+
+def test_main_prints_repair_kit_for_incomplete_skill_package(tmp_path, capsys):
+    helper = load_bootstrap_runtime()
+    runtime_dir = tmp_path / "runtime"
+    skill_dir = tmp_path / "skill"
+    runtime_dir.mkdir()
+    skill_dir.mkdir()
+
+    exit_code = helper.main(
+        [
+            "--runtime-dir",
+            str(runtime_dir),
+            "--skill-dir",
+            str(skill_dir),
+            "--doctor-root",
+            str(runtime_dir),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "Copy the whole command block below into macOS Terminal" in captured.err
+    assert "npx skills add seyseyseyz/data-analyze-for-zcl -g -y" in captured.err
+    assert "Traceback" not in captured.err
