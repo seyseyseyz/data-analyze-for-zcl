@@ -219,6 +219,56 @@ def test_create_daily_sku_sales_excludes_refunded_order_lines(tmp_path: Path):
         con.close()
 
 
+def test_build_database_imports_paid_traffic_export(tmp_path: Path, fixture_dir: Path):
+    db_path = tmp_path / "analytics.duckdb"
+
+    build_database(db_path=db_path, files=[fixture_dir / "ads_campaign.csv"])
+
+    con = duckdb.connect(str(db_path))
+    try:
+        tables = {row[0] for row in con.sql("SHOW TABLES").fetchall()}
+        assert "ad_performance_daily" in tables
+        assert "ad_metrics" in tables
+        row = con.sql(
+            """
+            SELECT
+              SUM(spend),
+              SUM(impressions),
+              SUM(clicks),
+              SUM(gmv_optional),
+              MAX(extra_field)
+            FROM ad_performance_daily
+            """
+        ).fetchone()
+        assert row == (200, 10000, 260, 880, "keep-me-too")
+    finally:
+        con.close()
+
+
+def test_ad_metrics_calculates_null_safe_paid_rates(tmp_path: Path, fixture_dir: Path):
+    db_path = tmp_path / "analytics.duckdb"
+
+    build_database(db_path=db_path, files=[fixture_dir / "ads_campaign.csv"])
+
+    con = duckdb.connect(str(db_path))
+    try:
+        row = con.sql(
+            """
+            SELECT ctr_calc, cpc_calc, cpm_calc, cost_per_order_calc, roas_calc
+            FROM ad_metrics
+            WHERE campaign_name_optional = '青釉杯投放'
+              AND date = '2026-06-01'
+            """
+        ).fetchone()
+        assert row[0] == pytest.approx(0.03)
+        assert row[1] == pytest.approx(120 / 180)
+        assert row[2] == pytest.approx(20)
+        assert row[3] == pytest.approx(20)
+        assert row[4] == pytest.approx(6)
+    finally:
+        con.close()
+
+
 def test_create_note_metrics_view_allows_missing_shares(tmp_path: Path):
     con = duckdb.connect(str(tmp_path / "analytics.duckdb"))
     try:
