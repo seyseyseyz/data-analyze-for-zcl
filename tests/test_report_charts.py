@@ -212,3 +212,69 @@ def test_response_curve_empty_when_no_rows():
     result = _result("content_response_curve", EvidenceStrength.MEDIUM,
                      {"response_windows": []})
     assert charts.for_result(result) == ""
+
+
+def test_opportunity_scatter_plots_only_rows_with_sales():
+    result = _result(
+        "product_opportunity_matrix",
+        EvidenceStrength.MEDIUM,
+        {"product_opportunities": [
+            {"sku_id": "a", "sku_name": "青瓷杯", "units": 12.0, "gmv": 480.0,
+             "opportunity_type": "sales_response_present"},
+            {"sku_id": "b", "sku_name": "礼盒", "units": 1.0, "gmv": 60.0,
+             "opportunity_type": "needs_more_content_or_data"},
+            {"sku_id": "c", "sku_name": "无数据", "units": None, "gmv": None,
+             "opportunity_type": "needs_sales_data"},
+        ]},
+    )
+    html = charts.for_result(result)
+    assert "<circle" in html
+    assert "青瓷杯" in html
+    assert "无数据" not in html          # null units/gmv row is not plotted
+
+
+def test_opportunity_scatter_uses_shape_not_hue_for_type():
+    result = _result(
+        "product_opportunity_matrix",
+        EvidenceStrength.MEDIUM,
+        {"product_opportunities": [
+            {"sku_id": "a", "sku_name": "A", "units": 12.0, "gmv": 480.0,
+             "opportunity_type": "sales_response_present"},
+            {"sku_id": "b", "sku_name": "B", "units": 1.0, "gmv": 60.0,
+             "opportunity_type": "needs_more_content_or_data"},
+        ]},
+    )
+    html = charts.for_result(result)
+    # hollow marks paint their interior with the surface token, not a new hue
+    assert "var(--surface)" in html
+    assert "var(--ink-strong)" in html
+
+
+def test_paid_scatter_suppressed_when_no_spend():
+    result = _result(
+        "paid_traffic_efficiency",
+        EvidenceStrength.WEAK,
+        {"paid_traffic_efficiency": [
+            {"campaign_name_optional": "c1", "spend": 0.0, "roas_calc": None,
+             "gmv_optional": None, "budget_action": "needs_data", "paid_active_days": 1},
+        ]},
+    )
+    assert charts.for_result(result) == ""
+
+
+def test_paid_scatter_colors_budget_action_status():
+    result = _result(
+        "paid_traffic_efficiency",
+        EvidenceStrength.MEDIUM,
+        {"paid_traffic_efficiency": [
+            {"campaign_name_optional": "c1", "spend": 300.0, "roas_calc": 4.0,
+             "gmv_optional": 1200.0, "budget_action": "increase", "paid_active_days": 5},
+            {"campaign_name_optional": "c2", "spend": 250.0, "roas_calc": 0.5,
+             "gmv_optional": 125.0, "budget_action": "reduce", "paid_active_days": 4},
+        ]},
+    )
+    html = charts.for_result(result)
+    assert "<circle" in html
+    assert "var(--green-text)" in html   # increase -> good
+    assert "var(--red-text)" in html     # reduce -> bad
+    assert "增加预算" in html            # value_label("increase")

@@ -369,3 +369,140 @@ def _build_response_curve(result: AnalysisResult, strength: EvidenceStrength) ->
 
 
 _BUILDERS["content_response_curve"] = _build_response_curve
+
+
+def _median(values: list[float]) -> float:
+    ordered = sorted(values)
+    mid = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[mid]
+    return (ordered[mid - 1] + ordered[mid]) / 2
+
+
+def _scatter(
+    points: list[dict],
+    *,
+    x_label: str,
+    y_label: str,
+    median_lines: bool,
+) -> str:
+    width, height = _VIEW_W, 340
+    pad_l, pad_r, pad_t, pad_b = 56, 24, 28, 52
+    plot_w = width - pad_l - pad_r
+    plot_h = height - pad_t - pad_b
+    if not points:
+        return _frame(_empty_state(width, height), width, height)
+    xmax = max(p["x"] for p in points) or 1.0
+    ymax = max(p["y"] for p in points) or 1.0
+
+    def px(x: float) -> float:
+        return pad_l + (x / xmax) * plot_w
+
+    def py(y: float) -> float:
+        return pad_t + plot_h - (y / ymax) * plot_h
+
+    body: list[str] = [
+        f'<line x1="{pad_l}" y1="{pad_t + plot_h}" x2="{width - pad_r}" '
+        f'y2="{pad_t + plot_h}" class="ca-axis"/>',
+        f'<line x1="{pad_l}" y1="{pad_t}" x2="{pad_l}" y2="{pad_t + plot_h}" class="ca-axis"/>',
+        f'<text x="{width - pad_r}" y="{pad_t + plot_h + 20}" text-anchor="end" '
+        f'class="ca-cat">{_esc(x_label)}</text>',
+        f'<text x="{pad_l}" y="{pad_t - 12}" class="ca-cat">{_esc(y_label)}</text>',
+    ]
+    if median_lines and len(points) >= 2:
+        mx, my = _median([p["x"] for p in points]), _median([p["y"] for p in points])
+        body.append(
+            f'<line x1="{_num(px(mx))}" y1="{pad_t}" x2="{_num(px(mx))}" '
+            f'y2="{pad_t + plot_h}" class="ca-grid" stroke-dasharray="4 3"/>'
+        )
+        body.append(
+            f'<line x1="{pad_l}" y1="{_num(py(my))}" x2="{width - pad_r}" '
+            f'y2="{_num(py(my))}" class="ca-grid" stroke-dasharray="4 3"/>'
+        )
+    for p in points:
+        cx, cy = px(p["x"]), py(p["y"])
+        opacity = "0.55" if p.get("de_emphasize") else "1"
+        if p["shape"] == "hollow":
+            fill, stroke = "var(--surface)", p["tone"]
+        else:
+            fill, stroke = p["tone"], p["tone"]
+        body.append(
+            f'<circle cx="{_num(cx)}" cy="{_num(cy)}" r="6" fill="{fill}" '
+            f'stroke="{stroke}" stroke-width="2" fill-opacity="{opacity}">'
+            f'<title>{_esc(p["label"])}</title></circle>'
+        )
+        body.append(
+            f'<text x="{_num(cx + 9)}" y="{_num(cy + 4)}" class="ca-cat">'
+            f'{_esc(p["label"])}</text>'
+        )
+    return _frame("".join(body), width, height)
+
+
+def _build_opportunity(result: AnalysisResult, strength: EvidenceStrength) -> str:
+    rows = [
+        r for r in result.tables.get("product_opportunities", [])
+        if r.get("units") is not None and r.get("gmv") is not None
+    ]
+    if not rows:
+        return ""
+    de = strength == EvidenceStrength.WEAK
+    points = [
+        {
+            "x": float(r["units"]),
+            "y": float(r["gmv"]),
+            "label": str(r.get("sku_name") or r.get("sku_id")),
+            "shape": "filled" if r.get("opportunity_type") == "sales_response_present" else "hollow",
+            "tone": "var(--ink-strong)",
+            "de_emphasize": de,
+        }
+        for r in rows
+    ]
+    body = _scatter(points, x_label="销量", y_label="成交金额", median_lines=True)
+    return f'{_chart_badge(strength, len(points))}{body}'
+
+
+_BUDGET_TONE = {
+    "increase": "var(--green-text)",
+    "reduce": "var(--red-text)",
+    "hold": "var(--muted)",
+}
+
+
+def _build_paid(result: AnalysisResult, strength: EvidenceStrength) -> str:
+    rows = result.tables.get("paid_traffic_efficiency", [])
+    total_spend = sum(float(r.get("spend") or 0) for r in rows)
+    plotted = [
+        r for r in rows
+        if (r.get("spend") or 0) > 0 and r.get("roas_calc") is not None
+    ]
+    if total_spend <= 0 or not plotted:
+        return ""  # honest: no spend / no return -> no efficiency chart
+    de = strength == EvidenceStrength.WEAK
+    dims = ("campaign_name_optional", "creative_name_optional",
+            "note_id_optional", "sku_id_optional", "platform_source")
+
+    def name_of(row: dict) -> str:
+        for key in dims:
+            if row.get(key):
+                return str(row[key])
+        return "投放对象"
+
+    points = []
+    for r in plotted:
+        action = str(r.get("budget_action"))
+        points.append(
+            {
+                "x": float(r["spend"]),
+                "y": float(r["roas_calc"]),
+                "label": f'{name_of(r)}·{labels.value_label(action)}',
+                "shape": "filled",
+                "tone": _BUDGET_TONE.get(action, "var(--ink-strong)"),
+                "de_emphasize": de,
+            }
+        )
+    body = _scatter(points, x_label="消耗", y_label="投产比 ROAS", median_lines=True)
+    return f'{_chart_badge(strength, len(points))}{body}'
+
+
+_BUILDERS["product_opportunity_matrix"] = _build_opportunity
+_BUILDERS["paid_traffic_efficiency"] = _build_paid
