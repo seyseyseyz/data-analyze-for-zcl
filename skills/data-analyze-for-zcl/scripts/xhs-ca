@@ -4,11 +4,75 @@ set -euo pipefail
 skill_dir="$(cd "$(dirname "$0")/.." && pwd)"
 runtime_dir="$skill_dir/assets/xhs-ca"
 venv_python="$runtime_dir/.venv/bin/python"
+bootstrap_script="$skill_dir/scripts/bootstrap_runtime.py"
 
-if [ ! -x "$venv_python" ]; then
-  echo "Bundled xhs-ca runtime is not bootstrapped. Run: $skill_dir/scripts/bootstrap" >&2
-  exit 1
+# --- Helper: run bootstrap if venv is missing or stale ---
+ensure_runtime() {
+  # If venv python does not exist at all, run full bootstrap
+  if [ ! -x "$venv_python" ]; then
+    echo "xhs-ca: .venv not found, running bootstrap..." >&2
+    source "$skill_dir/scripts/bootstrap_python.sh"
+    if ! python_launcher="$(select_xhs_ca_python)"; then
+      echo "xhs-ca: Python 3.11+ not found. Cannot auto-bootstrap." >&2
+      exit 1
+    fi
+    XHS_CA_PYTHON="$python_launcher" "$python_launcher" "$bootstrap_script" \
+      --runtime-dir "$runtime_dir" \
+      --skill-dir "$skill_dir" \
+      --doctor-root "$runtime_dir"
+    return
+  fi
+
+  # Quick health check (no install, just verify)
+  if ! "$venv_python" "$bootstrap_script" \
+    --runtime-dir "$runtime_dir" \
+    --skill-dir "$skill_dir" \
+    --doctor-root "$runtime_dir" \
+    --check 2>/dev/null; then
+    echo "xhs-ca: runtime stale, re-bootstrapping..." >&2
+    source "$skill_dir/scripts/bootstrap_python.sh"
+    if ! python_launcher="$(select_xhs_ca_python)"; then
+      echo "xhs-ca: Python 3.11+ not found. Cannot auto-bootstrap." >&2
+      exit 1
+    fi
+    XHS_CA_PYTHON="$python_launcher" "$python_launcher" "$bootstrap_script" \
+      --runtime-dir "$runtime_dir" \
+      --skill-dir "$skill_dir" \
+      --doctor-root "$runtime_dir"
+  fi
+}
+
+# --- Handle --version before runtime check (fast path) ---
+if [ "${1:-}" = "--version" ] || [ "${1:-}" = "-V" ]; then
+  if [ -x "$venv_python" ]; then
+    "$venv_python" -c "
+from pathlib import Path
+import tomllib
+p = Path('$runtime_dir/pyproject.toml')
+data = tomllib.loads(p.read_text())
+print(f\"xhs-ca {data['project']['version']}\")
+"
+  else
+    # Fallback: parse with grep if venv unavailable
+    version=$(grep -m1 '^version' "$runtime_dir/pyproject.toml" | sed 's/.*"\(.*\)"/\1/')
+    echo "xhs-ca ${version:-unknown} (venv not bootstrapped)"
+  fi
+  exit 0
 fi
 
+# --- Ensure runtime is ready ---
+ensure_runtime
+
+# --- Handle 'tasks' subcommand: list registered task slugs ---
+if [ "${1:-}" = "tasks" ]; then
+  "$venv_python" -c "
+from xhs_ceramics_analytics.analysis.registry import TASKS
+for slug in sorted(TASKS):
+    print(slug)
+"
+  exit 0
+fi
+
+# --- Dispatch to CLI ---
 PATH="$runtime_dir/.venv/bin:$PATH" \
 "$venv_python" -m xhs_ceramics_analytics.cli "$@"
