@@ -83,6 +83,7 @@ def _fetch_comments(con) -> list[dict[str, str | None]]:
           CAST(comment_text AS VARCHAR) AS comment_text
         FROM comments
         WHERE comment_text IS NOT NULL
+          AND TRIM(CAST(comment_text AS VARCHAR)) <> ''
         {order_clause}
         """
     )

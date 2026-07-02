@@ -197,6 +197,12 @@ def _product_opportunity_section(con) -> dict[str, object]:
         if "gmv" in sales_columns
         else "NULL"
     )
+    metric_predicates = []
+    if "units" in sales_columns:
+        metric_predicates.append("d.units IS NOT NULL")
+    if "gmv" in sales_columns:
+        metric_predicates.append("d.gmv IS NOT NULL")
+    metric_where = " OR ".join(metric_predicates) or "FALSE"
     row = con.sql(
         f"""
         SELECT
@@ -207,6 +213,8 @@ def _product_opportunity_section(con) -> dict[str, object]:
           COUNT(*) AS sales_days
         FROM daily_sku_sales AS d
         {join_clause}
+        WHERE d.sku_id IS NOT NULL
+          AND ({metric_where})
         GROUP BY 1
         ORDER BY units DESC NULLS LAST, gmv DESC NULLS LAST, sku_id
         LIMIT 1
@@ -216,7 +224,7 @@ def _product_opportunity_section(con) -> dict[str, object]:
         return _missing_section(
             "product_opportunity",
             "product_opportunity_matrix",
-            "daily_sku_sales 表为空。",
+            "daily_sku_sales 表为空或没有可用的 SKU 销售记录。",
         )
 
     sku_id, sku_name, units, gmv, sales_days = row

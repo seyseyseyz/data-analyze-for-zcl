@@ -66,7 +66,9 @@ def test_weekly_review_handles_null_daily_sku_sales_summary(tmp_path: Path):
     )
 
     assert product_section["summary"]
+    assert product_section["status"] == "missing"
     assert product_section["value"] is None
+    assert product_section["evidence_count"] == 0
 
 
 def test_weekly_review_marks_empty_daily_sku_sales_as_missing(tmp_path: Path):
@@ -142,6 +144,74 @@ def test_hypothesis_without_comment_signal_stays_unknown(tmp_path: Path):
     assert demand_row["metric"] is None
     assert "price" not in str(demand_row["hypothesis"]).lower()
     assert "收集" in str(demand_row["next_test"]) or "评论" in str(demand_row["next_test"])
+
+
+def test_comment_demand_ignores_blank_comment_text(tmp_path: Path):
+    db_path = _build_db(
+        tmp_path / "blank-comments.duckdb",
+        [
+            """
+            CREATE TABLE comments (
+              note_id VARCHAR,
+              comment_text VARCHAR
+            )
+            """,
+            "INSERT INTO comments VALUES ('n1', ''), ('n2', '   '), ('n3', NULL)",
+        ],
+    )
+
+    result = run_task("comment_demand_mining", db_path)
+
+    assert sum(row["comments"] for row in result.tables["comment_demands"]) == 0
+    assert result.findings[0].evidence_strength == "not_judgable"
+    assert result.findings[0].key_numbers["comments"] == 0
+    assert result.findings[0].key_numbers["top_group"] is None
+    assert result.limitations == ["没有可用于需求挖掘的评论数据。"]
+
+
+def test_hypothesis_ignores_blank_comment_text(tmp_path: Path):
+    db_path = _build_db(
+        tmp_path / "hypothesis-blank-comments.duckdb",
+        [
+            """
+            CREATE TABLE comments (
+              comment_text VARCHAR
+            )
+            """,
+            "INSERT INTO comments VALUES (''), ('   '), (NULL)",
+        ],
+    )
+
+    result = run_task("hypothesis_knowledge_base", db_path)
+    demand_row = next(row for row in result.tables["hypotheses"] if row["theme"] == "comment_demand")
+
+    assert demand_row["status"] == "needs_data"
+    assert demand_row["label"] == "unknown"
+    assert demand_row["evidence_count"] == 0
+
+
+def test_hypothesis_ignores_null_sku_sales_metrics(tmp_path: Path):
+    db_path = _build_db(
+        tmp_path / "hypothesis-null-sales.duckdb",
+        [
+            """
+            CREATE TABLE daily_sku_sales (
+              sku_id VARCHAR,
+              units DOUBLE,
+              gmv DOUBLE
+            )
+            """,
+            "INSERT INTO daily_sku_sales VALUES ('s1', NULL, NULL)",
+        ],
+    )
+
+    result = run_task("hypothesis_knowledge_base", db_path)
+    sku_row = next(row for row in result.tables["hypotheses"] if row["theme"] == "product_opportunity")
+
+    assert sku_row["status"] == "needs_data"
+    assert sku_row["label"] == "unknown"
+    assert sku_row["evidence_count"] == 0
+    assert sku_row["metric"] is None
 
 
 def test_experiment_matrix_uses_future_default_planning_date(

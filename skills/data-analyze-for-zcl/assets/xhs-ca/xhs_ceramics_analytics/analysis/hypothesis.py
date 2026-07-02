@@ -154,6 +154,7 @@ def _demand_seed(con) -> dict[str, object]:
             SELECT CAST(comment_text AS VARCHAR) AS comment_text
             FROM comments
             WHERE comment_text IS NOT NULL
+              AND TRIM(CAST(comment_text AS VARCHAR)) <> ''
             ORDER BY comment_text
             """
         )
@@ -193,6 +194,15 @@ def _sku_seed(con) -> dict[str, object]:
                 "metric": None,
                 "evidence_summary": "daily_sku_sales 表缺少 sku_id。",
             }
+        if "units" not in sales_columns:
+            return {
+                "seed": "sku:unknown:allocation",
+                "theme": "product_opportunity",
+                "label": "unknown",
+                "evidence_count": 0,
+                "metric": None,
+                "evidence_summary": "daily_sku_sales 表缺少 units。",
+            }
         has_skus = _table_exists(con, "skus")
         sku_columns = _table_columns(con, "skus") if has_skus else set()
         join_clause = (
@@ -205,20 +215,17 @@ def _sku_seed(con) -> dict[str, object]:
             if join_clause
             else "CAST(d.sku_id AS VARCHAR)"
         )
-        units_expr = (
-            "SUM(CAST(d.units AS DOUBLE))"
-            if "units" in sales_columns
-            else "NULL"
-        )
         result = con.sql(
             f"""
             SELECT
               CAST(d.sku_id AS VARCHAR) AS sku_id,
               {name_expr} AS sku_name,
-              {units_expr} AS units,
+              SUM(CAST(d.units AS DOUBLE)) AS units,
               COUNT(*) AS sales_days
             FROM daily_sku_sales AS d
             {join_clause}
+            WHERE d.sku_id IS NOT NULL
+              AND d.units IS NOT NULL
             GROUP BY 1
             ORDER BY units DESC NULLS LAST, sales_days DESC, sku_id
             LIMIT 1
@@ -239,6 +246,14 @@ def _sku_seed(con) -> dict[str, object]:
                     f"{_display_metric(units_value)} 件。"
                 ),
             }
+        return {
+            "seed": "sku:unknown:allocation",
+            "theme": "product_opportunity",
+            "label": "unknown",
+            "evidence_count": 0,
+            "metric": None,
+            "evidence_summary": "daily_sku_sales 表没有可用的 SKU 销量记录。",
+        }
 
     return {
         "seed": "sku:unknown:allocation",
