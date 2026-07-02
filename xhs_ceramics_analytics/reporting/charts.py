@@ -283,3 +283,89 @@ def _build_comment_demand(result: AnalysisResult, strength: EvidenceStrength) ->
 
 
 _BUILDERS["comment_demand_mining"] = _build_comment_demand
+
+
+_RESPONSE_WINDOWS = (
+    ("d0_1_units", "d0_1"),
+    ("d1_3_units", "d1_3"),
+    ("d4_7_units", "d4_7"),
+    ("d8_14_units", "d8_14"),
+)
+
+
+def _line(
+    series: list[tuple[str, list[float | None]]],
+    x_labels: list[str],
+    *,
+    de_emphasize: bool,
+) -> str:
+    width, height = _VIEW_W, 320
+    pad_l, pad_r, pad_t, pad_b = 48, 24, 40, 56
+    plot_w = width - pad_l - pad_r
+    plot_h = height - pad_t - pad_b
+    baseline_y = pad_t + plot_h
+    n_x = len(x_labels)
+    xs = [pad_l + (plot_w * i / (n_x - 1) if n_x > 1 else plot_w / 2) for i in range(n_x)]
+    all_vals = [v for _, ys in series for v in ys if v is not None]
+    if not all_vals:
+        return _frame(_empty_state(width, height), width, height)
+    vmax = max(all_vals) or 1.0
+
+    def y_of(v: float) -> float:
+        return baseline_y - (v / vmax) * plot_h
+
+    body: list[str] = [
+        f'<line x1="{pad_l}" y1="{_num(baseline_y)}" x2="{width - pad_r}" '
+        f'y2="{_num(baseline_y)}" class="ca-axis"/>'
+    ]
+    for i, label in enumerate(x_labels):
+        body.append(
+            f'<text x="{_num(xs[i])}" y="{_num(baseline_y + 20)}" text-anchor="middle" '
+            f'class="ca-cat">{_esc(label)}</text>'
+        )
+
+    def draw(ys, *, color, opacity, dash):
+        pts = [(xs[i], y_of(v)) for i, v in enumerate(ys) if v is not None]
+        if len(pts) >= 2:
+            d = "M" + " L".join(f"{_num(x)} {_num(y)}" for x, y in pts)
+            body.append(
+                f'<path d="{d}" fill="none" stroke="{color}" stroke-width="2" '
+                f'stroke-opacity="{opacity}"{dash}/>'
+            )
+        for x, y in pts:  # markers (also the only glyph for 1-point series)
+            body.append(
+                f'<circle cx="{_num(x)}" cy="{_num(y)}" r="3.5" fill="{color}" '
+                f'fill-opacity="{opacity}"/>'
+            )
+
+    line_opacity = "0.35"
+    dash = ' stroke-dasharray="4 3"' if de_emphasize else ""
+    for name, ys in series:
+        draw(ys, color="var(--muted)", opacity=line_opacity, dash=dash)
+    if len(series) > 1:  # bold aggregate = mean of non-null values at each x
+        agg: list[float | None] = []
+        for i in range(n_x):
+            col = [ys[i] for _, ys in series if ys[i] is not None]
+            agg.append(sum(col) / len(col) if col else None)
+        draw(agg, color="var(--ink-strong)", opacity="1", dash="")
+    return _frame("".join(body), width, height)
+
+
+def _build_response_curve(result: AnalysisResult, strength: EvidenceStrength) -> str:
+    rows = result.tables.get("response_windows", [])
+    if not rows:
+        return ""
+    x_labels = [labels.value_label(key) for _, key in _RESPONSE_WINDOWS]
+    series = [
+        (
+            f'{row.get("note_id")}·{row.get("sku_id")}',
+            [row.get(col) for col, _ in _RESPONSE_WINDOWS],
+        )
+        for row in rows
+    ]
+    de = strength == EvidenceStrength.WEAK
+    body = _line(series, x_labels, de_emphasize=de)
+    return f'{_chart_badge(strength, len(rows))}{body}'
+
+
+_BUILDERS["content_response_curve"] = _build_response_curve

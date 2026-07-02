@@ -167,3 +167,48 @@ def test_comment_demand_skips_zero_comment_groups():
     html = charts.for_result(result)
     assert "样本不足" in html            # weak evidence badge
     assert "送礼角度" not in html         # zero-comment group omitted
+
+
+_WINDOWS = ("d0_1_units", "d1_3_units", "d4_7_units", "d8_14_units")
+
+
+def _rw(note_id, sku_id, vals):
+    row = {"note_id": note_id, "sku_id": sku_id, "publish_time": "2026-06-01"}
+    row.update(dict(zip(_WINDOWS, vals)))
+    return row
+
+
+def test_response_curve_draws_lines_over_four_windows():
+    result = _result(
+        "content_response_curve",
+        EvidenceStrength.MEDIUM,
+        {"response_windows": [
+            _rw("n1", "s1", [2.0, 5.0, 3.0, 1.0]),
+            _rw("n2", "s1", [0.0, 4.0, 6.0, 2.0]),
+        ]},
+    )
+    html = charts.for_result(result)
+    assert "<svg" in html
+    assert "<path" in html                 # multi-point series draw a line
+    assert "发布后 0-1 天" in html          # value_label("d0_1")
+    assert "发布后 8-14 天" in html
+
+
+def test_response_curve_single_point_series_draws_dot_not_line():
+    result = _result(
+        "content_response_curve",
+        EvidenceStrength.WEAK,
+        {"response_windows": [
+            _rw("n1", "s1", [3.0, None, None, None]),
+        ]},
+    )
+    html = charts.for_result(result)
+    assert "<circle" in html
+    assert "<path" not in html             # one observed point never draws a line
+    assert "样本不足" in html
+
+
+def test_response_curve_empty_when_no_rows():
+    result = _result("content_response_curve", EvidenceStrength.MEDIUM,
+                     {"response_windows": []})
+    assert charts.for_result(result) == ""
