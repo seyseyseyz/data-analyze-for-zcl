@@ -48,13 +48,16 @@ def python_version(binary: Path) -> tuple[int, int, int] | None:
     if not binary.exists():
         return None
     code = "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')"
-    result = subprocess.run(
-        [str(binary), "-c", code],
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
+    try:
+        result = subprocess.run(
+            [str(binary), "-c", code],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+    except OSError:
+        return None
     if result.returncode != 0:
         return None
     parts = result.stdout.strip().split(".")

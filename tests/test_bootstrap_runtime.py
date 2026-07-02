@@ -76,3 +76,11 @@ def test_package_check_reports_missing_runtime_assets(tmp_path):
     assert runtime_dir / "pyproject.toml" in missing
     assert runtime_dir / "xhs_ceramics_analytics" in missing
     assert skill_dir / "scripts" / "xhs-ca" in missing
+
+
+def test_python_version_returns_none_for_non_executable_file(tmp_path):
+    helper = load_bootstrap_runtime()
+    binary = tmp_path / "python3"
+    binary.write_text("not executable\n", encoding="utf-8")
+
+    assert helper.python_version(binary) is None
