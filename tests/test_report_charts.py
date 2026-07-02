@@ -278,3 +278,17 @@ def test_paid_scatter_colors_budget_action_status():
     assert "var(--green-text)" in html   # increase -> good
     assert "var(--red-text)" in html     # reduce -> bad
     assert "增加预算" in html            # value_label("increase")
+
+
+def test_builder_escapes_injected_text():
+    result = _result(
+        "product_opportunity_matrix",
+        EvidenceStrength.MEDIUM,
+        {"product_opportunities": [
+            {"sku_id": "x", "sku_name": "<script>alert(1)</script>",
+             "units": 5.0, "gmv": 100.0, "opportunity_type": "sales_response_present"},
+        ]},
+    )
+    html = charts.for_result(result)
+    assert "<script>" not in html
+    assert "&lt;script&gt;" in html
