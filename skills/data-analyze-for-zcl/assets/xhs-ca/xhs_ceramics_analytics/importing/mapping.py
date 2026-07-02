@@ -23,6 +23,13 @@ TABLE_SIGNATURES: dict[str, set[str]] = {
     "comments": {"note_id", "comment_time", "comment_text"},
     "content_features": {"note_id", "composition_type", "scene_hint", "copy_angle"},
     "calendar_events": {"date", "event_type", "event_name", "severity"},
+    "ad_performance_daily": {
+        "date",
+        "spend",
+        "impressions",
+        "clicks",
+        "campaign_name_optional",
+    },
 }
 
 FIELD_ALIASES: dict[str, dict[str, set[str]]] = {
@@ -60,6 +67,31 @@ FIELD_ALIASES: dict[str, dict[str, set[str]]] = {
         "series": {"系列", "商品系列"},
         "status": {"商品状态", "状态"},
     },
+    "ad_performance_daily": {
+        "date": {"日期", "时间", "投放日期", "数据日期"},
+        "platform_source": {"平台", "来源", "投放平台"},
+        "campaign_id_optional": {"计划ID", "计划id", "推广计划ID"},
+        "campaign_name_optional": {"计划名称", "推广计划", "投放计划"},
+        "unit_id_optional": {"单元ID", "广告单元ID"},
+        "unit_name_optional": {"单元名称", "广告单元"},
+        "creative_id_optional": {"创意ID", "素材ID"},
+        "creative_name_optional": {"创意名称", "素材名称", "笔记标题"},
+        "note_id_optional": {"笔记ID", "笔记id"},
+        "note_url_optional": {"笔记链接", "推广链接", "落地页链接"},
+        "product_id_optional": {"商品ID", "商品id"},
+        "sku_id_optional": {"SKU ID", "sku_id", "规格ID"},
+        "spend": {"消耗", "花费", "广告消耗", "投放消耗"},
+        "impressions": {"曝光", "展现", "展现量", "曝光量"},
+        "clicks": {"点击", "点击量"},
+        "ctr": {"点击率", "CTR"},
+        "cpc": {"平均点击成本", "CPC"},
+        "cpm": {"千次曝光成本", "CPM"},
+        "conversions_optional": {"转化数", "成交人数", "转化人数"},
+        "orders_optional": {"成交订单数", "订单数", "支付订单数"},
+        "gmv_optional": {"成交金额", "GMV", "支付金额"},
+        "roi_optional": {"ROI", "投产比"},
+        "roas_optional": {"ROAS", "广告投产比"},
+    },
 }
 
 
@@ -84,7 +116,7 @@ def guess_table_type(profile: FileProfile) -> str:
 
 
 def guess_field_mapping(profile: FileProfile, table_type: str) -> dict[str, str]:
-    targets = TABLE_SIGNATURES[table_type]
+    targets = TABLE_SIGNATURES[table_type] | set(FIELD_ALIASES.get(table_type, {}).keys())
     source_columns = [
         (column, _normalize_column_name(column))
         for column in profile.columns

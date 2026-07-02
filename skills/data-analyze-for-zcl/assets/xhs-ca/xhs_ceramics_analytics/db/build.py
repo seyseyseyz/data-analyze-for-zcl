@@ -5,7 +5,7 @@ import pandas as pd
 
 from xhs_ceramics_analytics.contracts.normalize import normalize_order_rows
 from xhs_ceramics_analytics.db.duck import connect
-from xhs_ceramics_analytics.db.marts import create_note_metrics_view
+from xhs_ceramics_analytics.db.marts import create_ad_metrics_view, create_note_metrics_view
 from xhs_ceramics_analytics.importing.mapping import (
     TABLE_SIGNATURES,
     guess_field_mapping,
@@ -19,7 +19,7 @@ from xhs_ceramics_analytics.importing.profile import (
 )
 
 _DERIVED_TABLES = ("daily_sku_sales",)
-_DERIVED_VIEWS = ("note_metrics",)
+_DERIVED_VIEWS = ("note_metrics", "ad_metrics")
 
 
 def build_database(db_path: Path, files: list[Path]) -> None:
@@ -38,6 +38,8 @@ def build_database(db_path: Path, files: list[Path]) -> None:
         create_daily_sku_sales(con)
         if "notes" in _existing_tables(con):
             create_note_metrics_view(con)
+        if "ad_performance_daily" in _existing_tables(con):
+            create_ad_metrics_view(con)
     finally:
         con.close()
 
