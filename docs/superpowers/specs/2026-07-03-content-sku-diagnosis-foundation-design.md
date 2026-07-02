@@ -1,332 +1,268 @@
-# Content & SKU Diagnosis Expansion — Foundation (Phase 1a) Design
+# 千帆真实导出摄入 + 报告契约 Foundation (Phase 1a) Design
 
 Date: 2026-07-03
+Scope note: This spec was rewritten after inspecting the operator's **real 4–7月 千帆 export** (`小红书千帆4-7月数据`, 12 files). The real data is **pre-aggregated platform report tables**, not the per-order / catalog schema the tool was built around — which changes the foundation's center of gravity from "compute new metrics" to "ingest the real exports correctly." The two modules the operator loves (§3 内容与笔记诊断, §4 商品与SKU) are then thin analysis layers on top (later phases).
 
 ## Background
 
-The operator loves two sections of an external reference report (`小红书千帆4-6月经营分析报告`):
+The operator loves two sections of a reference report and asked to reproduce them, take them deeper, make them prescriptive, and observed "17 templates but the report is short." Inspecting the **real export** revealed why.
 
-- **§3 内容与笔记诊断** — a title-tag rollup (上新 / 鱼盘 / 兴安岭 / 开窑 / 杯 …) with GMV, 商品点击率, 点击→订单, and **退款率** per tag; 图文 vs 视频; 新 vs 旧内容; named high-read/low-convert notes; a 70/20/10 content portfolio and a "买前确认区" template.
-- **§4 商品与 SKU 机会** — top products with **退款后GMV, 加购人数, 退款率**, tiered into A (放大稳定款) / B (高GMV降退款) / C (高兴趣弱成交待修款).
+### The real export (ground truth, verified 2026-07-03)
 
-The operator asked for these modules to be reproduced, **taken deeper** (statistics, trend/anomaly detection, evidence grading), and made **prescriptive** (ranked actions) — and separately observed that "the tool has 17 templates but the report is short."
+Ran the tool's own `profile_file` + `guess_table_type` against every file. Results:
 
-### Why the report is short (root cause, evidence-based)
+| Real file | Grain | Tool classifies as | Outcome today |
+|---|---|---|---|
+| 1.核心数据汇总 (21 col) | daily (`时间`=int YYYYMMDD) | ❌ `calendar_events` (1/4) | wrong table |
+| 1/5.成交概览-all (58 col) | daily + 笔记/商卡 split | ❌ `calendar_events` (1/4) | wrong table + **overwritten** |
+| 2.规格明细 (26 col) | per-SKU (`规格ID`) | ⚠️ `skus` catalog (3/4) | commerce cols un-canonicalized; collides with real catalog |
+| 3.流量来源 | account×渠道×笔记类型 | ❌ UNCLASSIFIED | rejected |
+| 4.商品笔记数据 ×3 (38 col) | per-note (`笔记ID`) | ✅ `notes` (6/6) | commerce/refund/type cols un-canonicalized; **3 files overwrite → only last survives** |
+| 6.退款概览 | period×载体 structure | ❌ UNCLASSIFIED | rejected |
+| 7.搜索总览 (9 col) | daily×载体 | ❌ `calendar_events` | wrong table + **overwritten** |
+| 7.搜索词 | per-term (`搜索词`) | ❌ UNCLASSIFIED | rejected |
+| 8.店铺漏斗 | daily×人群×首购周期 | ❌ `calendar_events` | wrong table + **overwritten** |
+| 8.进店来源 | daily×人群×来源页面 | ❌ `calendar_events` | wrong table + **overwritten** |
+| 6.退款原因 | — | **PNG screenshots only** | not machine-readable |
+| 9.人群分析 | — | **PNG screenshots only** | not machine-readable |
 
-Verified against the actual generated `.xhs-ceramics-analytics/outputs/all.md`:
+### Two mechanisms, verified in code
 
-1. **Each task emits one table + a one-line finding**, not a reasoned section. `references/report_contract.md` requires **8 elements** (conclusion, key numbers, evidence strength, why, confounders, action, next test, appendix). But the `Finding` dataclass has **no field** for `confounders`, `next_test`, or an `appendix` pointer, so no task can emit them; and `evidence_reason` ("why") is **HTML-only by an existing deliberate choice** (enforced by `tests/test_report_rendering.py:38` and `:227`). The richest a markdown finding can get today is conclusion + strength + key_numbers + caveats + action (`markdown.py:39-61`), and most tasks populate only two or three of those. The 8-element contract is **structurally unmeetable until the missing fields exist** — independent of any new data.
-2. **No synthesis layer.** `weekly_business_review` reports *which modules ran*, not a business narrative; there is no §0 一句话结论, no §2 month-over-month trend, no §8 action matrix.
-3. **Whole domains are missing** — no search, refund, or audience tasks.
+1. **Silent overwrite (fatal).** `build_database` does `CREATE TABLE <type> AS SELECT …` once per file (`db/build.py:29-37,84-91`). When N files share a `table_type`, each `CREATE TABLE` replaces the previous — so notes×3 collapse to the last file, and overview/search/shop all land in `calendar_events` and clobber each other. **Most of the real export is lost at import.**
+2. **Un-canonicalized survival.** Unmapped columns are **not dropped** — `_safe_column_name` (`build.py:189-196`) keeps Chinese, only slugging punctuation (`退款后支付金额（支付时间）` → `退款后支付金额_支付时间`, `笔记支付金额` → `笔记支付金额`). So the key columns physically exist, but under Chinese/slug names that are untyped, un-marted, and referenced by no downstream task. The tool literally cannot see "退款后GMV" or per-note 商品点击率.
 
-### The program (context; only Phase 1a is specced here)
+### Why the report is short — corrected root cause
+
+The reference report the operator loves was **not** produced by this tool; it was built from this raw data by another process. The tool's report is thin because:
+
+1. **Ingestion loses or hides the richest columns** (mechanisms above) — the biggest cause, and invisible until we saw real data.
+2. **Report contract structurally unmeetable** — the `Finding` dataclass has no field for `confounders`, `next_test`, or `appendix`, so no task can emit them; `evidence_reason` ("why") is HTML-only by deliberate design (`tests/test_report_rendering.py:38,227`). The richest a finding gets is conclusion + strength + key_numbers + caveats + action.
+3. **No synthesis layer, whole domains missing** (search/refund/audience) — later phases.
+
+### The program (context; Phase 1a specced here)
 
 | Phase | Delivers |
 |---|---|
-| **1a Foundation core** *(this doc)* | Report-contract + renderer fix · shared helpers (refund-adjust / trends+period / confidence) · refunds ingestion + 退款后GMV mart · `note_commerce` optional table |
-| **1b Foundation tagging** | Title-tag classifier (rules + state-dir config + auto-suggest, fractional GMV attribution) · `search_terms` / `audience` / `shop_page` ingest-only stubs |
-| **2 Content & Note Diagnosis** | Deep §3 module (tag rollup, 图文vs视频, 新vs旧, named weak notes, portfolio + 买前确认区), note-GMV provenance resolver |
-| **3 Product & SKU Opportunity** | 退款后GMV, 加购, A/B/C tiers, refund-driver decomposition, ranked fix-lists |
-| **4 New domains** | Search diagnosis (§5), Refund/after-sales (§7), Audience/shop-page (§6) |
+| **1a Foundation** *(this doc)* | Robust multi-file ingestion of the real export (9 tabular table types, merge-on-grain-key not overwrite, table-scoped classification) · report-contract renderer fix · period/refund/trend/confidence helpers · PNG-only domains as needs-data |
+| **2 Content & Note Diagnosis (§3)** | Title-tag classifier (rules + state-dir config), tag rollup, 图文vs视频, 新vs旧, named weak notes, portfolio + 买前确认区 |
+| **3 Product & SKU Opportunity (§4)** | Top-SKU 退款后GMV/加购/退款率 tiers A/B/C, category rollup, refund-driver decomposition, ranked fix-lists |
+| **4 New domains** | Search diagnosis (§5), Refund/after-sales structure (§7), Shop-page funnel (§6) |
 | **5 Synthesis brain** | Rebuild `weekly_business_review`: §0 一句话结论, §2 MoM core-overview, §8 30-day action matrix, §9 needs-data |
-
-This design was hardened by a research + adversarial-review pass (千帆 schema research, codebase-wiring verification, and skeptical critique). The scope cut below (Phase 1a vs 1b) is the critique's recommended cut-line: ship the root-cause fix and the single most decision-relevant new number (退款后GMV) first; defer the highest-risk subsystem (tagging) and speculative ingest to 1b.
 
 ## Goals (Phase 1a)
 
-- Make **every** task capable of emitting the full 8-element report contract, and enforce it for STRONG/MEDIUM findings. This alone fixes the "thin report" root cause.
-- Add three small, pure, reusable analytic helpers used by all later phases: refund adjustment, period-aware trends, and honest small-sample confidence.
-- Add first-class ingestion for an optional **`refunds`** export and a **退款后GMV** (`sku_net_gmv`) mart.
-- Add an optional **`note_commerce`** table (per-note 商品点击 / 笔记GMV / 支付订单数) joined into the existing `note_metrics` view.
-- Establish the **period/time dimension** that §2 trends and §0 summary depend on.
-- Keep everything **gracefully degrading**: missing table/column → the module degrades and says what to export next, never crashes.
+- **Ingest the real export losslessly and correctly**: each of the 9 tabular files lands in its own typed table with stable canonical column names; multiple files of one type merge on a grain key (row-disjoint files union, column-view files coalesce); no silent overwrite; no double-count; no misclassification.
+- **Report contract**: every task *can* emit all 8 elements; STRONG/MEDIUM findings are *required* to.
+- **Shared helpers**: period (int-YYYYMMDD & timestamp), refund-rate/net-gmv, trends, honest small-sample confidence.
+- **Graceful degradation**: PNG-only domains (退款原因, 人群画像) surface as explicit needs-data, never crash. `xhs-ca run all` succeeds on any subset of the export.
 
 ## Non-Goals (deferred)
 
-- The **title-tag classifier** and its config, auto-suggest, and fractional-attribution rollup → **Phase 1b**.
-- `search_terms`, `audience_profile`, `shop_page_funnel` ingestion → **Phase 1b** (ingest-only stubs), consumed in **Phase 4**.
-- The **note-GMV provenance resolver** and the note-commerce ↔ `note_sku_links` attribution-model decision → **Phase 2** (where it is consumed). Phase 1a only *ingests* `note_commerce` and joins it into the view.
-- Per-product **加购人数** (`add_to_cart_users`) ingestion → **Phase 3** (where the A/B/C C-tier consumes it). Not on any note table.
-- Any new analysis **task/registry entry**. Phase 1a changes the ingestion/mart/renderer substrate only; the first consuming task is Phase 2.
+- Any new **analysis task / §3–§7 module** — Phase 1a lands data + substrate only; first consuming task is Phase 2.
+- **Title-tag classifier** (上新/兴安岭/鱼盘 …) → Phase 2. (Note: §4 SKU grouping does **not** need it — 规格明细 ships `一级/二级品类`.)
+- **OCR of PNG exports** (退款原因, 人群画像) → later; Phase 1a only emits the needs-data signal + a manual-entry path.
+- **note-GMV attribution model** (platform-direct `note_gmv` vs `note_sku_links` weighting) → Phase 2. Phase 1a ingests `note_gmv` as a first-class column; `note_sku_links` stays.
+- Keeping full parity with the legacy **per-order `orders` path** is out of scope to *change*; it remains as-is for users who have per-order CSVs (compatibility), and marts prefer whichever source is present.
 
 ## Current architecture fit
 
-The change follows the existing pipeline and touches no new reporting path:
+Pipeline: `xhs-ca build <files>` → `importing.profile`/`mapping` (guess type + field map) → `db.build` (base tables + marts/views) → `analysis.registry` tasks → `reporting.markdown`/`html`.
 
-1. `xhs-ca build <files>` → `importing.mapping` guesses table type + normalizes columns.
-2. `db.build` writes DuckDB base tables and derived marts/views.
-3. `analysis.registry` exposes task IDs; modules return `AnalysisResult` / `Finding`.
-4. `reporting.markdown` / `reporting.html` render findings, tables, caveats, actions.
-
-Verified anchors (from codebase-wiring pass):
-
-- `note_metrics` is a **VIEW** over `notes` (`db/marts.py:30-59`), built conditionally at `db/build.py:39-40`; `daily_sku_sales` is a derived **TABLE** (`db/build.py:208-252`). → we cannot "add columns to `note_metrics`"; a new base table is required.
-- `TABLE_SIGNATURES` (`importing/mapping.py:11-33`) drives table-type guessing and auto-registers drop/refresh (`build.py:47-52`).
-- `FIELD_ALIASES` is per-table `{table: {canonical_col: {aliases}}}` (`mapping.py:35-98`); `_canonical_column_name` scans **all** tables' aliases globally, first-match wins (`mapping.py:151-158`) — new tables must disambiguate on table-unique columns.
-- Pydantic validation is wired **only for `orders`** (`build.py:34-35`, `normalize.py:119-137`); other tables load via raw projection. New tables may skip Pydantic.
-- **PyYAML is already a dependency** (`pyproject.toml:11`, used in `importing/wizard.py`). Config uses YAML; no new dependency.
-- `Finding` / `AnalysisResult` live in `analysis/result.py:6-23`; markdown render loop `reporting/markdown.py:39-64`; HTML `_finding_view`/`_result_view` `reporting/html.py:410-439`; Jinja finding card `reporting/templates/report.html.j2:863-897`.
+Verified anchors: `TABLE_SIGNATURES`/`FIELD_ALIASES` per-table (`mapping.py:11-98`); `guess_table_type` scores `|signature ∩ observed| / |signature|`, threshold 0.25 (`mapping.py:106-118`); `_canonical_column_name` is a **global first-match** scan across all tables' aliases (`mapping.py:151-158`) — the fragility behind the misclassifications. Loader keeps all columns (`_projected_frame` `build.py:94-102`, `_projected_columns` `:159-177`). Pydantic only for `orders` (`build.py:34,129-143`). PyYAML already a dep (`pyproject.toml:11`). `note_metrics` is a VIEW (`marts.py:30-59`); `daily_sku_sales` a derived TABLE guarded on `orders` (`build.py:208-252`).
 
 ---
 
-## Section A — Report contract & renderer fix (fixes root cause #1)
+## Section A — Ingestion robustness (the foundation)
 
-**Do this first and independently.** It has zero new-data dependencies and unlocks every later phase; without it, richer data still renders as a thin report.
+### A.1 Table-scoped classification (fixes misclassification)
 
-### A.1 Extend the result types
-
-`analysis/result.py`:
+Replace the global-canonicalization guesser with a **table-scoped** one: for each candidate table, score how many of *that table's* signature columns match the file's columns under *that table's own* aliases.
 
 ```python
-@dataclass
-class Finding:
-    title: str
-    conclusion: str
-    evidence_strength: EvidenceStrength
-    key_numbers: dict[str, object] = field(default_factory=dict)
-    caveats: list[str] = field(default_factory=list)
-    recommended_action: str | None = None
-    evidence_reason: str | None = None
-    confounders: list[str] = field(default_factory=list)   # NEW — was jammed into caveats
-    next_test: str | None = None                           # NEW
-    appendix: str | None = None                            # NEW — SQL/methodology or output-file pointer
-
-@dataclass
-class AnalysisResult:
-    task_id: str
-    title: str
-    findings: list[Finding]
-    tables: dict[str, list[dict[str, object]]] = field(default_factory=dict)
-    limitations: list[str] = field(default_factory=list)
-    subsections: list["Subsection"] = field(default_factory=list)   # NEW
-    named_examples: list[dict[str, object]] = field(default_factory=list)  # NEW
+def guess_table_type(profile):
+    scores = {t: _table_scoped_hits(profile.columns, t) / len(sig)
+              for t, sig in TABLE_SIGNATURES.items()}
+    best, score = max(scores.items(), key=lambda kv: kv[1])
+    runner_up = sorted(scores.values(), reverse=True)[1] if len(scores) > 1 else 0.0
+    if score < MIN_TABLE_CONFIDENCE:
+        raise ValueError(...)                      # UNCLASSIFIED → caught by loader → needs-data (Section F)
+    if score - runner_up < MARGIN:                 # ambiguous → warn + record, don't guess silently
+        ...
+    return best
 ```
 
-`Subsection` is a small dataclass `(title: str, body: str | None, table_name: str | None, findings: list[Finding])` so one section (e.g. §3) can carry a tag table **and** 图文vs视频 **and** named weak notes in one `AnalysisResult`.
+`_table_scoped_hits` matches each signature column against the file using that table's `FIELD_ALIASES[table]` only. This removes the "支付金额 globally canonicalizes to orders.paid_amount" class of bug and lets each new table define clean canonical names without cross-table collision. `MARGIN` (start 0.15) surfaces genuinely ambiguous files instead of silently picking one.
 
-### A.2 Render the contract elements
+### A.2 Merge on grain key (fixes both data loss *and* double-counting)
 
-The HTML report is the canonical rich deliverable and must render **all 8** elements. Markdown (`all.md`) is the terse operator digest and renders the **7 operator-facing** elements — everything except `evidence_reason` ("why"), which stays **HTML-only** by the existing deliberate design (do not "fix" `markdown.py` to emit it; `test_render_markdown_does_not_render_html_only_evidence_reason` must stay green).
+Multiple input files classify to one `table_type` in two different shapes, and they need **different** combine semantics — so the rule is **merge on a declared grain key with column coalesce**, not blind append:
 
-- `reporting/markdown.py:39-64`: `key_numbers` is **already rendered** (`:50-54`); add `confounders` (list, like `caveats`), `next_test` (scalar, like `recommended_action`), and an `appendix` pointer. After the finding loop, render `subsections` (mirror the `limitations` block at `markdown.py:34-38`) and `named_examples`. Do **not** add `evidence_reason`.
-- `reporting/html.py`: add `confounders`, `next_test`, `appendix` to `_finding_view` (`:424-439`) — `evidence_reason` is already wired (`html.py:768`); add `subsections`, `named_examples` to `_result_view` (`:410-421`). `next_test` already has a `_FIELD_LABELS` entry (`html.py:94`).
-- `reporting/templates/report.html.j2:863-897`: add `{% if finding.confounders %}` / `{% if finding.next_test %}` / `{% if finding.appendix %}` guarded blocks copying the `caveats` / `recommended_action` markup; add a `subsections` loop in the result block.
+- **Row-disjoint files** (notes×3 — different `note_id`s; search terms across pages): the key groups don't overlap, so coalesce-on-key reduces to a plain union. Correct, no double-count.
+- **Column-view files of one grain** (核心汇总 + 成交/经营概览-all all cover the **same 91 daily dates**, differing only in *which columns* they carry): naive append would emit two rows per `date` and **double-count GMV**. Coalesce-on-key merges them into one wide daily row (each column filled from whichever file has it).
 
-### A.3 Anti-filler enforcement (the important part)
+Mechanism (in the loader, before DuckDB load): stage every file of a type as a canonical-named frame, `concat`, then group by the type's **grain key** and coalesce each column to its first non-null value. Load the merged frame with `CREATE TABLE <type> AS …` (one CREATE per type, so no overwrite). Grain keys:
 
-- **Omit absent fields** — never print "confounders: 无" / "N/A". Empty list / None → nothing renders.
-- Add a **contract test** (`tests/test_report_rendering.py`): for a fully-populated `Finding`, all **8** elements appear in the **HTML** output, and the **7** operator-facing elements (all but `evidence_reason`) appear in the **markdown** output. The existing `test_render_markdown_does_not_render_html_only_evidence_reason` (`:38`) stays green.
-- Add a **contract guard** (unit-tested helper `contracts/finding_contract.py`): a `Finding` with `evidence_strength ∈ {STRONG, MEDIUM}` **must** have non-empty `confounders` and `next_test`, else the guard raises in tests (so future tasks can't regress to one-liners). WEAK / NOT_JUDGABLE are exempt (they legitimately have less to say).
+| type | grain key |
+|---|---|
+| `business_overview_daily` | `date` |
+| `sku_performance` | `sku_id` |
+| `notes` | `note_id` |
+| `search_overview` | `(date, carrier)` |
+| `search_terms` | `search_term` |
+| `shop_page_funnel` | `(date, audience_type, first_purchase_cycle)` |
+| `shop_page_source` | `(date, audience_type, first_purchase_cycle, source_page)` |
+| `refund_overview` | `(stat_period, account_name, carrier)` |
+| `traffic_source` | `(xhs_id, channel, note_type)` |
 
-### A.4 Report labels
+- **Conflict handling**: if two files supply *different* non-null values for the same key+column (e.g. both overview files carry `gmv` for a date and they differ beyond `REFUND_RECONCILE_TOLERANCE`), coalesce keeps the first-loaded and emits a **data-quality caveat** naming both files; identical/within-tolerance values merge silently.
+- **Provenance**: the build logs which files contributed to each table (for needs-data/data-quality reporting) rather than stamping a per-row `source_file`, since a merged row can blend files.
+- `_drop_refresh_objects` (`build.py:47-52`) already drops all `TABLE_SIGNATURES` types up-front, so a rebuild starts clean; the loader change is "gather files by type → merge-on-key → one CREATE" instead of "CREATE per file."
 
-Add Chinese labels for the new fields to `reporting/labels.py` / `_FIELD_LABELS`:
-`confounders: 可能的混淆因素`, `next_test: 下一步验证`, `appendix: 方法与附录`.
+### A.3 Canonical naming conventions
+
+New tables use English canonical names so marts/tasks reference stable identifiers. Conventions:
+
+- **Channel split**: base name for the total; `note_` / `card_` prefix for 笔记 / 商卡 variants (`note_gmv`, `card_gmv`).
+- **Refund caliber**: suffix `_pay` for 支付时间, `_refundtime` for 退款时间. Rates exist **only** in 支付时间 → `refund_rate_pay` (no 退款时间 rate exists; open item resolved).
+- **Ship stage**: `pre_ship_` / `post_ship_`.
+- **Rate denominator**: keep platform's `_pv` / `_uv` suffix where the header carries it.
+
+Full alias maps live in the per-table data-contract docs (`references/data_contract/<table>.md`) and are **validated by tests against the real headers** (§ Testing). The spec fixes intent + distinctive signatures; exact tuples are asserted in code.
 
 ---
 
-## Section B — Shared analytic helpers (`analytics/`)
+## Section B — The 9 tabular table types
 
-Three focused modules, each < 150 lines, one job, fully unit-tested. They hold **no I/O** — pure functions over numbers — so later phases compose them freely.
+Each new type: grain, **distinctive signature** (columns unique enough to beat other types), and the key canonical columns. `notes` is *enriched*, not replaced.
 
-### B.1 `analytics/refund_adjust.py`
+### B.1 `business_overview_daily` — from 核心汇总(21) + 成交/经营概览-all(58), merge on `date`
+- Grain: one row per `date` (`时间` int YYYYMMDD → kept raw, converted in mart). The 2–3 source files are column-views of this same daily grain → coalesce-on-`date` (A.2).
+- Signature: `{date, gmv, paid_orders, paid_buyers, aov}` (present in both variants; overview scores ~1.0, calendar_events ~0.25).
+- Key cols: `gmv/note_gmv/card_gmv`, `paid_orders(+note_/card_)`, `paid_buyers`, `product_visitors`, `aov`, `paid_units`, `pay_conversion(+_pv/_uv)`, `add_to_cart_users/add_to_cart_units`, refund block `refund_amount_pay/refund_rate_pay/refund_orders_pay`, `pre_ship_refund_rate_pay/post_ship_refund_rate_pay`, **`net_gmv_pay`** (退款后支付金额), `refund_amount_refundtime`; core-21 extras `total_visitors/total_pv/product_click_rate_pv/new_add_to_cart_users/refund_order_share_refundtime`.
 
-```python
-def net_gmv(gmv: float | None, refund: float | None) -> float | None      # gmv - refund, None-safe
-def refund_rate(refund_amount, gmv) -> float | None                        # None if gmv <= 0
-def refund_order_rate(refund_orders, orders) -> float | None
-```
+### B.2 `sku_performance` — from 规格明细, per-SKU (§4 source)
+- Grain: one row per `sku_id` (`规格ID`), whole-period aggregate (no date col).
+- Signature: `{sku_id, net_gmv_pay, refund_rate_pay, add_to_cart_users}` → scores 1.0; a real `skus` **catalog** (has `price`) still prefers `skus`.
+- Key cols: `sku_id, sku_name, product_id, product_name, is_channel_product, barcode, category_l1(一级品类), category_l2(二级品类), brand, add_to_cart_users, add_to_cart_units, wishlist_users, gmv, paid_buyers, paid_orders, paid_units, aov, refund_amount_pay, refund_rate_pay, refund_orders_pay, pre_ship_refund_rate_pay, post_ship_refund_rate_pay,` **`net_gmv_pay`** (退款后支付金额), refundtime block.
+- **退款后GMV is given by the platform** — ingest the column; no computation. Optional cross-check mart (E.4).
 
-Divide-by-zero / None → `None` (renders as "分母不足", matching `ad_metrics` convention).
+### B.3 `notes` — ENRICH existing, from 商品笔记数据 ×3, merge on `note_id`
+- The 3 files are row-disjoint note sets → coalesce-on-`note_id` reduces to a union (no double-count; dedups if they overlap). Already classifies 6/6; keep signature. **Add aliases** so the 30 un-canonicalized cols get stable names:
+  `note_type`(笔记类型 图文/视频), `related_product_id/related_product_name`, `video_seconds`, `note_gmv`(笔记支付金额), `note_paid_orders`, `note_paid_buyers`, `product_clicks`(笔记商品点击次数), `product_click_rate_pv`, `product_click_users`, `pay_conversion_pv/_uv`, `note_refund_amount_pay`, `note_refund_rate_pay`, `note_refund_orders_pay`, `add_to_cart_units`, `to_shop_home_count/_gmv`, `to_live_count/_gmv`, `follow_clicks`, `danmu_count`, `avg_read_seconds`, `completion_rate_pv`. (Existing: `title, note_id, publish_time`(笔记创建时间)`, reads, likes, collects, comments, shares`.)
 
-### B.2 `analytics/periods.py`  (the missing time dimension)
+### B.4 `search_overview` — from 搜索总览数据, daily×载体
+- Signature: `{date, carrier, card_impression_users, product_click_rate, pay_conversion}` (载体+商卡曝光人数 distinctive).
+- Cols: `date, carrier(载体 商卡/笔记), gmv, paid_orders, paid_buyers, card_impression_users(商卡曝光人数), product_click_users, product_click_rate, pay_conversion`.
 
-**Decision:** treat all 千帆-exported timestamps as **Asia/Shanghai wall-clock** and bucket **naively** — explicitly do **not** apply any UTC conversion (this sidesteps DuckDB's ICU-extension requirement and is correct because 千帆 exports local time).
+### B.5 `search_terms` — from 搜索词数据, per-term
+- Signature: `{search_term, card_impression_users, product_click_rate, pay_conversion}` (`search_term` unique → clean).
+- Cols: `search_term(搜索词), gmv, paid_orders, paid_buyers, card_impression_users, product_click_users, product_click_rate, pay_conversion`.
 
-```python
-def to_period_month(ts) -> str | None          # 'YYYY-MM' from a naive local timestamp
-def month_bounds(period_month: str) -> tuple[date, date]
-```
+### B.6 `shop_page_funnel` — from 店铺页转化漏斗, daily×人群×首购周期
+- Signature: `{shop_visitors, shop_payers, first_purchase_cycle}` (店铺页访问人数+首购周期 distinctive).
+- Cols: `date, audience_type(人群类型 新客/老客), first_purchase_cycle(首购周期), shop_visitors, product_click_users, shop_payers, visit_click_rate, click_pay_rate, visit_pay_rate`.
 
-Plus a SQL helper in `db/sql_helpers.py`: `period_month_expr(col) -> "strftime(col, '%Y-%m')"` (no `AT TIME ZONE`). Document the assumption in `references/metric_definitions.md`.
+### B.7 `shop_page_source` — from 店铺页进店来源, daily×人群×来源
+- Signature: `{source_page, shop_visitors, enter_pay_rate}` (`source_page` 来源页面 distinctive).
+- Cols: `date, audience_type, first_purchase_cycle, source_page(来源页面), shop_gmv, shop_visitors, enter_pay_rate, gmv_per_user(人均支付金额)`.
 
-### B.3 `analytics/trends.py`
+### B.8 `refund_overview` — from 退款分析概览, period×载体 structure
+- Signature: `{carrier, pre_ship_refund_amount, return_refund_amount, refund_users}` distinctive.
+- Cols: `stat_period(统计时间), account_type, account_name, carrier(载体), refund_amount_pay, post_ship_refund_amount, shipped_refundonly_amount, pre_ship_refund_amount, return_refund_amount, refund_orders_pay, post_ship_refund_orders, shipped_refundonly_orders, pre_ship_refund_orders, return_refund_orders, refund_rate_pay, post_ship_refund_rate_pay, pre_ship_refund_rate_pay, return_refund_rate_pay, refund_users`.
+- Single-row period aggregate → feeds §7 refund **structure** (stage/type split), not per-SKU attribution.
 
-```python
-def pct_change(cur, prev) -> float | None
-def mom_change(series: list[tuple[str, float]]) -> list[dict]   # period, value, delta, pct, direction
-def direction_label(pct) -> str                                # 上升 / 下降 / 持平, plain language
-```
-
-### B.4 `analytics/confidence.py`  (honest statistics, not a parallel enum)
-
-**Constraint:** `evidence.py` already owns categorical strength via `score_evidence(...)`. `confidence.py` must **not** introduce a second strength enum. It returns **numbers** that *feed* `score_evidence`:
-
-```python
-def wilson_interval(k: int, n: int, z: float = 1.96) -> tuple[float, float]  # binomial proportion CI
-def min_n_guard(n: int, threshold: int) -> bool                              # False -> suppress/NOT_JUDGABLE
-def rate_band(lo: float, hi: float) -> str                                  # plain-language, e.g. "约 12%–18%"
-```
-
-Rules enforced by tests (thresholds are module-level named constants, tunable in one place):
-- `MIN_ORDERS_FOR_RATE = 30` — a rate on `n < 30` orders is **suppressed** (return NOT_JUDGABLE upstream, do not rank).
-- Rate comparisons report **CI overlap / non-overlap**, never a p-value (observational, confounded data → no significance claims).
-- The tool must not print "退款率 40%" on 5 orders without the interval — that is the "fake certainty" the contract forbids.
+### B.9 `traffic_source` — from 商品笔记-账号流量数据列表, account×渠道×笔记类型
+- Signature: `{xhs_id, channel, product_clicks, product_click_users}` (小红书号+渠道 distinctive).
+- Cols: `xhs_id(小红书号), account_name, channel(渠道), note_type(笔记类型), gmv, paid_orders, paid_buyers(支付人数), product_clicks, product_click_users, pay_conversion_pv, pay_conversion_uv`.
 
 ---
 
-## Section C — Refunds ingestion + 退款后GMV mart
+## Section C — Report contract & renderer fix
 
-### C.1 Standard table `refunds` (optional)
+Unchanged intent from the prior design; still required (root cause #2). Ship independently of ingestion.
 
-One row per refund event, at the finest grain the export provides.
+### C.1 Result types (`analysis/result.py`)
+Add to `Finding`: `confounders: list[str] = []`, `next_test: str | None = None`, `appendix: str | None = None`. Add to `AnalysisResult`: `subsections: list[Subsection] = []`, `named_examples: list[dict] = []`. `Subsection = (title, body, table_name, findings)` so one §-module can carry a rollup table + sub-analyses + named examples.
 
-Required:
-- `refund_id`
-- `refund_amount`
-- **at least one of** `{order_id, sku_id}` **non-null** (join-key requirement — otherwise the row cannot attribute and would silently undercount 退款后GMV)
+### C.2 Rendering
+- HTML is canonical rich output → renders **all 8** elements. Markdown (`all.md`) renders the **7** operator-facing (all but `evidence_reason`, which stays HTML-only; `test_render_markdown_does_not_render_html_only_evidence_reason` stays green).
+- `markdown.py:39-64`: `key_numbers` already rendered (`:50-54`); add `confounders`, `next_test`, `appendix`; render `subsections`/`named_examples` after the finding loop.
+- `html.py`: add `confounders/next_test/appendix` to `_finding_view` (`:424-439`) — `evidence_reason` already wired (`:768`); add `subsections/named_examples` to `_result_view` (`:410-421`).
+- `report.html.j2:863-897`: guarded blocks + `subsections` loop.
+- Labels (`reporting/labels.py`): `confounders: 可能的混淆因素`, `next_test: 下一步验证`, `appendix: 方法与附录`.
 
-Optional:
-- `order_id`, `sku_id`, `note_id`
-- `refund_time`
-- `refund_reason` (free text / enum value; see C.3)
-- `refund_stage` — `发货前` / `发货后`
-- `minutes_to_refund` (for the "30 分钟内退款" cut)
-- `carrier` — `商卡` / `笔记` (成交渠道 the refund is attributed to)
-- `refund_type` — `仅退款` / `退货退款`
-- `refund_caliber` — `支付时间口径` / `退款时间口径` (千帆 reports both; keep distinct, never alias together)
-- `raw_file`, `raw_row_id`
-
-### C.2 Import & mapping
-
-Add to `TABLE_SIGNATURES` (`mapping.py:11-33`), leaning on refunds-unique columns so `订单号` doesn't collide with `orders`:
-
-```python
-"refunds": {"refund_id", "refund_amount", "refund_reason_optional", "order_id", "sku_id_optional"},
-```
-
-Add `FIELD_ALIASES["refunds"]`. Confidence tags: **[G]** = ground-truth from the PiGoo report, **[C]** = platform-confirmed vocabulary, **[I]** = inferred, **confirm against one real export before trusting [I]**:
-
-```text
-refund_id:        退款单号, 售后单号, 退款id                      # [I]
-order_id:         订单号, 订单编号, 订单id                        # [C]
-sku_id:           规格id, 规格ID, skuid                           # [C]
-note_id:          笔记id, 笔记ID                                  # [C]
-refund_amount:    退款金额, 退款总金额, 成功退款金额              # [G]
-refund_time:      退款时间, 售后完成时间                          # [I]
-refund_reason:    退款原因, 售后原因                              # [C]
-refund_stage:     发货前退款, 发货后退款  (→ 发货前/发货后)       # [G]
-minutes_to_refund: 支付后退款时长, 支付到退款分钟数              # [I]
-carrier:          退款渠道, 成交渠道  (商卡/笔记)                 # [G]
-refund_type:      仅退款, 退货退款  (→ refund_type value)         # [C]
-refund_caliber:   退款率口径  (支付时间口径/退款时间口径)         # [G]
-```
-
-`refund_reason` values are **row values, not headers** — register the canonical enum in `references/xhs_glossary.md`, not as alias keys:
-`多拍/拍错/不想要 · 尺寸/款式没选对 · 与商家协商一致退款 · 商品价格问题 · 快递/物流一直未送到 · 缺货 · 商家发错货 · 做工粗糙/有瑕疵 · 退运费 · 其他`.
-
-Refunds load via the **raw projection path** (no Pydantic required). Optional: add a `Refund` schema + `normalize_refund_rows` later if validation is wanted (copy `OrderLine` / `normalize_order_rows`).
-
-### C.3 Reconciliation with existing order-level refund flag
-
-`daily_sku_sales` already nets out in-line refunds via `orders.refund_status_optional` (`build.py:217-236`). With a dedicated `refunds` table there are **two** refund sources. Rule:
-
-- When a `refunds` table is present, it is **authoritative** for refund **amount / reason / timing**. The order-level flag is used only for a **cross-check**, never summed on top (prevents double-counting).
-- Emit a **reconciliation caveat** when total refund amount from the two sources differs by more than `REFUND_RECONCILE_TOLERANCE` (0.05), telling the operator which export to trust.
-
-### C.4 Mart `sku_net_gmv` (退款后GMV)
-
-Derived TABLE (register in `_DERIVED_TABLES`, `build.py:21`; guarded call after `build.py:42`):
-
-```text
-sku_net_gmv(sku_id, period_month, gmv, refund_amount, net_gmv, refund_rate,
-            refund_join_coverage)
-```
-
-- `net_gmv = gmv - COALESCE(refund_amount, 0)` via LEFT JOIN `refund_by_sku`.
-- `refund_join_coverage` = share of refund amount that resolved to a SKU. **Low coverage downgrades evidence** in any consuming task, and the number is surfaced ("退款关到 SKU：82%").
-- Companion marts: `refund_by_sku`, `refund_by_reason`, `refund_by_note` (all guarded on `refunds` presence, all None-safe via `db/sql_helpers.numeric_expr`).
+### C.3 Anti-filler enforcement
+- Omit absent fields (empty/None → nothing; never "N/A"/"无").
+- Contract test: fully-populated Finding → all 8 in HTML, 7 in markdown.
+- Contract guard (`contracts/finding_contract.py`, unit-tested): STRONG/MEDIUM Finding **must** have non-empty `confounders` and `next_test`, else raise. WEAK/NOT_JUDGABLE exempt.
 
 ---
 
-## Section D — `note_commerce` optional table
+## Section D — Shared analytic helpers (`analytics/`)
 
-Per the architecture fact that `note_metrics` is a view, per-note commerce lands in a **new base table**, LEFT JOIN-ed into the `note_metrics` view (columns are NULL when the table is absent — graceful degradation, `notes` stays stable).
+Pure, no-I/O, < 150 lines each, fully unit-tested.
 
-### D.1 Table `note_commerce` (optional)
-
-Required: `note_id`. Optional: `product_clicks`, `note_gmv`, `note_orders`, `period_month`, `raw_file`, `raw_row_id`.
-
-Aliases:
-
-```text
-note_id:        笔记id, 笔记ID                                   # [C]
-product_clicks: 商品点击, 商品点击量, 商品点击人数                # [C/I]
-note_gmv:       笔记支付金额, 笔记GMV, 内容支付金额, 笔记成交金额  # [G]
-note_orders:    支付订单数, 支付订单量, 成交订单数                # [C/G]
-```
-
-Signature: `{"note_id", "note_gmv", "product_clicks", "note_orders"}`.
-
-### D.2 View join
-
-Extend `create_note_metrics_view` (`marts.py:30-59`) to `LEFT JOIN note_commerce USING (note_id)` **only when the table exists**, exposing `product_clicks`, `note_gmv`, `note_orders`, plus null-safe derived `click_to_order = note_orders / product_clicks` and `gmv_per_click = note_gmv / product_clicks`. When `note_commerce` is absent, these columns are NULL and every existing `if 'x' in columns` guard still passes.
-
-**Explicitly deferred to Phase 2:** the note-GMV **provenance resolver** (prefer platform-direct `note_commerce.note_gmv` = STRONG-eligible; fall back to `note_sku_links` `confidence`/`link_type`-weighted attribution = WEAK/MEDIUM) and the decision of how §3 blends the two. `note_commerce` and `note_sku_links` are **complementary, not substitutes** — note-level GMV vs note→SKU attribution — and `note_sku_links` is not deprecated.
+- **`periods.py`**: `to_period_month(v)` accepting int `YYYYMMDD` (real daily tables) **and** timestamp strings (`笔记创建时间`); `month_bounds`. Timestamps are Asia/Shanghai wall-clock, bucketed naively — **no UTC/tz conversion** (千帆 exports local time; int dates carry no tz). SQL helper `period_month_expr(col)` handling both int and date/timestamp.
+- **`refund_adjust.py`**: `net_gmv(gmv, refund)`, `refund_rate(refund_amount, gmv)`, `refund_order_rate(...)`; None/÷0 → None ("分母不足"). Used mainly as a **cross-check** since the platform ships `net_gmv_pay`/`refund_rate_pay`.
+- **`trends.py`**: `pct_change`, `mom_change(series)` → per-period delta/pct/direction, `direction_label` (上升/下降/持平).
+- **`confidence.py`** (numbers feeding `evidence.py`, not a parallel enum): `wilson_interval(k,n)`, `min_n_guard(n)` with `MIN_ORDERS_FOR_RATE = 30` → below it a rate is NOT_JUDGABLE and unranked, `rate_band(lo,hi)` plain-language. Comparisons report **CI overlap/non-overlap**, never a p-value (observational data).
 
 ---
+
+## Section E — Marts
+
+- **E.1 `business_overview_monthly`**: roll `business_overview_daily` to `period_month`. Sum extensives (gmv, orders, buyers, units, refund amounts). Recompute a rate **only where both its numerator and denominator survive as daily columns** (e.g. `aov = Σgmv/Σorders`, `refund_rate_pay = Σrefund_amount_pay/Σgmv`); for rates whose denominator isn't a daily column (e.g. a UV-based conversion with no daily UV count), omit the rate at monthly grain rather than averaging daily rates. Feeds §2 MoM / §0. Guarded on the daily table's presence.
+- **E.2 `note_metrics` view enrichment** (`marts.py:30-59`): expose the new note commerce/refund/type columns + null-safe derived `click_to_order = note_paid_orders / product_clicks`, `gmv_per_click = note_gmv / product_clicks`. Absent columns → NULL; existing `if 'x' in columns` guards still pass.
+- **E.3 `sku_performance`**: used directly (already per-SKU aggregate); no derived table required. Optional `category_l2` rollup mart for §4.
+- **E.4 Refund cross-check (optional, guarded)**: assert `abs((gmv - refund_amount_pay) - net_gmv_pay) / gmv < 0.01` per SKU/day; on mismatch beyond `REFUND_RECONCILE_TOLERANCE = 0.05`, emit a data-quality caveat naming the file. Prevents blind trust if a caliber is mixed up.
+- All marts null-safe via `db/sql_helpers.numeric_expr`; every mart guarded on its source table via `_existing_tables`.
+
+---
+
+## Section F — Graceful degradation & needs-data
+
+- **UNCLASSIFIED files** (below `MIN_TABLE_CONFIDENCE`) and **PNG-only domains** (退款原因, 人群画像) do not crash the build. The loader wraps each file's `guess_table_type` in try/except: a raised `ValueError` (or an ambiguous-margin flag from A.1) is **caught and converted to a needs-data record** — domain name (or "未识别文件"), what's missing, and the manual-entry path — never re-raised. The build continues with the remaining files.
+- Provide an optional **manual-entry CSV** convention for the two PNG domains: `references/data_contract/refund_reasons.md` and `audience_profile.md` define a tiny hand-fillable schema (e.g. `refund_reason, refund_amount, refund_orders`); if the operator supplies it, it ingests like any table; if not, §7-reasons / §6-audience emit NOT_JUDGABLE with "请手工录入 / OCR".
+- `xhs-ca run all` must succeed on **any subset** of the 12 files (0..N present).
 
 ## Evidence strength rules
 
-Reuse `EvidenceStrength` / `score_evidence`. Phase 1a adds these provenance/quality inputs (thresholds are named constants):
-
-- **Refund join coverage** below `LOW_JOIN_COVERAGE = 0.70` → downgrade any 退款后GMV / refund-rate finding one level and state coverage.
-- **Small sample** (`min_n_guard` False, i.e. `n < MIN_ORDERS_FOR_RATE`) → NOT_JUDGABLE, do not rank; emit "样本太小，暂不判断".
-- **Rate figures** carry a Wilson interval; conclusions phrased as bands, not point certainties.
-- **Reconciliation mismatch** between refund sources beyond `REFUND_RECONCILE_TOLERANCE = 0.05` → add a caveat and cap at MEDIUM.
+Reuse `EvidenceStrength`/`score_evidence`. Inputs added (named constants): small sample (`n < MIN_ORDERS_FOR_RATE`) → NOT_JUDGABLE; rate figures carry a Wilson band; refund cross-check mismatch > `REFUND_RECONCILE_TOLERANCE` → caveat + cap MEDIUM; a table assembled from a **single** month/file when trends are claimed → cap MEDIUM and state coverage.
 
 ## Report changes
 
-- New field labels (A.4): 可能的混淆因素 / 下一步验证 / 方法与附录.
-- New metric labels: `net_gmv: 退款后GMV`, `refund_rate: 退款率`, `refund_join_coverage: 退款关联覆盖率`, `click_to_order: 点击到订单`, `gmv_per_click: 每次点击GMV`, `note_gmv: 笔记支付金额`.
-- No new report *sections* in Phase 1a (no new task). The substrate is exercised by existing tasks gaining fuller findings via Section A, and by Phase 2+ tasks.
+- New Finding labels (C.2). New metric labels: `net_gmv_pay: 退款后GMV`, `refund_rate_pay: 退款率(支付时间)`, `click_to_order: 点击到订单`, `gmv_per_click: 每次点击GMV`, `note_gmv: 笔记支付金额`, `category_l2: 二级品类`, `add_to_cart_users: 加购人数`.
+- No new report **sections** in 1a (no new task). Substrate is exercised by existing tasks via Section C and by Phase 2+.
 
 ## CLI & task menu
 
-No public-surface change. `xhs-ca build <files...>` auto-detects `refunds` and `note_commerce` by signature (`cli.py:18-31`). `xhs-ca run all` must continue to succeed when neither optional table is present.
+No public-surface change. `xhs-ca build <files...>` (or a whole folder) auto-detects and appends all recognized files; unrecognized/PNG → needs-data. `xhs-ca run all` succeeds on any subset.
 
 ## Testing strategy
 
-- `tests/test_report_rendering.py` — all-8-elements contract test; STRONG/MEDIUM contract-guard test; omit-when-empty test (no "N/A" filler).
-- `tests/test_mapping.py` — `guess_table_type` detects `refunds` and `note_commerce`; alias mapping including collision cases (`订单号` stays with `orders`).
-- `tests/test_duckdb_build.py` — build imports `refunds` / `note_commerce`; `sku_net_gmv`, `refund_by_*` marts; `note_metrics` view gains commerce columns; **`all` succeeds with the optional tables absent**.
-- New `tests/test_analytics_helpers.py` — `refund_adjust`, `periods` (naive Asia/Shanghai month bucketing; no UTC shift across month lines), `trends`, `confidence` (Wilson interval known values, min-n suppression).
-- Reconciliation test — refunds table vs `orders.refund_status_optional` disagreement emits a caveat and does not double-count.
-
-Fixtures: `tests/fixtures/refunds.csv` (with reason / stage / carrier / minutes columns, and a row missing `sku_id` but having `order_id` to exercise the join-key rule), `tests/fixtures/note_commerce.csv`.
+- `tests/test_mapping.py` — table-scoped `guess_table_type` returns the correct type for **each of the 9 real headers**; the ambiguous-margin path triggers on a crafted collision; catalog-`skus` still beats `sku_performance`.
+- `tests/test_duckdb_build.py` — **merge-on-key**: 2 disjoint note files → row count = sum (not last-wins); 2 overview variants over the **same dates** → **one row per date** (not doubled) with columns coalesced from both; a deliberate same-key/same-column conflict beyond tolerance → data-quality caveat; `business_overview_monthly`, enriched `note_metrics` present; an UNCLASSIFIED file → needs-data record, build still succeeds; **`run all` green with any subset incl. empty**.
+- `tests/test_report_rendering.py` — all-8 (HTML) / 7 (markdown) contract test; STRONG/MEDIUM guard; omit-when-empty.
+- `tests/test_analytics_helpers.py` — `periods` (int-YYYYMMDD & ts, no month-boundary tz shift), `refund_adjust`, `trends`, `confidence` (Wilson known values, min-n suppression).
+- **Fixtures derived from the real headers** (anonymized, few rows each): `business_overview_daily.csv` (both variants), `sku_performance.csv`, `notes_commerce.csv`, `search_overview.csv`, `search_terms.csv`, `shop_page_funnel.csv`, `shop_page_source.csv`, `refund_overview.csv`, `traffic_source.csv`. Header text must match the real export exactly (incl. `（支付时间）` full-width parens) so alias tests are meaningful.
 
 ## Rollout plan
 
-1. Section A: extend `Finding`/`AnalysisResult`, renderers, labels, contract test + guard. **(ship-able alone)**
-2. Section B: `analytics/refund_adjust.py`, `periods.py`, `trends.py`, `confidence.py` + unit tests.
-3. Section C: `refunds` signature + aliases; enum in glossary; raw load; `refund_by_*` + `sku_net_gmv` marts; reconciliation caveat.
-4. Section D: `note_commerce` signature + aliases + raw load; extend `note_metrics` view.
-5. Update `references/data_contract/` (add `refunds.md`, `note_commerce.md`; note the period assumption in `metric_definitions.md`).
-6. Fixtures + regression tests; `xhs-ca run all` green with and without optional tables.
-7. Sync bundled skill assets (`sync-runtime`) after source changes.
+1. **Section C** (renderer + contract) — independent, ship first.
+2. **A.1 table-scoped guess** + **A.2 merge-on-grain-key** + per-type contributing-file provenance — the ingestion backbone; regression-test against the 9 real headers.
+3. **B.1–B.9** signatures + alias maps + data-contract docs.
+4. **D** helpers + unit tests.
+5. **E** marts.
+6. **F** needs-data + optional manual-entry schemas.
+7. Fixtures + full-subset regression; `references/data_contract/_index.md` updated; note the period assumption in `metric_definitions.md`; caliber note in `xhs_glossary.md`.
+8. `sync-runtime` after source changes.
 
 ## Phase 1a boundary
 
-Phase 1a is done when:
+Done when: building the **real 12-file export** yields 9 correctly-typed tables with canonical names (退款后GMV, per-note 商品点击率/退款率, 图文/视频, search, shop-funnel all queryable), notes×3 and overview×2 **merge on grain key** (no data loss, no double-count), PNG domains register needs-data, a fully-populated Finding renders all 8 (HTML)/7 (markdown), STRONG/MEDIUM without confounders+next_test fails a test, helpers are pure+tested, and `run all` succeeds on any subset. It does **not** add §3–§7 analysis, the title-tag classifier, or OCR — those are Phases 2–5.
 
-- A fully-populated `Finding` renders **all 8 contract elements**, and a STRONG/MEDIUM finding without `confounders`+`next_test` fails a test.
-- Importing a `refunds` export produces a **退款后GMV** number per SKU with a stated join-coverage, and importing a `note_commerce` export surfaces 点击到订单 / 每次点击GMV on `note_metrics`.
-- Every helper is pure and unit-tested; rate figures never over-claim on small samples.
-- `xhs-ca run all` still succeeds when refunds / note_commerce are absent.
+## Open items (mostly resolved by the real data)
 
-It does **not** add the title-tag rollup, any new report section, search/audience ingestion, or the attribution resolver — those are Phases 1b–5.
-
-## Open items to confirm
-
-- **[I]-tagged aliases** (`refund_id`, `refund_time`, `minutes_to_refund`, `product_clicks` UV vs count) should be checked against **one real 千帆 export** before release; the alias sets above include 2–3 variants each as a hedge.
-- **Refund-rate caliber**: default reporting caliber (支付时间口径, per the PiGoo report) — confirm this is the operator's preferred default.
+- **Caliber** — resolved: rates exist only in 支付时间; `_pay` is the default. Amounts keep both calibers.
+- **Time dimension** — resolved: `时间/日期` int YYYYMMDD, `笔记创建时间` local timestamp; no tz.
+- **Remaining to confirm at implementation**: whether the operator ever has a **per-order** export (keeps the legacy `orders` path relevant) or is fully aggregate-only; and the exact hand-entry schema for 退款原因 / 人群画像 that best matches how they read those screenshots.
