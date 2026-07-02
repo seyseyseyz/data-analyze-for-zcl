@@ -88,6 +88,9 @@ FIELD_ALIASES: dict[str, dict[str, set[str]]] = {
         "cpm": {"千次曝光成本", "CPM"},
         "conversions_optional": {"转化数", "成交人数", "转化人数"},
         "orders_optional": {"成交订单数", "订单数", "支付订单数"},
+        # 成交金额/支付金额 also alias orders.paid_amount; _canonical_column_name returns
+        # the first match by dict iteration order, so guess_table_type relies on the other
+        # ad-signature columns to disambiguate.
         "gmv_optional": {"成交金额", "GMV", "支付金额"},
         "roi_optional": {"ROI", "投产比"},
         "roas_optional": {"ROAS", "广告投产比"},

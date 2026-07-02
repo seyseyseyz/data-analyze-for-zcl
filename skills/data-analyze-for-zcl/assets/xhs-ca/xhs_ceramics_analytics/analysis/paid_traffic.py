@@ -2,7 +2,14 @@ from pathlib import Path
 
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.db.duck import connect
+from xhs_ceramics_analytics.db.sql_helpers import numeric_expr
 from xhs_ceramics_analytics.evidence import EvidenceStrength, score_evidence
+
+MIN_SPEND_FOR_ACTION = 100
+HIGH_ROAS_THRESHOLD = 3
+LOW_ROAS_THRESHOLD = 1
+LOW_CLICK_THRESHOLD = 20
+MIN_ACTIVE_DAYS_FOR_ACTION = 2
 
 
 def classify_budget_action(
@@ -16,11 +23,19 @@ def classify_budget_action(
         return "needs_data"
     if gmv is None or roas is None:
         return "needs_data"
-    if active_days < 2 and roas >= 3:
+    if active_days < MIN_ACTIVE_DAYS_FOR_ACTION and roas >= HIGH_ROAS_THRESHOLD:
         return "hold"
-    if spend >= 100 and roas >= 3 and gmv > 0:
+    if (
+        spend >= MIN_SPEND_FOR_ACTION
+        and roas >= HIGH_ROAS_THRESHOLD
+        and gmv > 0
+    ):
         return "increase"
-    if spend >= 100 and (clicks < 20 or gmv <= 0 or roas < 1):
+    if spend >= MIN_SPEND_FOR_ACTION and (
+        clicks < LOW_CLICK_THRESHOLD
+        or gmv <= 0
+        or roas < LOW_ROAS_THRESHOLD
+    ):
         return "reduce"
     return "hold"
 
@@ -98,10 +113,10 @@ def _efficiency_rows(con, source: str) -> list[dict[str, object]]:
     group_dimensions = ", ".join(str(index + 1) for index in range(len(dimensions)))
     group_clause = f"GROUP BY {group_dimensions}" if group_dimensions else ""
 
-    spend_expr = _numeric_expr(columns, "spend")
-    impressions_expr = _numeric_expr(columns, "impressions")
-    clicks_expr = _numeric_expr(columns, "clicks")
-    gmv_expr = _numeric_expr(columns, "gmv_optional")
+    spend_expr = numeric_expr(columns, "spend")
+    impressions_expr = numeric_expr(columns, "impressions")
+    clicks_expr = numeric_expr(columns, "clicks")
+    gmv_expr = numeric_expr(columns, "gmv_optional")
 
     result = con.sql(
         f"""
@@ -187,12 +202,6 @@ def _missing_result(reason: str) -> AnalysisResult:
         tables={"paid_traffic_efficiency": []},
         limitations=[reason],
     )
-
-
-def _numeric_expr(columns: set[str], column: str) -> str:
-    if column not in columns:
-        return "NULL"
-    return f"CAST({column} AS DOUBLE)"
 
 
 def _float_or_none(value: object | None) -> float | None:
