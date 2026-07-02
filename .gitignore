@@ -19,6 +19,7 @@ coverage/
 
 # Local analysis state and generated outputs
 .xhs-ceramics-analytics/
+.runtime/
 outputs/
 output/
 reports/
