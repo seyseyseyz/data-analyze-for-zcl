@@ -413,6 +413,7 @@ def _result_view(result: AnalysisResult) -> dict[str, object]:
         "title": result.title,
         "label": _result_label(result.task_id, result.title),
         "findings": [_finding_view(finding) for finding in result.findings],
+        "chart_svg": charts.for_result(result),
         "table_views": [
             _table_view(table_name, rows) for table_name, rows in result.tables.items()
         ],

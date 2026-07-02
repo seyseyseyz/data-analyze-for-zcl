@@ -899,6 +899,10 @@
             </div>
             {% endif %}
 
+            {% if result.chart_svg %}
+            <div class="chart">{{ result.chart_svg }}</div>
+            {% endif %}
+
             {% for table in result.table_views %}
             <details class="table-details">
               <summary>

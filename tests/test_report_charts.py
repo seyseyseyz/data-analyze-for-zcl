@@ -77,3 +77,57 @@ def test_evidence_distribution_escapes_and_has_no_raw_float():
     counts = [{"value": "strong", "label": "强", "count": 1, "help": "h"}]
     svg = charts.evidence_distribution(counts)
     assert "0.333333" not in svg  # widths are formatted, never raw ratios
+
+
+def test_cover_chart_has_two_measure_panels_and_zero_baseline():
+    result = _result(
+        "cover_style_effect",
+        EvidenceStrength.MEDIUM,
+        {"cover_effects": [
+            {"composition_type": "flatlay", "notes": 5, "avg_reads": 1200.0, "avg_collects": 48.0},
+            {"composition_type": "lifestyle", "notes": 4, "avg_reads": 800.0, "avg_collects": 60.0},
+        ]},
+    )
+    html = charts.for_result(result)
+    assert "平均阅读数" in html and "平均收藏数" in html
+    assert 'class="chart-multiples"' in html
+    assert "可信度 中" in html          # evidence badge present
+    assert html.count("<svg") == 2       # one panel per measure
+
+
+def test_cover_chart_shows_empty_state_for_all_null_measure():
+    result = _result(
+        "cover_style_effect",
+        EvidenceStrength.MEDIUM,
+        {"cover_effects": [
+            {"composition_type": "flatlay", "notes": 5, "avg_reads": 1200.0, "avg_collects": None},
+        ]},
+    )
+    html = charts.for_result(result)
+    assert "数据不足，无法判断" in html   # the collects panel degrades honestly
+
+
+def test_cover_chart_weak_evidence_is_de_emphasized():
+    result = _result(
+        "cover_style_effect",
+        EvidenceStrength.WEAK,
+        {"cover_effects": [
+            {"composition_type": "flatlay", "notes": 2, "avg_reads": 300.0, "avg_collects": 9.0},
+        ]},
+    )
+    html = charts.for_result(result)
+    assert "样本不足" in html
+    assert "url(#ca-hatch)" in html
+
+
+def test_copy_chart_uses_copy_angle_column():
+    result = _result(
+        "copy_angle_effect",
+        EvidenceStrength.MEDIUM,
+        {"copy_effects": [
+            {"copy_angle": "gift", "notes": 6, "avg_reads": 1100.0, "avg_collects": 70.0},
+        ]},
+    )
+    html = charts.for_result(result)
+    assert "送礼角度" in html          # value_label("gift")
+    assert "<svg" in html

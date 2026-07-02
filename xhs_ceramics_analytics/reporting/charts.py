@@ -171,3 +171,93 @@ def evidence_distribution(evidence_counts: Sequence[dict]) -> Markup:
         )
         x += seg_w + gap
     return Markup(_frame("".join(parts), width, height))
+
+
+_MEASURE_TITLE = {"avg_reads": "平均阅读数", "avg_collects": "平均收藏数"}
+
+
+def _vbar(
+    cats: list[str],
+    values: list[float | None],
+    value_texts: list[str],
+    *,
+    title: str,
+    de_emphasize: bool,
+) -> str:
+    width, height = 308, 300
+    pad_t, pad_b, pad_x = 56, 64, 20
+    plot_h = height - pad_t - pad_b
+    baseline_y = pad_t + plot_h
+    plotted = [
+        (c, v, t) for c, v, t in zip(cats, values, value_texts) if v is not None
+    ]
+    body = [_title(title)]
+    if not plotted:
+        return _frame(_title(title) + _empty_state(width, height), width, height)
+    vmax = max(v for _, v, _ in plotted) or 1.0
+    slot = (width - 2 * pad_x) / len(plotted)
+    bw = min(slot * 0.6, 64)
+    fill = "url(#ca-hatch)" if de_emphasize else "var(--ink-strong)"
+    opacity = "0.55" if de_emphasize else "1"
+    body.append(
+        f'<line x1="{pad_x}" y1="{_num(baseline_y)}" x2="{width - pad_x}" '
+        f'y2="{_num(baseline_y)}" class="ca-axis"/>'
+    )
+    for i, (cat, value, text) in enumerate(plotted):
+        cx = pad_x + slot * (i + 0.5)
+        bh = (value / vmax) * plot_h
+        body.append(
+            f'<rect x="{_num(cx - bw / 2)}" y="{_num(baseline_y - bh)}" '
+            f'width="{_num(bw)}" height="{_num(bh)}" rx="4" fill="{fill}" '
+            f'fill-opacity="{opacity}"><title>{_esc(cat)}：{_esc(text)}</title></rect>'
+        )
+        body.append(
+            f'<text x="{_num(cx)}" y="{_num(baseline_y - bh - 8)}" text-anchor="middle" '
+            f'class="ca-num">{_esc(text)}</text>'
+        )
+        body.append(
+            f'<text x="{_num(cx)}" y="{_num(baseline_y + 20)}" text-anchor="middle" '
+            f'class="ca-cat">{_esc(cat)}</text>'
+        )
+    return _frame("".join(body), width, height)
+
+
+def _measure_panel(cats, rows, key, de_emphasize) -> str:
+    values = [row.get(key) for row in rows]
+    texts = [
+        labels.format_number(float(v)) if v is not None else "暂无数据" for v in values
+    ]
+    return _vbar(cats, values, texts, title=_MEASURE_TITLE[key], de_emphasize=de_emphasize)
+
+
+def _build_effect_pair(rows, category_key, strength) -> str:
+    if not rows:
+        return ""
+    cats = [labels.value_label(str(row.get(category_key))) for row in rows]
+    has_any = any(
+        row.get("avg_reads") is not None or row.get("avg_collects") is not None
+        for row in rows
+    )
+    if not has_any:
+        return ""
+    de = strength == EvidenceStrength.WEAK
+    reads = _measure_panel(cats, rows, "avg_reads", de)
+    collects = _measure_panel(cats, rows, "avg_collects", de)
+    badge = _chart_badge(strength, len(rows))
+    return f'{badge}<div class="chart-multiples">{reads}{collects}</div>'
+
+
+def _build_cover(result: AnalysisResult, strength: EvidenceStrength) -> str:
+    return _build_effect_pair(
+        result.tables.get("cover_effects", []), "composition_type", strength
+    )
+
+
+def _build_copy(result: AnalysisResult, strength: EvidenceStrength) -> str:
+    return _build_effect_pair(
+        result.tables.get("copy_effects", []), "copy_angle", strength
+    )
+
+
+_BUILDERS["cover_style_effect"] = _build_cover
+_BUILDERS["copy_angle_effect"] = _build_copy

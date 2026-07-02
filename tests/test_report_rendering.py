@@ -555,3 +555,31 @@ def test_evidence_chart_lands_in_guide_section():
     guide = html.split('id="guide"', 1)[1].split('id="actions"', 1)[0]
     assert 'class="chart"' in guide
     assert "<svg" in guide
+
+
+def test_task_charts_land_in_analysis_section():
+    html = render_html(
+        [
+            AnalysisResult(
+                task_id="cover_style_effect",
+                title="封面风格效果",
+                findings=[
+                    Finding(
+                        title="封面风格效果已比较",
+                        conclusion="生活方式类封面表现更好。",
+                        evidence_strength=EvidenceStrength.MEDIUM,
+                    )
+                ],
+                tables={
+                    "cover_effects": [
+                        {"composition_type": "flatlay", "notes": 5,
+                         "avg_reads": 1200.0, "avg_collects": 48.0},
+                        {"composition_type": "lifestyle", "notes": 4,
+                         "avg_reads": 800.0, "avg_collects": 60.0},
+                    ]
+                },
+            )
+        ]
+    )
+    analysis = html.split('id="analysis"', 1)[1]
+    assert 'class="chart"' in analysis
