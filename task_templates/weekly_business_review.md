@@ -1,13 +1,128 @@
-# Weekly Business Review
+# weekly_business_review
+
+**Slug**: `weekly_business_review`  |  **Module**: `xhs_ceramics_analytics/analysis/weekly_review.py`  |  **Registry**: registry.py:43
 
 ## Purpose
 
-Assemble the full non-technical operating report for the week.
+将数据质量、账号基线、笔记漏斗、商品机会四个模块的分析结果汇总为一份周度经营复盘报告，供非技术背景的运营人员查看本周数据全貌。本任务仅做描述性汇总，不做因果推断，也不产出实验建议（实验建议由 weekly_experiment_matrix 负责）。
 
-## Required Data
+## Required tables & fields
 
-Uses all task outputs and data quality context.
+所有表均为可选；缺失时对应模块标记为 `missing`，不影响其他模块运行。
 
-## Output Contract
+- `notes` (optional) — key columns: `note_id`, `publish_time`, `reads`, `impressions`, `likes`, `collects`, `comments`
+  Chinese header hints: `笔记id/笔记ID -> note_id`, `发布时间/笔记发布时间 -> publish_time`, `阅读次数/阅读数 -> reads`, `曝光数/展现数 -> impressions`, `点赞数 -> likes`, `收藏数 -> collects`, `评论数 -> comments`
+- `daily_sku_sales` (optional, derived from orders by db/build.py) — key columns: `sku_id`, `units`, `gmv`
+  Chinese header hints: 衍生表无直接中文别名；源自 orders 表的 `规格id -> sku_id`, `商品数量 -> quantity`, `支付金额/实付金额 -> paid_amount`
+- `skus` (optional) — key columns: `sku_id`, `sku_name`
+  Chinese header hints: `规格id/规格ID -> sku_id`, `规格名称 -> sku_name`
+- `<any DuckDB table>` (optional) — data_quality 模块仅需数据库中存在任意表即可标记 ready
 
-Returns headline conclusions, strongest evidence, weak hypotheses, risks, product opportunities, content opportunities, and next-week matrix.
+## Method
+
+1. 打开 DuckDB 连接，依次构建四个固定 section dict（data_quality, baseline, funnel, product_opportunity），最后关闭连接（weekly_review.py:8-13, 54-60）。
+2. **data_quality**: 执行 SHOW TABLES，逐表 SELECT COUNT(*)，记录已加载表数量和空表列表；有任意表即 status='ready'（weekly_review.py:63-79）。
+3. **baseline**: 检查 notes 表存在且包含 {note_id, publish_time, reads}，聚合 COUNT/DISTINCT DATE/AVG(reads)；posts>0 时 status='ready'（weekly_review.py:82-117）。
+4. **funnel**: 检查 notes 表包含 {impressions, reads, likes, collects, comments}，对每条笔记计算各环节转化率的平均值；notes>0 时 status='ready'（weekly_review.py:120-159）。
+5. **product_opportunity**: 检查 daily_sku_sales 存在且含 sku_id，按 sku_id 分组汇总 units/gmv，取 TOP 1 SKU；可选 JOIN skus 显示名称（weekly_review.py:162-242）。
+6. 筛选 status=='ready' 的模块，累加 evidence_count；对非 ready 模块生成 limitations 文本（weekly_review.py:15-21）。
+7. 调用 score_evidence(evidence_items, has_controls=False, confounder_count=2) 计算证据强度——由于 has_controls=False，只要 evidence_items>0 就始终返回 WEAK（weekly_review.py:33-35, evidence.py:20）。
+8. 返回 AnalysisResult，包含一条 Finding 和 tables={'weekly_sections': rows}（weekly_review.py:23-51）。
+
+## Key formulas
+
+- `posts = COUNT(*) FROM notes WHERE publish_time IS NOT NULL`  (weekly_review.py:92,99)
+- `active_days = COUNT(DISTINCT CAST(publish_time AS DATE))`  (weekly_review.py:93)
+- `avg_reads = AVG(CAST(reads AS DOUBLE))`  (weekly_review.py:96)
+- `avg_read_rate = AVG(CASE WHEN impressions>0 THEN reads*1.0/impressions END)`  (weekly_review.py:133-134)
+- `avg_like_rate = AVG(CASE WHEN reads>0 THEN likes*1.0/reads END)`  (weekly_review.py:135)
+- `avg_collect_rate = AVG(CASE WHEN reads>0 THEN collects*1.0/reads END)`  (weekly_review.py:136)
+- `avg_comment_rate = AVG(CASE WHEN reads>0 THEN comments*1.0/reads END)`  (weekly_review.py:137)
+- `top_sku_units = SUM(CAST(units AS DOUBLE)) GROUP BY sku_id, ORDER BY units DESC NULLS LAST, gmv DESC NULLS LAST, sku_id LIMIT 1`  (weekly_review.py:191-193,219-221)
+- `evidence_items = sum(row.evidence_count for row in rows if row.status=='ready')`  (weekly_review.py:16)
+- `evidence_strength = score_evidence(evidence_items, has_controls=False, confounder_count=2)`  (weekly_review.py:33-35)
+
+## Thresholds & evidence
+
+| 条件 | 证据强度 | 代码位置 |
+|------|---------|---------|
+| evidence_items <= 0 OR confounder_count < 0 | Not-judgable | evidence.py:15-16 |
+| evidence_items >= 30 AND has_controls AND confounder_count == 0（本任务不可达，has_controls=False） | Strong | evidence.py:17-18 |
+| evidence_items >= 10 AND has_controls AND confounder_count <= 1（本任务不可达） | Medium | evidence.py:19-20 |
+| evidence_items > 0 且 has_controls=False（本任务唯一可达的非空分支） | Weak | evidence.py:20 + weekly_review.py:34 |
+| section.status == 'ready' 各模块独立门槛（有表/有数据） | n/a（控制该模块是否计入 evidence_items） | weekly_review.py:69,107,149,231 |
+
+## Output
+
+- **Result frame** `tables['weekly_sections']` — columns:
+  - `section`: 模块标识，取值 data_quality / baseline / funnel / product_opportunity
+  - `source`: 对应的独立任务 ID（data_quality_check / account_baseline / note_funnel / product_opportunity_matrix）
+  - `status`: 'ready' 或 'missing'
+  - `metric`: 该模块的标题指标名（tables_loaded / posts / avg_collect_rate / top_sku_units），missing 时为 None
+  - `value`: metric 对应的数值，missing 时为 None
+  - `evidence_count`: 该模块贡献的样本/行数
+  - `summary`: 一行中文叙述，嵌入关键数字
+- **Finding**: title="每周复盘模块已汇总", evidence_strength=WEAK, key_numbers={sections, ready_sections, evidence_items}
+  - caveats: "每周复盘模块汇总的是描述性输出，不能证明因果关系。"
+  - recommended_action: "将已有数据的模块作为本周经营叙事，把缺失模块转成导入或埋点任务。"
+- **Limitations**: 每个非 ready 模块生成一条 "`<section>` 模块缺少源数据。"
+
+## Sample output section
+
+```markdown
+## 每周经营复盘
+
+### 每周复盘模块已汇总
+
+已汇总 4 个每周复盘模块，其中 3 个有源数据。
+
+证据强度：弱
+
+关键数字：
+- `sections`: 4
+- `ready_sections`: 3
+- `evidence_items`: 16
+
+注意事项：
+- 每周复盘模块汇总的是描述性输出，不能证明因果关系。
+
+建议动作：
+
+将已有数据的模块作为本周经营叙事，把缺失模块转成导入或埋点任务。
+
+表格 `weekly_sections`：4 行
+
+| section | source | status | metric | value | evidence_count | summary |
+| --- | --- | --- | --- | --- | --- | --- |
+| data_quality | data_quality_check | ready | tables_loaded | 5 | 5 | 已加载 5 张表；空表：无。 |
+| baseline | account_baseline | ready | posts | 8 | 8 | 8 篇笔记覆盖 6 个活跃发布日，日期从 2025-06-16 到 2025-06-29；平均阅读 1342.5。 |
+| funnel | note_funnel | ready | avg_collect_rate | 0.0412 | 8 | 平均阅读率 0.1835，点赞率 0.0523，收藏率 0.0412，评论率 0.0087。 |
+| product_opportunity | product_opportunity_matrix | missing | None | None | 0 | 缺少 daily_sku_sales 表。 |
+```
+
+## Common failure modes
+
+- 数据库中无任何表 -> data_quality 返回 status='missing' summary='没有发现 DuckDB 表。'；所有模块均 missing；evidence_items=0 返回 NOT_JUDGABLE -> 建议先执行数据导入流程
+- notes 表不存在 -> baseline 和 funnel 同时短路返回 '缺少 notes 表。' -> 导入笔记数据 CSV
+- notes 存在但缺少 {note_id, publish_time, reads} -> baseline 返回 'notes 表字段不完整。' -> 确认导出时勾选了必要列
+- notes 存在但缺少漏斗列 {impressions, reads, likes, collects, comments} -> funnel 返回 '漏斗字段不完整。' -> 确认千帆后台导出包含曝光和互动数据
+- notes 全部 publish_time 为 NULL -> COUNT=0, status='missing', summary='没有可用的带日期笔记。' -> 检查时间列格式
+- daily_sku_sales 不存在（orders 未导入或缺必要列） -> product_opportunity 返回 '缺少 daily_sku_sales 表。' -> 导入订单 CSV 并重新 build
+- daily_sku_sales 存在但 units/gmv 均无非 NULL 行 -> '表为空或没有可用的 SKU 销售记录。' -> 检查订单是否全部被退款过滤
+- skus 表缺失或无 sku_name 列 -> 降级显示原始 sku_id，不报错
+- 所有模块 ready 但 has_controls=False -> 证据强度始终为 WEAK，这是设计预期而非异常
+
+## Fixtures
+
+- `tests/fixtures/notes.csv` — baseline + funnel 模块所需（需含完整漏斗列）
+- `tests/fixtures/orders.csv` — 用于 db/build.py 生成 daily_sku_sales mart
+- `tests/fixtures/skus.csv` — 可选，启用 sku_name 显示
+- `tests/fixtures/products.csv` — 仅贡献 data_quality 表计数
+
+Minimum viable fixture set for this task: `notes.csv`, `orders.csv`, `skus.csv`.
+
+## Cross-links
+
+- Depends on: [data_quality_check](./data_quality_check.md), [account_baseline](./account_baseline.md), [note_funnel](./note_funnel.md), [product_opportunity_matrix](./product_opportunity_matrix.md)（本任务汇总上述四个模块的逻辑，但不调用它们的代码，而是内联重新计算）
+- Feeds: [weekly_experiment_matrix](./weekly_experiment_matrix.md)（复盘输出中的缺失模块可转化为实验任务）
+- Reference: [../references/evidence_strength.md](../references/evidence_strength.md), [../references/data_contract.md](../references/data_contract.md)

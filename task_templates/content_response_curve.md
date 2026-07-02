@@ -1,13 +1,117 @@
-# Content Response Curve
+# content_response_curve
+
+**Slug**: `content_response_curve`  |  **Module**: `xhs_ceramics_analytics/analysis/response_curve.py`  |  **Registry**: registry.py:33
 
 ## Purpose
 
-Measure immediate, short, delayed, and long-tail sales response windows.
+回答"笔记发布后 SKU 销量在不同时间窗口的响应模式是什么样的"这一描述性问题。将销售数据按发布日 d0、d1-3、d4-7、d8-14 四个窗口聚合，帮助运营了解笔记发布后销量的时间分布形态。本任务不做因果推断，不隔离笔记对销量的真实贡献——仅为观测性时间窗口描述。
 
-## Required Data
+## Required tables & fields
 
-Uses note publish time, candidate note-SKU links, and daily_sku_sales.
+- `daily_sku_sales` (required) — key columns: `date`, `sku_id`, `units`
+  派生表，由 db/build.py:208-252 从 orders 构建。上游导出列名: `支付时间 -> paid_time`, `规格id / sku id / skuid -> sku_id`, `商品数量 / 购买数量 -> quantity`, `支付金额 / 实付金额 -> paid_amount`
+- `note_sku_links` (optional) — key columns: `note_id`, `sku_id`
+  无中文别名映射，需以英文列名导入或手动配置。首选关联源。
+- `notes` (optional) — key columns: `note_id`, `publish_time`
+  中文列名: `笔记id / 笔记ID -> note_id`, `发布时间 / 笔记发布时间 / 创建时间 -> publish_time`
+- `skus` (optional) — key columns: `sku_id`
+  中文列名: `规格id / 规格ID / skuid -> sku_id`
 
-## Output Contract
+## Method
 
-Returns windowed response tables, stacking or dilution caveats, and recommended follow-up tests.
+1. 连接 DuckDB，检查 `daily_sku_sales` 是否存在且含 {date, sku_id, units}；缺失则返回 not_judgable 并建议先导入 (response_curve.py:23-31, 264-271)。
+2. 选择关联源：若 `note_sku_links` 存在且含 {note_id, sku_id}、`notes` 含 {note_id, publish_time}，使用显式关联；否则若 notes+skus 可用，取前 25 条笔记 CROSS JOIN 首个 SKU 作为候选兜底；否则返回 not_judgable (response_curve.py:178-261)。
+3. 构建 `link_candidates` CTE，输出 (note_id VARCHAR, sku_id VARCHAR, publish_time TIMESTAMP) (response_curve.py:186-197 / 223-247)。
+4. LEFT JOIN `daily_sku_sales`，按 publish_time 分四个时间窗口聚合 units：d0-1、d1-3、d4-7、d8-14 (response_curve.py:104-148)。
+5. 计算 `matched_sales_days`（观察窗口内有销售记录的不同日期数），用于判断销售数据是否真正缺失 (response_curve.py:149-155)。
+6. 若零行或无任何行有 matched_sales_days > 0，返回 not_judgable (response_curve.py:45-58)。
+7. 剥离内部列 `matched_sales_days`，通过 `score_evidence()` 打分后返回 AnalysisResult (response_curve.py:59-92)。
+
+## Key formulas
+
+- `d0_1_units = COALESCE(SUM(units WHERE date in [publish_date, publish_date+1d)), 0.0)` (response_curve.py:105-115)
+- `d1_3_units = COALESCE(SUM(units WHERE date in [publish_date+1d, publish_date+4d)), 0.0)` (response_curve.py:116-126)
+- `d4_7_units = COALESCE(SUM(units WHERE date in [publish_date+4d, publish_date+8d)), 0.0)` (response_curve.py:127-137)
+- `d8_14_units = COALESCE(SUM(units WHERE date in [publish_date+8d, publish_date+15d)), 0.0)` (response_curve.py:138-148)
+- `matched_sales_days = COUNT(DISTINCT date WHERE date in [publish_date, publish_date+15d))` (response_curve.py:149-155)
+- `evidence = score_evidence(n=len(rows), has_controls=False, confounder_count=1 if source=='note_sku_links' else 3)` (response_curve.py:71-75)
+
+## Thresholds & evidence
+
+| 条件 | 证据强度 | 代码位置 |
+|------|---------|---------|
+| link_source='note_sku_links', has_controls=False, confounder=1 | Weak (has_controls=False 使 Medium/Strong 不可达) | response_curve.py:74; evidence.py:16-20 |
+| link_source='candidate_first_sku', has_controls=False, confounder=3 | Weak | response_curve.py:74; evidence.py:20 |
+| daily_sku_sales 缺失或缺少必要字段 | Not-judgable | response_curve.py:264-271 |
+| note_sku_links 存在但列不全 / notes.publish_time 缺失 | Not-judgable | response_curve.py:203-214 |
+| 无可用关联源 (note_sku_links 及 notes+skus 均不满足) | Not-judgable | response_curve.py:249-261 |
+| 有行但全部 matched_sales_days=0 | Not-judgable | response_curve.py:53-58 |
+
+注意：本任务始终传 `has_controls=False`，因此 Strong 和 Medium 在当前逻辑中结构性不可达。最高可能为 Weak。
+
+## Output
+
+- **Result frame** `response_windows`: list[dict]，列为 `note_id`, `sku_id`, `publish_time`, `d0_1_units`, `d1_3_units`, `d4_7_units`, `d8_14_units`（matched_sales_days 已剥离）。
+- **Finding**: title="笔记锚定的描述性响应窗口", evidence_strength=Weak, key_numbers={note_sku_rows, link_source, d8_14_rows}。
+- **Caveats**: "响应窗口是笔记关联销售窗口的描述性结果，不能隔离因果影响。"；候选路径额外附加"缺少显式 note_sku_links 表，响应窗口使用首个 SKU 候选兜底，归因很弱。"
+- **Limitations**: "响应窗口仍是观测性结果，可能被重叠笔记、缺货或与目标内容无关的需求变化扭曲。"
+
+## Sample output section
+
+```markdown
+## 内容响应曲线
+
+限制：
+- 响应窗口仍是观测性结果，可能被重叠笔记、缺货或与目标内容无关的需求变化扭曲。
+
+### 笔记锚定的描述性响应窗口
+
+已为 12 行 note-SKU 数据生成笔记锚定响应窗口，使用发布时间窗口而不是固定日历锚点。
+
+证据强度：弱
+
+关键数字：
+- `note_sku_rows`: 12
+- `link_source`: candidate_first_sku
+- `d8_14_rows`: 12
+
+注意事项：
+- 响应窗口是笔记关联销售窗口的描述性结果，不能隔离因果影响。
+- 缺少显式 note_sku_links 表，响应窗口使用首个 SKU 候选兜底，归因很弱。
+
+建议动作：
+先把这些窗口作为弱时间诊断，再用显式关联或受控实验验证有希望的模式。
+
+表格 `response_windows`：12 行
+
+| note_id | sku_id | publish_time | d0_1_units | d1_3_units | d4_7_units | d8_14_units |
+|---------|--------|--------------|-----------|-----------|-----------|------------|
+| n_20250301 | 8123 | 2025-03-01 10:30:00 | 3.0 | 7.0 | 4.0 | 2.0 |
+| n_20250305 | 8123 | 2025-03-05 14:20:00 | 5.0 | 12.0 | 6.0 | 3.0 |
+| ... | ... | ... | ... | ... | ... | ... |
+```
+
+## Common failure modes
+
+- **daily_sku_sales 表整体缺失** -- 返回 not_judgable，reason="缺少 daily_sku_sales 表。" -- 建议先导入含 date/sku_id/units 的订单衍生数据。
+- **daily_sku_sales 缺少 {date, sku_id, units} 中的某列** -- 返回 not_judgable 并列出缺失字段 -- 检查上游 orders 导出是否完整。
+- **note_sku_links 存在但列名不对** -- 返回 not_judgable -- 确认导入时列名为 note_id/sku_id。
+- **无关联源可用** -- 返回 not_judgable -- 需至少提供 notes(note_id, publish_time) + skus(sku_id)。
+- **有关联行但无匹配销售日** -- 返回 not_judgable，无法区分真实零销量与数据缺失 -- 补齐观察窗口内的 SKU 日销售记录。
+- **units 列含 NaN** -- 无显式 NaN 处理，NaN 会在 SUM 中传播 -- 建议上游清洗。
+
+## Fixtures
+
+- `tests/fixtures/notes.csv` (note_id + publish_time)
+- `tests/fixtures/skus.csv` (sku_id)
+- `tests/fixtures/orders.csv` (order_id, paid_time, sku_id, quantity, paid_amount -- 用于构建 daily_sku_sales)
+
+Minimum viable fixture set for this task: notes.csv, skus.csv, orders.csv.
+
+注意：当前无 `note_sku_links.csv` fixture，测试仅覆盖 candidate_first_sku 兜底路径。
+
+## Cross-links
+
+- Depends on: [sku_counterfactual_lift](./sku_counterfactual_lift.md) (共享 daily_sku_sales 派生表和 note_sku_links 关联逻辑)
+- Feeds: 无下游任务直接消费本任务输出
+- Reference: [../references/data_contract.md](../references/data_contract.md), [../references/evidence_strength.md](../references/evidence_strength.md)
