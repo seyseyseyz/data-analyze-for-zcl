@@ -3,6 +3,9 @@
 *.swp
 *.swo
 
+# Superpowers SDD scratch (plans, progress ledgers, review packages)
+.superpowers/
+
 # Python
 __pycache__/
 *.py[cod]
