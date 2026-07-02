@@ -94,7 +94,12 @@ def test_run_checks_marks_old_python_as_missing(tmp_path: Path):
 
 
 def test_bootstrap_script_uses_runtime_repair_helper():
-    script = Path("scripts/bootstrap")
+    test_path = Path(__file__).resolve()
+    candidates = [
+        Path("scripts/bootstrap"),
+        test_path.parents[3] / "scripts" / "bootstrap",
+    ]
+    script = next((path for path in candidates if path.exists()), candidates[0])
 
     assert script.exists()
     assert os.access(script, os.X_OK)
