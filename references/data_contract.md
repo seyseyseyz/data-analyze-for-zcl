@@ -214,3 +214,39 @@ Persistent knowledge base.
 - `contradicting_runs`
 - `next_test`
 - `last_updated`
+
+### `ad_performance_daily`
+
+One row per paid traffic performance record at the most detailed export grain available.
+
+- `date`
+- `platform_source`
+- `spend`
+
+Recommended:
+
+- `impressions`
+- `clicks`
+- `ctr`
+- `cpc`
+- `cpm`
+- `conversions_optional`
+- `orders_optional`
+- `gmv_optional`
+- `roi_optional`
+- `roas_optional`
+
+Optional identifiers:
+
+- `campaign_id_optional`
+- `campaign_name_optional`
+- `unit_id_optional`
+- `unit_name_optional`
+- `creative_id_optional`
+- `creative_name_optional`
+- `note_id_optional`
+- `note_url_optional`
+- `product_id_optional`
+- `sku_id_optional`
+
+Paid exports may be campaign-level, unit-level, creative-level, note-level, product-level, or SKU-level. The analysis must not force note or SKU attribution when those identifiers are missing.

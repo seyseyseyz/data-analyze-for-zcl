@@ -19,3 +19,5 @@ Use this menu to choose the smallest task that answers the user's business quest
 | 哪些笔记适合重拍/重发 | `reshoot_repost_candidates` | `notes` | `content_features`, `orders` | 重拍候选、重发理由、改法 |
 | 沉淀有效假设和经验 | `hypothesis_knowledge_base` | any prior task outputs or imported tables | all tables | 假设库、证据等级、下一次验证 |
 | 周复盘 / 下周动作 / 完整经营结论 | `weekly_business_review` | `notes` | `orders`, `skus`, `comments`, `content_features`, `calendar_events` | 经营导读、关键变化、下周动作 |
+| 看投放数据能不能分析 | `ad_data_quality_check` | `ad_performance_daily` | `notes`, `skus`, `products`, `daily_sku_sales` | 字段可用性、粒度、关联覆盖、补数建议 |
+| 看投放消耗和投产效率 | `paid_traffic_efficiency` | `ad_performance_daily` | `notes`, `skus`, `products`, `daily_sku_sales`, `note_sku_links` | 投放消耗、点击效率、投产、预算动作建议 |

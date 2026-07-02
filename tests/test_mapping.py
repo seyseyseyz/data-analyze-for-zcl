@@ -207,3 +207,51 @@ def test_guess_field_mapping_does_not_reuse_source_columns():
 
     assert mapping["comment_text"] == "comment_text"
     assert "comment_time" not in mapping
+
+
+def test_guess_table_type_detects_paid_traffic_export(tmp_path):
+    profile = FileProfile(
+        path=tmp_path / "ads.csv",
+        table_name="ads",
+        columns=["投放日期", "计划名称", "消耗", "曝光量", "点击量", "成交金额"],
+        row_count=1,
+        sample_rows=[],
+    )
+
+    assert guess_table_type(profile) == "ad_performance_daily"
+
+
+def test_guess_field_mapping_maps_paid_traffic_headers(tmp_path):
+    profile = FileProfile(
+        path=tmp_path / "ads.csv",
+        table_name="ads",
+        columns=[
+            "投放日期",
+            "投放平台",
+            "计划名称",
+            "创意名称",
+            "笔记ID",
+            "SKU ID",
+            "消耗",
+            "曝光量",
+            "点击量",
+            "成交金额",
+            "广告投产比",
+        ],
+        row_count=1,
+        sample_rows=[],
+    )
+
+    mapping = guess_field_mapping(profile, "ad_performance_daily")
+
+    assert mapping["date"] == "投放日期"
+    assert mapping["platform_source"] == "投放平台"
+    assert mapping["campaign_name_optional"] == "计划名称"
+    assert mapping["creative_name_optional"] == "创意名称"
+    assert mapping["note_id_optional"] == "笔记ID"
+    assert mapping["sku_id_optional"] == "SKU ID"
+    assert mapping["spend"] == "消耗"
+    assert mapping["impressions"] == "曝光量"
+    assert mapping["clicks"] == "点击量"
+    assert mapping["gmv_optional"] == "成交金额"
+    assert mapping["roas_optional"] == "广告投产比"

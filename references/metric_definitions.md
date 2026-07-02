@@ -38,3 +38,15 @@ Portfolio metrics:
 - `fatigue_signal`: declining response under similar repeated content.
 
 All divide-by-zero cases must return null in machine outputs and "not enough denominator data" in reports.
+
+Core paid traffic metrics:
+
+- `spend`
+- `impressions`
+- `clicks`
+- `ctr_calc = clicks / impressions`
+- `cpc_calc = spend / clicks`
+- `cpm_calc = spend / impressions * 1000`
+- `cvr_calc = conversions_optional / clicks`
+- `cost_per_order_calc = spend / orders_optional`
+- `roas_calc = gmv_optional / spend`
