@@ -488,3 +488,41 @@ def test_render_html_dynamic_codex_questions_use_report_content():
 
     assert "为什么「青釉咖啡杯 单只」应该优先测试？" in html
     assert "「送礼角度」文案角度下周应该怎么测？" in html
+
+
+def test_render_html_labels_paid_traffic_fields():
+    result = AnalysisResult(
+        task_id="paid_traffic_efficiency",
+        title="投放效率分析",
+        findings=[
+            Finding(
+                title="投放消耗和投产效率已汇总",
+                conclusion="已汇总 1 个投放对象。",
+                evidence_strength=EvidenceStrength.MEDIUM,
+                key_numbers={"spend": 120, "roas_calc": 6},
+                recommended_action="优先小幅增加高投产对象预算。",
+            )
+        ],
+        tables={
+            "paid_traffic_efficiency": [
+                {
+                    "campaign_name_optional": "青釉杯投放",
+                    "spend": 120,
+                    "impressions": 6000,
+                    "clicks": 180,
+                    "ctr_calc": 0.03,
+                    "cpc_calc": 0.6667,
+                    "gmv_optional": 720,
+                    "roas_calc": 6,
+                    "budget_action": "increase",
+                }
+            ]
+        },
+    )
+
+    html = render_html([result])
+
+    assert "投放消耗" in html
+    assert "点击率" in html
+    assert "投产比" in html
+    assert "增加预算" in html

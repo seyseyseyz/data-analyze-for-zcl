@@ -188,3 +188,12 @@ def test_paid_traffic_efficiency_handles_weak_export(tmp_path, fixture_dir):
     assert result.findings[0].evidence_strength.value in {"weak", "not_judgable"}
     assert result.tables["paid_traffic_efficiency"][0]["budget_action"] == "needs_data"
     assert "成交金额" in result.findings[0].recommended_action
+
+
+def test_all_tasks_include_paid_traffic_tasks_when_ad_data_missing(tmp_path, fixture_dir):
+    db_path = _db(tmp_path, fixture_dir)
+
+    for task_id in ["ad_data_quality_check", "paid_traffic_efficiency"]:
+        result = run_task(task_id, db_path)
+        assert result.task_id == task_id
+        assert result.findings
