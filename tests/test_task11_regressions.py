@@ -144,7 +144,11 @@ def test_hypothesis_without_comment_signal_stays_unknown(tmp_path: Path):
     assert "收集" in str(demand_row["next_test"]) or "评论" in str(demand_row["next_test"])
 
 
-def test_experiment_matrix_uses_future_default_planning_date(tmp_path: Path):
+def test_experiment_matrix_uses_future_default_planning_date(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("XHS_CA_TODAY", "2026-07-02")
     db_path = _build_db(
         tmp_path / "experiment-default-date.duckdb",
         [
@@ -156,4 +160,4 @@ def test_experiment_matrix_uses_future_default_planning_date(tmp_path: Path):
     result = run_task("weekly_experiment_matrix", db_path)
     first_row = result.tables["experiment_plan"][0]
 
-    assert first_row["date"] == "2026-07-01"
+    assert first_row["date"] == "2026-07-03"

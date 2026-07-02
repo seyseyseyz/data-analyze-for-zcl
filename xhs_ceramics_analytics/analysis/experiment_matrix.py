@@ -1,4 +1,5 @@
 from datetime import date, timedelta
+import os
 from pathlib import Path
 
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
@@ -7,7 +8,6 @@ from xhs_ceramics_analytics.evidence import score_evidence
 
 
 _SLOTS = ("09:00", "12:00", "15:00", "18:00", "21:00")
-DEFAULT_PLANNING_START = date(2026, 7, 1)
 
 
 def run(db_path: Path) -> AnalysisResult:
@@ -213,9 +213,10 @@ def _fetch_top_angles(con) -> tuple[list[str], list[str]]:
 
 
 def _next_planning_date(con) -> tuple[date, list[str]]:
+    default_start = _default_planning_start()
     if not _table_exists(con, "notes") or "publish_time" not in _table_columns(con, "notes"):
-        return DEFAULT_PLANNING_START, [
-            f"notes 表缺少 publish_time，计划从 {DEFAULT_PLANNING_START.isoformat()} 开始。"
+        return default_start, [
+            f"notes 表缺少 publish_time，计划从 {default_start.isoformat()} 开始。"
         ]
 
     value = con.sql(
@@ -226,12 +227,23 @@ def _next_planning_date(con) -> tuple[date, list[str]]:
         """
     ).fetchone()[0]
     if value is None:
-        return DEFAULT_PLANNING_START, [
-            f"没有可用的 publish_time 值，计划从 {DEFAULT_PLANNING_START.isoformat()} 开始。"
+        return default_start, [
+            f"没有可用的 publish_time 值，计划从 {default_start.isoformat()} 开始。"
         ]
 
     candidate = date.fromisoformat(value) + timedelta(days=1)
-    return max(candidate, DEFAULT_PLANNING_START), []
+    return max(candidate, default_start), []
+
+
+def _default_planning_start() -> date:
+    return _today() + timedelta(days=1)
+
+
+def _today() -> date:
+    override = os.environ.get("XHS_CA_TODAY")
+    if override:
+        return date.fromisoformat(override)
+    return date.today()
 
 
 def _build_plan(
