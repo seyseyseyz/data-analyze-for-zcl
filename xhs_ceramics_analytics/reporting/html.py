@@ -442,6 +442,7 @@ def _finding_view(finding: Finding) -> dict[str, object]:
         ],
         "caveats": finding.caveats,
         "recommended_action": finding.recommended_action,
+        "evidence_reason": finding.evidence_reason,
     }
 
 

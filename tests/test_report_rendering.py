@@ -32,6 +32,28 @@ def test_render_markdown_uses_chinese_report_labels():
     assert "Proceed with analysis." in report
 
 
+def test_render_markdown_does_not_render_html_only_evidence_reason():
+    report = render_markdown(
+        [
+            AnalysisResult(
+                task_id="product_opportunity_matrix",
+                title="商品机会矩阵",
+                findings=[
+                    Finding(
+                        title="SKU 机会已排序",
+                        conclusion="青釉咖啡杯 单只适合继续测试。",
+                        evidence_strength=EvidenceStrength.MEDIUM,
+                        evidence_reason="只给 HTML 报告展示的可信度原因。",
+                    )
+                ],
+            )
+        ]
+    )
+
+    assert "可信度原因" not in report
+    assert "只给 HTML 报告展示的可信度原因" not in report
+
+
 def test_cli_keeps_markdown_when_html_rendering_fails(tmp_path, monkeypatch):
     from typer.testing import CliRunner
 
@@ -149,6 +171,59 @@ def test_render_html_builds_reader_friendly_editorial_report():
     assert "border: 1px solid #EAEAEA" in html
     assert "linear-gradient" not in html
     assert "Lucide" not in html
+
+
+def test_render_html_shows_evidence_reason_for_each_finding():
+    refused_heading = "不能" + "说明什么"
+    html = render_html(
+        [
+            AnalysisResult(
+                task_id="product_opportunity_matrix",
+                title="商品机会矩阵",
+                findings=[
+                    Finding(
+                        title="SKU 机会已排序",
+                        conclusion="青釉咖啡杯 单只适合继续测试。",
+                        evidence_strength=EvidenceStrength.MEDIUM,
+                        evidence_reason=(
+                            "SKU 销售数据可用，但缺少显式 note-SKU 关联，"
+                            "所以适合先做商品优先级判断。"
+                        ),
+                    )
+                ],
+            )
+        ]
+    )
+
+    assert "可信度原因" in html
+    assert "SKU 销售数据可用，但缺少显式 note-SKU 关联" in html
+    assert refused_heading not in html
+
+
+def test_render_html_explains_all_evidence_levels_in_reader_guide():
+    refused_heading = "不能" + "说明什么"
+    html = render_html(
+        [
+            AnalysisResult(
+                task_id="product_opportunity_matrix",
+                title="商品机会矩阵",
+                findings=[
+                    Finding(
+                        title="SKU 机会已排序",
+                        conclusion="青釉咖啡杯 单只适合继续测试。",
+                        evidence_strength=EvidenceStrength.MEDIUM,
+                    )
+                ],
+            )
+        ]
+    )
+
+    assert "这份报告怎么读" in html
+    assert "高可信度" in html
+    assert "中可信度" in html
+    assert "低可信度" in html
+    assert "不可判断" in html
+    assert refused_heading not in html
 
 
 def test_render_html_explains_machine_field_names_for_non_experts():

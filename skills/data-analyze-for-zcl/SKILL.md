@@ -1,11 +1,11 @@
 ---
 name: data-analyze-for-zcl
-description: Use whenever the user wants to analyze Xiaohongshu/小红书 ceramics ecommerce exports, including 笔记数据、封面/文案标签、商品/SKU、订单、评论、周复盘、实验矩阵、SKU 销量响应, or asks what content/product to post next. Prefer this skill over ad hoc spreadsheet scripts because it builds a local DuckDB database, applies standard table mappings, and produces evidence-scored reports with caveats and next actions.
+description: Use only when the user explicitly invokes data-analyze-for-zcl, or when the request clearly says Xiaohongshu/小红书/千帆 ceramics/tableware ecommerce exports. Do not auto-trigger for generic data analysis, generic ecommerce, spreadsheets, SKUs, orders, comments, or other platforms unless the user explicitly asks for this skill. It builds a local DuckDB database and evidence-scored reports for notes, cover/copy tags, products/SKUs, orders, comments, weekly reviews, experiment matrices, and SKU 销量响应.
 ---
 
 # Xiaohongshu Ceramics Analytics
 
-Use this skill for local Xiaohongshu ceramics ecommerce analysis.
+Use this skill for local Xiaohongshu ceramics ecommerce analysis. This is not a generic data-analysis skill; if the user has not clearly named Xiaohongshu/小红书/千帆 or explicitly invoked `data-analyze-for-zcl`, do not use it.
 
 ## Workflow
 

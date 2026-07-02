@@ -33,7 +33,7 @@ def test_score_evidence_not_judgable_for_zero_sample():
 def test_score_evidence_medium_at_minimum_sample_without_controls():
     assert (
         score_evidence(sample_size=10, has_controls=False, confounder_count=1)
-        == EvidenceStrength.MEDIUM
+        == EvidenceStrength.WEAK
     )
 
 

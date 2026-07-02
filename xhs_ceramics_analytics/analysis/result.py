@@ -11,6 +11,7 @@ class Finding:
     key_numbers: dict[str, object] = field(default_factory=dict)
     caveats: list[str] = field(default_factory=list)
     recommended_action: str | None = None
+    evidence_reason: str | None = None
 
 
 @dataclass

@@ -196,6 +196,29 @@ def test_build_database_normalizes_order_values_before_loading(tmp_path: Path):
         con.close()
 
 
+def test_create_daily_sku_sales_excludes_refunded_order_lines(tmp_path: Path):
+    orders_path = tmp_path / "orders_export.csv"
+    orders_path.write_text(
+        "Order ID,Paid Time,SKU ID,Quantity,Paid Amount,Refund Status\n"
+        "o1,2026-06-01 10:00:00,s1,2,258,\n"
+        "o2,2026-06-01 11:00:00,s1,3,387,refunded\n"
+        "o3,2026-06-01 12:00:00,s1,4,516,已退款\n",
+        encoding="utf-8",
+    )
+    db_path = tmp_path / "analytics.duckdb"
+
+    build_database(db_path=db_path, files=[orders_path])
+
+    con = duckdb.connect(str(db_path))
+    try:
+        sales = con.sql(
+            "SELECT SUM(units), SUM(gmv), SUM(order_count) FROM daily_sku_sales WHERE sku_id = 's1'"
+        ).fetchone()
+        assert sales == (2, pytest.approx(258), 1)
+    finally:
+        con.close()
+
+
 def test_create_note_metrics_view_allows_missing_shares(tmp_path: Path):
     con = duckdb.connect(str(tmp_path / "analytics.duckdb"))
     try:

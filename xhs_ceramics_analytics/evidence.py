@@ -15,6 +15,6 @@ def score_evidence(
         return EvidenceStrength.NOT_JUDGABLE
     if sample_size >= 30 and has_controls and confounder_count == 0:
         return EvidenceStrength.STRONG
-    if sample_size >= 10 and confounder_count <= 1:
+    if sample_size >= 10 and has_controls and confounder_count <= 1:
         return EvidenceStrength.MEDIUM
     return EvidenceStrength.WEAK

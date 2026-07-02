@@ -57,6 +57,18 @@ def test_response_curve_task_runs(tmp_path, fixture_dir):
     assert "response_windows" in result.tables
 
 
+def test_product_response_tasks_explain_evidence_reason(tmp_path, fixture_dir):
+    db_path = _db(tmp_path, fixture_dir)
+
+    for task_id in [
+        "product_opportunity_matrix",
+        "sku_counterfactual_lift",
+        "content_response_curve",
+    ]:
+        result = run_task(task_id, db_path)
+        assert result.findings[0].evidence_reason
+
+
 def test_content_and_product_tasks_run(tmp_path, fixture_dir):
     db_path = _db(tmp_path, fixture_dir)
     for task_id, table_name in [

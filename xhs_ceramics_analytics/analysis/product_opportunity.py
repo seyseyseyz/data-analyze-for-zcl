@@ -18,12 +18,13 @@ def run(db_path: Path) -> AnalysisResult:
         findings=[
             Finding(
                 title="SKU 机会已排序",
-                conclusion="已按销售响应对 SKU 排序，并标记初步机会类型。",
+                conclusion="已按观察期销量表现对 SKU 排序，并标记初步机会类型。",
                 evidence_strength=(
                     EvidenceStrength.MEDIUM
                     if rows and has_sales
                     else EvidenceStrength.NOT_JUDGABLE
                 ),
+                evidence_reason=_evidence_reason(rows, has_sales),
                 key_numbers={"sku_count": len(rows)},
                 caveats=["有显式 note-SKU 关联后，内容表现象限会更可靠。"],
             )
@@ -38,7 +39,10 @@ def _fetch_product_opportunities(
 ) -> tuple[list[dict[str, object]], list[str], bool]:
     has_sales_table = _table_exists(con, "daily_sku_sales")
     sales_columns = _table_columns(con, "daily_sku_sales") if has_sales_table else set()
-    has_sales = has_sales_table and {"sku_id", "units", "gmv"}.issubset(sales_columns)
+    has_sales_columns = has_sales_table and {"sku_id", "units", "gmv"}.issubset(
+        sales_columns
+    )
+    has_sales = has_sales_columns and _has_observed_sales(con)
 
     if _table_exists(con, "skus"):
         sku_columns = _table_columns(con, "skus")
@@ -89,11 +93,7 @@ def _fetch_product_opportunities(
             ORDER BY sku_id
             """
         )
-        limitation = (
-            "daily_sku_sales 表的 units/gmv 字段不完整。"
-            if has_sales_table
-            else "缺少 daily_sku_sales 表。"
-        )
+        limitation = _sales_limitation(has_sales_table, has_sales_columns)
         return _rows(result), [limitation], False
 
     if has_sales:
@@ -118,9 +118,45 @@ def _fetch_product_opportunities(
     return [], ["缺少 skus 表和可用的 daily_sku_sales 数据。"], False
 
 
+def _evidence_reason(rows: list[dict[str, object]], has_sales: bool) -> str:
+    if rows and has_sales:
+        return (
+            "SKU 销售数据可用，可以用于商品优先级排序；"
+            "当前商品机会排序主要基于 SKU 销售数据，"
+            "内容表现象限还需要继续纳入 note-SKU 关联证据。"
+        )
+    if rows:
+        return (
+            "当前能识别 SKU 清单，但缺少可用销售数据，"
+            "适合先补齐销量和销售额后再判断商品机会。"
+        )
+    return "缺少 SKU 或销售数据，当前结论只适合指导补数顺序。"
+
+
 def _rows(result) -> list[dict[str, object]]:
     columns = result.columns
     return [dict(zip(columns, row, strict=True)) for row in result.fetchall()]
+
+
+def _has_observed_sales(con) -> bool:
+    return bool(
+        con.sql(
+            """
+            SELECT COUNT(*)
+            FROM daily_sku_sales
+            WHERE sku_id IS NOT NULL
+              AND (units IS NOT NULL OR gmv IS NOT NULL)
+            """
+        ).fetchone()[0]
+    )
+
+
+def _sales_limitation(has_sales_table: bool, has_sales_columns: bool) -> str:
+    if not has_sales_table:
+        return "缺少 daily_sku_sales 表。"
+    if not has_sales_columns:
+        return "daily_sku_sales 表的 units/gmv 字段不完整。"
+    return "daily_sku_sales 表没有可用的 SKU 销售记录。"
 
 
 def _table_exists(con, table_name: str) -> bool:

@@ -1,0 +1,4 @@
+interface:
+  display_name: "data-analyze-for-zcl"
+  short_description: "数据建模与增长分析。朱楚凌专属，其他人使用须征得朱楚凌同意。"
+  default_prompt: "使用 $data-analyze-for-zcl 分析小红书陶瓷电商导出数据，生成有证据强度、限制说明和下一步建议的报告。"
