@@ -197,3 +197,27 @@ def test_all_tasks_include_paid_traffic_tasks_when_ad_data_missing(tmp_path, fix
         result = run_task(task_id, db_path)
         assert result.task_id == task_id
         assert result.findings
+
+
+def test_ad_data_quality_check_detects_creative_grain(tmp_path, fixture_dir):
+    db_path = tmp_path / "analytics.duckdb"
+    build_database(db_path, [fixture_dir / "ads_creative.csv"])
+
+    result = run_task("ad_data_quality_check", db_path)
+
+    row = result.tables["ad_data_quality"][0]
+    assert row["detected_grain"] == "sku"
+    assert row["has_click_metrics"] is True
+    assert row["creative_link_rows"] == 2
+
+
+def test_paid_traffic_efficiency_uses_creative_dimension(tmp_path, fixture_dir):
+    db_path = tmp_path / "analytics.duckdb"
+    build_database(db_path, [fixture_dir / "ads_creative.csv"])
+
+    result = run_task("paid_traffic_efficiency", db_path)
+
+    rows = result.tables["paid_traffic_efficiency"]
+    assert rows
+    assert "creative_name_optional" in rows[0]
+    assert {row["creative_name_optional"] for row in rows} == {"青釉杯场景", "白瓷盘场景"}
