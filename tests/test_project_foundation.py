@@ -51,6 +51,7 @@ def test_published_skill_bundles_runtime_and_entrypoints():
     assert (runtime_dir / "task_templates" / "weekly_business_review.md").exists()
     assert os.access(skill_dir / "scripts" / "bootstrap", os.X_OK)
     assert os.access(skill_dir / "scripts" / "xhs-ca", os.X_OK)
+    assert (skill_dir / "scripts" / "bootstrap_runtime.py").exists()
 
 
 def test_skill_entrypoint_does_not_force_state_into_runtime():

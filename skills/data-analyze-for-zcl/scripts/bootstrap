@@ -5,21 +5,21 @@ skill_dir="$(cd "$(dirname "$0")/.." && pwd)"
 runtime_dir="$skill_dir/assets/xhs-ca"
 
 if ! command -v python3 >/dev/null 2>&1; then
-  echo "Python 3 is required. Install Python 3.11 or newer, then rerun this script." >&2
+  cat >&2 <<'EOF'
+data-analyze-for-zcl runtime is not ready: python3 was not found.
+
+Copy the whole command block below into macOS Terminal. After it finishes, return to Codex and rerun the analysis.
+
+```bash
+set -e
+echo "Install Python 3.11 or 3.12, then rerun ~/.agents/skills/data-analyze-for-zcl/scripts/bootstrap."
+exit 1
+```
+EOF
   exit 1
 fi
 
-if [ ! -f "$runtime_dir/pyproject.toml" ]; then
-  echo "Bundled runtime is missing: $runtime_dir" >&2
-  exit 1
-fi
-
-if [ ! -d "$runtime_dir/.venv" ]; then
-  python3 -m venv "$runtime_dir/.venv"
-fi
-
-"$runtime_dir/.venv/bin/python" -m pip install -U pip
-"$runtime_dir/.venv/bin/python" -m pip install -e "$runtime_dir[dev]"
-
-PATH="$runtime_dir/.venv/bin:$PATH" \
-"$runtime_dir/.venv/bin/python" -m xhs_ceramics_analytics.cli doctor --strict --project-root "$runtime_dir"
+exec python3 "$skill_dir/scripts/bootstrap_runtime.py" \
+  --runtime-dir "$runtime_dir" \
+  --skill-dir "$skill_dir" \
+  --doctor-root "$runtime_dir"
