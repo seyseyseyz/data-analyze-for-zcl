@@ -2,6 +2,7 @@ from pathlib import Path
 
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.db.duck import connect
+from xhs_ceramics_analytics.db.sql_helpers import numeric_expr
 from xhs_ceramics_analytics.evidence import EvidenceStrength, score_evidence
 
 
@@ -98,10 +99,10 @@ def _efficiency_rows(con, source: str) -> list[dict[str, object]]:
     group_dimensions = ", ".join(str(index + 1) for index in range(len(dimensions)))
     group_clause = f"GROUP BY {group_dimensions}" if group_dimensions else ""
 
-    spend_expr = _numeric_expr(columns, "spend")
-    impressions_expr = _numeric_expr(columns, "impressions")
-    clicks_expr = _numeric_expr(columns, "clicks")
-    gmv_expr = _numeric_expr(columns, "gmv_optional")
+    spend_expr = numeric_expr(columns, "spend")
+    impressions_expr = numeric_expr(columns, "impressions")
+    clicks_expr = numeric_expr(columns, "clicks")
+    gmv_expr = numeric_expr(columns, "gmv_optional")
 
     result = con.sql(
         f"""
@@ -187,12 +188,6 @@ def _missing_result(reason: str) -> AnalysisResult:
         tables={"paid_traffic_efficiency": []},
         limitations=[reason],
     )
-
-
-def _numeric_expr(columns: set[str], column: str) -> str:
-    if column not in columns:
-        return "NULL"
-    return f"CAST({column} AS DOUBLE)"
 
 
 def _float_or_none(value: object | None) -> float | None:

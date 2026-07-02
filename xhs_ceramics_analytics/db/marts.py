@@ -1,12 +1,15 @@
+from xhs_ceramics_analytics.db.sql_helpers import numeric_expr
+
+
 def create_ad_metrics_view(con) -> None:
     columns = {row[1] for row in con.sql("PRAGMA table_info('ad_performance_daily')").fetchall()}
 
-    spend = _numeric_expr(columns, "spend")
-    impressions = _numeric_expr(columns, "impressions")
-    clicks = _numeric_expr(columns, "clicks")
-    conversions = _numeric_expr(columns, "conversions_optional")
-    orders = _numeric_expr(columns, "orders_optional")
-    gmv = _numeric_expr(columns, "gmv_optional")
+    spend = numeric_expr(columns, "spend")
+    impressions = numeric_expr(columns, "impressions")
+    clicks = numeric_expr(columns, "clicks")
+    conversions = numeric_expr(columns, "conversions_optional")
+    orders = numeric_expr(columns, "orders_optional")
+    gmv = numeric_expr(columns, "gmv_optional")
 
     con.execute(
         f"""
@@ -22,12 +25,6 @@ def create_ad_metrics_view(con) -> None:
         FROM ad_performance_daily
         """
     )
-
-
-def _numeric_expr(columns: set[str], column: str) -> str:
-    if column not in columns:
-        return "NULL"
-    return f"CAST({column} AS DOUBLE)"
 
 
 def create_note_metrics_view(con) -> None:
