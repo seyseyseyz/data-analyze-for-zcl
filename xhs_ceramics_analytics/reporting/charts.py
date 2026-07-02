@@ -20,11 +20,6 @@ from xhs_ceramics_analytics.reporting import labels
 logger = logging.getLogger(__name__)
 
 _VIEW_W = 640
-_STRENGTH_LABEL = {
-    EvidenceStrength.STRONG: "强",
-    EvidenceStrength.MEDIUM: "中",
-    EvidenceStrength.WEAK: "弱",
-}
 
 _HATCH = (
     '<defs>'
@@ -152,8 +147,7 @@ def evidence_distribution(evidence_counts: Sequence[dict]) -> Markup:
         return Markup("")
     present = [item for item in rows if int(item["count"]) > 0]
     width, height = _VIEW_W, 96
-    pad_l, pad_r = 0, 0
-    track = width - pad_l - pad_r
+    track = width
     parts: list[str] = [_title("结论可信度分布")]
     x = 0.0
     gap = 2.0  # 2px surface gap between adjacent segments (marks-and-anatomy)
@@ -334,7 +328,7 @@ def _line(
             )
         for x, y in pts:  # markers (also the only glyph for 1-point series)
             body.append(
-                f'<circle cx="{_num(x)}" cy="{_num(y)}" r="3.5" fill="{color}" '
+                f'<circle cx="{_num(x)}" cy="{_num(y)}" r="4" fill="{color}" '
                 f'fill-opacity="{opacity}"/>'
             )
 
@@ -347,7 +341,7 @@ def _line(
         for i in range(n_x):
             col = [ys[i] for _, ys in series if ys[i] is not None]
             agg.append(sum(col) / len(col) if col else None)
-        draw(agg, color="var(--ink-strong)", opacity="1", dash="")
+        draw(agg, color="var(--ink-strong)", opacity="0.55" if de_emphasize else "1", dash=dash)
     return _frame("".join(body), width, height)
 
 
@@ -421,18 +415,26 @@ def _scatter(
         )
     for p in points:
         cx, cy = px(p["x"]), py(p["y"])
-        opacity = "0.55" if p.get("de_emphasize") else "1"
+        de = p.get("de_emphasize")
+        opacity = "0.55" if de else "1"
         if p["shape"] == "hollow":
-            fill, stroke = "var(--surface)", p["tone"]
+            fill = "var(--surface)"
+            stroke = "var(--muted)" if de else p["tone"]
         else:
-            fill, stroke = p["tone"], p["tone"]
+            # 2px surface ring separates overlapping marks; a gray ring signals a weak sample
+            fill = p["tone"]
+            stroke = "var(--muted)" if de else "var(--surface)"
         body.append(
             f'<circle cx="{_num(cx)}" cy="{_num(cy)}" r="6" fill="{fill}" '
             f'stroke="{stroke}" stroke-width="2" fill-opacity="{opacity}">'
             f'<title>{_esc(p["label"])}</title></circle>'
         )
+        if cx > width / 2:
+            tx, anchor = cx - 9, "end"
+        else:
+            tx, anchor = cx + 9, "start"
         body.append(
-            f'<text x="{_num(cx + 9)}" y="{_num(cy + 4)}" class="ca-cat">'
+            f'<text x="{_num(tx)}" y="{_num(cy + 4)}" text-anchor="{anchor}" class="ca-cat">'
             f'{_esc(p["label"])}</text>'
         )
     return _frame("".join(body), width, height)
@@ -465,6 +467,7 @@ _BUDGET_TONE = {
     "increase": "var(--green-text)",
     "reduce": "var(--red-text)",
     "hold": "var(--muted)",
+    "needs_data": "var(--muted)",
 }
 
 
@@ -495,8 +498,8 @@ def _build_paid(result: AnalysisResult, strength: EvidenceStrength) -> str:
                 "x": float(r["spend"]),
                 "y": float(r["roas_calc"]),
                 "label": f'{name_of(r)}·{labels.value_label(action)}',
-                "shape": "filled",
-                "tone": _BUDGET_TONE.get(action, "var(--ink-strong)"),
+                "shape": "hollow" if action == "needs_data" else "filled",
+                "tone": _BUDGET_TONE.get(action, "var(--muted)"),
                 "de_emphasize": de,
             }
         )

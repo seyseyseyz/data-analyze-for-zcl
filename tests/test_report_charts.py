@@ -93,6 +93,7 @@ def test_cover_chart_has_two_measure_panels_and_zero_baseline():
     assert 'class="chart-multiples"' in html
     assert "可信度 中" in html          # evidence badge present
     assert html.count("<svg") == 2       # one panel per measure
+    assert 'class="ca-axis"' in html     # zero baseline is actually drawn
 
 
 def test_cover_chart_shows_empty_state_for_all_null_measure():
@@ -214,6 +215,33 @@ def test_response_curve_empty_when_no_rows():
     assert charts.for_result(result) == ""
 
 
+def test_response_curve_weak_evidence_dashes_aggregate_line():
+    result = _result(
+        "content_response_curve",
+        EvidenceStrength.WEAK,
+        {"response_windows": [
+            _rw("n1", "s1", [2.0, 5.0, 3.0, 1.0]),
+            _rw("n2", "s1", [0.0, 4.0, 6.0, 2.0]),
+        ]},
+    )
+    html = charts.for_result(result)
+    assert 'stroke-dasharray="4 3"' in html   # weak aggregate is honestly de-emphasized
+
+
+def test_response_curve_marker_radius_meets_accessibility_floor():
+    result = _result(
+        "content_response_curve",
+        EvidenceStrength.MEDIUM,
+        {"response_windows": [
+            _rw("n1", "s1", [2.0, 5.0, 3.0, 1.0]),
+            _rw("n2", "s1", [0.0, 4.0, 6.0, 2.0]),
+        ]},
+    )
+    html = charts.for_result(result)
+    assert 'r="4"' in html
+    assert 'r="3.5"' not in html
+
+
 def test_opportunity_scatter_plots_only_rows_with_sales():
     result = _result(
         "product_opportunity_matrix",
@@ -250,6 +278,47 @@ def test_opportunity_scatter_uses_shape_not_hue_for_type():
     assert "var(--ink-strong)" in html
 
 
+def test_opportunity_scatter_weak_evidence_uses_gray_ring():
+    result = _result(
+        "product_opportunity_matrix",
+        EvidenceStrength.WEAK,
+        {"product_opportunities": [
+            {"sku_id": "a", "sku_name": "A", "units": 12.0, "gmv": 480.0,
+             "opportunity_type": "sales_response_present"},
+        ]},
+    )
+    html = charts.for_result(result)
+    assert 'stroke="var(--muted)"' in html   # weak sample -> gray ring, not a confident tone
+
+
+def test_opportunity_scatter_filled_point_uses_surface_ring_when_confident():
+    result = _result(
+        "product_opportunity_matrix",
+        EvidenceStrength.MEDIUM,
+        {"product_opportunities": [
+            {"sku_id": "a", "sku_name": "A", "units": 12.0, "gmv": 480.0,
+             "opportunity_type": "sales_response_present"},
+        ]},
+    )
+    html = charts.for_result(result)
+    assert 'stroke="var(--surface)"' in html  # 2px surface ring separates overlapping marks
+
+
+def test_opportunity_scatter_max_x_label_flips_to_avoid_clipping():
+    result = _result(
+        "product_opportunity_matrix",
+        EvidenceStrength.MEDIUM,
+        {"product_opportunities": [
+            {"sku_id": "a", "sku_name": "小杯子", "units": 1.0, "gmv": 50.0,
+             "opportunity_type": "sales_response_present"},
+            {"sku_id": "b", "sku_name": "超长商品名称示例文本", "units": 20.0, "gmv": 900.0,
+             "opportunity_type": "sales_response_present"},
+        ]},
+    )
+    html = charts.for_result(result)
+    assert 'text-anchor="end"' in html   # rightmost point's label grows inward, not off-canvas
+
+
 def test_paid_scatter_suppressed_when_no_spend():
     result = _result(
         "paid_traffic_efficiency",
@@ -278,6 +347,20 @@ def test_paid_scatter_colors_budget_action_status():
     assert "var(--green-text)" in html   # increase -> good
     assert "var(--red-text)" in html     # reduce -> bad
     assert "增加预算" in html            # value_label("increase")
+
+
+def test_paid_scatter_needs_data_is_neutral_hollow():
+    result = _result(
+        "paid_traffic_efficiency",
+        EvidenceStrength.MEDIUM,
+        {"paid_traffic_efficiency": [
+            {"campaign_name_optional": "c1", "spend": 300.0, "roas_calc": 2.0,
+             "gmv_optional": 600.0, "budget_action": "needs_data", "paid_active_days": 5},
+        ]},
+    )
+    html = charts.for_result(result)
+    assert "需要补数据" in html                        # value_label("needs_data")
+    assert 'fill="var(--ink-strong)"' not in html      # never a confident-looking mark
 
 
 def test_builder_escapes_injected_text():
