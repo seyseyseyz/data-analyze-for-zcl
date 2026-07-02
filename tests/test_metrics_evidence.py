@@ -79,3 +79,22 @@ def test_analysis_result_default_mutable_fields_are_isolated():
 
     assert second.tables == {}
     assert second.limitations == []
+
+
+from xhs_ceramics_analytics.analysis.paid_traffic import classify_budget_action
+
+
+def test_classify_budget_action_increase():
+    assert classify_budget_action(200, 120, 1000, 5.0, 2) == "increase"
+
+
+def test_classify_budget_action_reduce_for_spend_without_return():
+    assert classify_budget_action(200, 10, 0, 0.0, 2) == "reduce"
+
+
+def test_classify_budget_action_needs_data_without_clicks():
+    assert classify_budget_action(200, None, None, None, 2) == "needs_data"
+
+
+def test_classify_budget_action_hold_for_one_day_signal():
+    assert classify_budget_action(200, 120, 1000, 5.0, 1) == "hold"

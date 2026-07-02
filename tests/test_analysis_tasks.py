@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from xhs_ceramics_analytics.analysis.registry import run_task
 from xhs_ceramics_analytics.db.build import build_database
 from xhs_ceramics_analytics.db.duck import connect
@@ -158,3 +160,31 @@ def test_note_funnel_returns_none_for_zero_denominators(tmp_path):
     assert row["like_rate"] is None
     assert row["collect_rate"] is None
     assert row["comment_rate"] is None
+
+
+def test_paid_traffic_efficiency_ranks_campaigns_and_budget_actions(tmp_path, fixture_dir):
+    db_path = tmp_path / "analytics.duckdb"
+    build_database(db_path, [fixture_dir / "ads_campaign.csv"])
+
+    result = run_task("paid_traffic_efficiency", db_path)
+
+    assert result.task_id == "paid_traffic_efficiency"
+    assert result.title == "投放效率分析"
+    rows = result.tables["paid_traffic_efficiency"]
+    assert rows[0]["campaign_name_optional"] == "青釉杯投放"
+    assert rows[0]["spend"] == 200
+    assert rows[0]["gmv_optional"] == 880
+    assert rows[0]["roas_calc"] == pytest.approx(4.4)
+    assert rows[0]["budget_action"] == "increase"
+    assert result.findings[0].recommended_action
+
+
+def test_paid_traffic_efficiency_handles_weak_export(tmp_path, fixture_dir):
+    db_path = tmp_path / "analytics.duckdb"
+    build_database(db_path, [fixture_dir / "ads_weak.csv"])
+
+    result = run_task("paid_traffic_efficiency", db_path)
+
+    assert result.findings[0].evidence_strength.value in {"weak", "not_judgable"}
+    assert result.tables["paid_traffic_efficiency"][0]["budget_action"] == "needs_data"
+    assert "成交金额" in result.findings[0].recommended_action
