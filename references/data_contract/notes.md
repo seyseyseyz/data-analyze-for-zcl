@@ -1,0 +1,60 @@
+# notes
+
+One row per Xiaohongshu note.
+
+## Primary Key
+
+`note_id`
+
+## Required Columns
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `note_id` | str (non-empty, stripped) | Unique note identifier |
+
+## Optional Columns
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `publish_time` | datetime \| None | Note publish timestamp |
+| `title` | str \| None | Note title |
+| `body` | str \| None | Note body text |
+| `note_type` | str \| None | Note type / format |
+| `cover_image_path` | str \| None | Path to cover image |
+| `impressions` | int >= 0 \| None | Impression count (non-negative) |
+| `reads` | int >= 0 \| None | Read count (non-negative) |
+| `likes` | int >= 0 \| None | Like count (non-negative) |
+| `collects` | int >= 0 \| None | Collect/save count (non-negative) |
+| `comments` | int >= 0 \| None | Comment count (non-negative) |
+| `shares` | int >= 0 \| None | Share count (non-negative) |
+| `followers_gained` | int >= 0 \| None | New followers gained from note (non-negative) |
+| `author_account` | str \| None | Author account |
+| `topic_tags` | str \| None | Topic tags |
+| `post_status` | str \| None | Post status |
+| `platform_url` | str \| None | Platform URL |
+| `raw_file` | str \| None | Source raw file name/path for lineage |
+| `raw_row_id` | str \| None | Source row identifier for lineage |
+
+## Join Keys
+
+- `note_id` is referenced by `note_sku_links.note_id` and `content_features.note_id` and `comments.note_id`
+
+## Chinese Aliases (from mapping.py FIELD_ALIASES)
+
+| English Column | Chinese Aliases |
+|----------------|-----------------|
+| `note_id` | 笔记id, 笔记ID |
+| `publish_time` | 发布时间, 笔记发布时间, 笔记创建时间, 创建时间 |
+| `title` | 笔记标题, 标题 |
+| `reads` | 阅读次数, 笔记阅读数, 阅读数 |
+| `likes` | 点赞数, 点赞次数 |
+| `collects` | 收藏数, 收藏次数 |
+| `comments` | 评论数, 评论次数 |
+| `shares` | 分享数, 分享次数 |
+| `impressions` | 曝光数, 曝光次数, 展现数 |
+
+## Sample Row
+
+```json
+{"note_id": "N001", "publish_time": "2025-01-15T10:00:00", "title": "example", "body": null, "note_type": null, "cover_image_path": null, "impressions": 1000, "reads": 800, "likes": 40, "collects": 20, "comments": 5, "shares": 2, "followers_gained": 3, "raw_file": null, "raw_row_id": null}
+```

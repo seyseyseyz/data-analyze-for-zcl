@@ -1,0 +1,39 @@
+# hypotheses
+
+Persistent knowledge base.
+
+## Primary Key
+
+`hypothesis_id`
+
+## Required Columns
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `hypothesis_id` | str | Unique hypothesis identifier |
+| `statement` | str | Hypothesis statement |
+| `status` | str | Current status |
+| `evidence_strength` | str | Strength of supporting evidence |
+
+## Optional Columns
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `supporting_runs` | str \| None | References to supporting experiment runs |
+| `contradicting_runs` | str \| None | References to contradicting experiment runs |
+| `next_test` | str \| None | Planned next test |
+| `last_updated` | datetime \| None | Last update timestamp |
+
+## Join Keys
+
+None (standalone knowledge base table).
+
+## Chinese Aliases (from mapping.py FIELD_ALIASES)
+
+No dedicated aliases for `hypotheses` in FIELD_ALIASES (this table is maintained programmatically).
+
+## Sample Row
+
+```json
+{"hypothesis_id": "H001", "statement": "flat_lay covers drive higher reads for cups", "status": "supported", "evidence_strength": "moderate", "supporting_runs": "EXP001", "contradicting_runs": null, "next_test": "test on bowls", "last_updated": "2025-01-22T08:00:00"}
+```

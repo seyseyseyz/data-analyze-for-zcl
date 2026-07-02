@@ -1,0 +1,44 @@
+# experiments
+
+One row per planned or completed test cell.
+
+## Primary Key
+
+`experiment_id`
+
+## Required Columns
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `experiment_id` | str | Unique experiment identifier |
+| `week` | str | Week label for the experiment |
+| `hypothesis` | str | Hypothesis being tested |
+| `sku_id` | str | SKU under test |
+| `controlled_variables` | str | Variables held constant |
+| `changed_variable` | str | Variable being changed |
+| `success_metric` | str | Metric used to evaluate success |
+| `decision_rule` | str | Rule for deciding outcome |
+| `status` | str | Experiment status |
+
+## Optional Columns
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `planned_publish_time` | datetime \| None | Planned publish time for the test note |
+| `note_id_optional` | str \| None | Note ID if published |
+| `result_summary` | str \| None | Summary of results |
+
+## Join Keys
+
+- `sku_id` references `skus.sku_id`
+- `note_id_optional` references `notes.note_id`
+
+## Chinese Aliases (from mapping.py FIELD_ALIASES)
+
+No dedicated aliases for `experiments` in FIELD_ALIASES (this table is typically maintained manually).
+
+## Sample Row
+
+```json
+{"experiment_id": "EXP001", "week": "2025-W03", "hypothesis": "flat_lay cover outperforms lifestyle", "planned_publish_time": "2025-01-20T10:00:00", "note_id_optional": "N005", "sku_id": "S001", "controlled_variables": "same SKU, same copy, same time", "changed_variable": "cover composition_type", "success_metric": "reads", "decision_rule": ">20% lift", "status": "completed", "result_summary": "flat_lay +32% reads"}
+```

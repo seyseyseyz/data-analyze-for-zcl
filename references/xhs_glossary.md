@@ -1,0 +1,131 @@
+# 千帆 CN Column Glossary
+
+## Purpose
+
+Load this file during `build` when incoming header names are uncertain.
+It bridges Chinese export column names (千帆/聚光/薯条 exports) to the contract field names used in DuckDB.
+Source of truth: `xhs_ceramics_analytics/importing/mapping.py` FIELD_ALIASES.
+
+---
+
+## Table-by-table alias tables
+
+### notes
+
+| 千帆导出列名 | 别名 | contract 字段 | dtype |
+|---|---|---|---|
+| 笔记id | 笔记ID | note_id | str |
+| 发布时间 | 笔记发布时间, 笔记创建时间, 创建时间 | publish_time | datetime |
+| 笔记标题 | 标题 | title | str |
+| 阅读次数 | 笔记阅读数, 阅读数 | reads | int |
+| 点赞数 | 点赞次数 | likes | int |
+| 收藏数 | 收藏次数 | collects | int |
+| 评论数 | 评论次数 | comments | int |
+| 分享数 | 分享次数 | shares | int |
+| 曝光数 | 曝光次数, 展现数 | impressions | int |
+
+### orders
+
+| 千帆导出列名 | 别名 | contract 字段 | dtype |
+|---|---|---|---|
+| 订单号 | 订单编号, 订单id | order_id | str |
+| 支付时间 | 付款时间, 成交时间 | paid_time | datetime |
+| 规格id | sku id, skuid | sku_id | str |
+| 商品数量 | 购买数量, 数量 | quantity | int |
+| 支付金额 | 实付金额, 成交金额, 订单金额 | paid_amount | float |
+| 退款状态 | 售后状态 | refund_status_optional | str |
+
+### skus
+
+| 千帆导出列名 | 别名 | contract 字段 | dtype |
+|---|---|---|---|
+| 规格id | 规格ID, skuid | sku_id | str |
+| 商品id | 商品ID | product_id | str |
+| 规格名称 | sku名称 | sku_name | str |
+| 价格 | 售价, 销售价格, 规格价格 | price | float |
+| 库存 | 可售库存 | inventory_optional | int |
+
+### products
+
+| 千帆导出列名 | 别名 | contract 字段 | dtype |
+|---|---|---|---|
+| 商品id | 商品ID | product_id | str |
+| 商品名称 | 商品名 | product_name | str |
+| 商品类目 | 类目, 分类 | category | str |
+| 器型 | 品类 | vessel_type | str |
+| 系列 | 商品系列 | series | str |
+| 商品状态 | 状态 | status | str |
+
+### ad_performance_daily
+
+| 千帆导出列名 | 别名 | contract 字段 | dtype |
+|---|---|---|---|
+| 日期 | 时间, 投放日期, 数据日期 | date | date |
+| 平台 | 来源, 投放平台 | platform_source | str |
+| 计划ID | 计划id, 推广计划ID | campaign_id_optional | str |
+| 计划名称 | 推广计划, 投放计划 | campaign_name_optional | str |
+| 单元ID | 广告单元ID | unit_id_optional | str |
+| 单元名称 | 广告单元 | unit_name_optional | str |
+| 创意ID | 素材ID | creative_id_optional | str |
+| 创意名称 | 素材名称, 笔记标题 | creative_name_optional | str |
+| 笔记ID | 笔记id | note_id_optional | str |
+| 笔记链接 | 推广链接, 落地页链接 | note_url_optional | str |
+| 商品ID | 商品id | product_id_optional | str |
+| SKU ID | sku_id, 规格ID | sku_id_optional | str |
+| 消耗 | 花费, 广告消耗, 投放消耗 | spend | float |
+| 曝光 | 展现, 展现量, 曝光量 | impressions | int |
+| 点击 | 点击量 | clicks | int |
+| 点击率 | CTR | ctr | float |
+| 平均点击成本 | CPC | cpc | float |
+| 千次曝光成本 | CPM | cpm | float |
+| 转化数 | 成交人数, 转化人数 | conversions_optional | int |
+| 成交订单数 | 订单数, 支付订单数 | orders_optional | int |
+| 成交金额 | GMV, 支付金额 | gmv_optional | float |
+| ROI | 投产比 | roi_optional | float |
+| ROAS | 广告投产比 | roas_optional | float |
+
+### comments
+
+No FIELD_ALIASES defined. TABLE_SIGNATURES requires: `note_id`, `comment_time`, `comment_text`. Import with English column names or rely on fuzzy matching.
+
+### content_features
+
+No FIELD_ALIASES defined. TABLE_SIGNATURES requires: `note_id`, `composition_type`, `scene_hint`, `copy_angle`. Import with English column names or rely on fuzzy matching.
+
+### calendar_events
+
+No FIELD_ALIASES defined. TABLE_SIGNATURES requires: `date`, `event_type`, `event_name`, `severity`. Import with English column names or rely on fuzzy matching.
+
+### note_sku_links
+
+No TABLE_SIGNATURES or FIELD_ALIASES entry. Must be imported with exact English column names: `note_id`, `sku_id`.
+
+---
+
+## Platform vocabulary
+
+| 术语 | 定义 | 平台公式 |
+|---|---|---|
+| 篇均 | 每篇笔记的平均值（阅读/互动等） | 指标总和 / 笔记篇数 |
+| 阅读率 | 曝光转化为阅读的比率 | reads / impressions |
+| 互动率 | 阅读转化为互动行为（赞藏评分）的比率 | (likes + collects + comments + shares) / reads |
+| 千次曝光 | CPM，每千次展示所花费的费用 | spend / impressions * 1000 |
+| 聚光 | 小红书官方信息流+搜索广告投放平台 | -- |
+| 薯条 | 小红书笔记加热工具（轻量推广，无定向） | -- |
+| 品销宝 | 小红书品牌搜索广告（品牌专区） | -- |
+| 直播间 | 小红书直播带货渠道 | -- |
+| 投产比 / ROI | 广告花费与成交金额之比 | gmv / spend |
+| ROAS | 与 ROI 同义；部分报表用此英文缩写 | gmv / spend |
+
+---
+
+## Filename hints
+
+| 文件名模式 | 对应 contract 表 |
+|---|---|
+| 笔记数据_*.xlsx, 笔记分析*.xlsx, 内容数据*.csv | notes |
+| 订单数据_*.xlsx, 成交订单*.xlsx, 订单明细*.csv | orders |
+| SKU销售*.xlsx, 规格销售*.csv, 商品规格*.xlsx | skus |
+| 商品数据_*.xlsx, 商品列表*.xlsx | products |
+| 聚光报表*.xlsx, 投放数据*.xlsx, 广告数据*.csv, 薯条数据*.xlsx | ad_performance_daily |
+| 评论数据*.xlsx, 评论导出*.csv | comments |

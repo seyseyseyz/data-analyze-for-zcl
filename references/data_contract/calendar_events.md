@@ -1,0 +1,49 @@
+# calendar_events
+
+One row per date/event.
+
+## Primary Key
+
+(`date`, `event_type`, `event_name`)
+
+## Required Columns
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `date` | date | Event date |
+| `event_type` | str | Event type |
+| `event_name` | str | Event name |
+| `severity` | str | Severity level |
+
+## Optional Columns
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `affected_sku_id_optional` | str \| None | Affected SKU identifier |
+| `affected_product_id_optional` | str \| None | Affected product identifier |
+| `notes` | str \| None | Free-text notes about the event |
+
+## Event Type Examples
+
+- new product launch
+- promotion
+- holiday
+- stockout
+- restock
+- shipping disruption
+- platform campaign
+
+## Join Keys
+
+- `affected_sku_id_optional` references `skus.sku_id`
+- `affected_product_id_optional` references `products.product_id`
+
+## Chinese Aliases (from mapping.py FIELD_ALIASES)
+
+No dedicated aliases for `calendar_events` in FIELD_ALIASES (the table signature uses English column names: date, event_type, event_name, severity).
+
+## Sample Row
+
+```json
+{"date": "2025-01-20", "event_type": "promotion", "event_name": "Spring Festival Sale", "affected_sku_id_optional": "S001", "affected_product_id_optional": "P001", "severity": "high", "notes": "50% off all cups"}
+```

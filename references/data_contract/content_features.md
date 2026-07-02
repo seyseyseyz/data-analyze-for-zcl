@@ -1,0 +1,63 @@
+# content_features
+
+One row per note, optionally split into cover and copy feature groups. If cover and copy features are split into separate files, each row still carries `note_id`.
+
+## Primary Key
+
+`note_id`
+
+## Required Columns
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `note_id` | str | Note identifier |
+
+## Cover Features (optional)
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `vessel_type_visible` | str \| None | Vessel type visible in cover |
+| `composition_type` | str \| None | Composition type |
+| `product_area_ratio_band` | str \| None | Product area ratio band |
+| `shooting_angle` | str \| None | Shooting angle |
+| `background_material` | str \| None | Background material |
+| `lighting_style` | str \| None | Lighting style |
+| `color_temperature` | str \| None | Color temperature |
+| `saturation_band` | str \| None | Saturation band |
+| `contrast_band` | str \| None | Contrast band |
+| `scene_hint` | str \| None | Scene hint |
+| `human_hand_visible` | str \| None | Human hand visible |
+| `food_drink_visible` | str \| None | Food/drink visible |
+| `text_overlay_present` | str \| None | Text overlay present |
+| `text_overlay_length_band` | str \| None | Text overlay length band |
+| `aesthetic_semantics` | str \| None | Aesthetic semantics |
+
+## Copy Features (optional)
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `copy_angle` | str \| None | Copy angle |
+| `purchase_motive` | str \| None | Purchase motive |
+| `craft_terms_present` | str \| None | Craft terms present |
+| `scene_terms_present` | str \| None | Scene terms present |
+| `gift_terms_present` | str \| None | Gift terms present |
+| `scarcity_terms_present` | str \| None | Scarcity terms present |
+| `price_explanation_present` | str \| None | Price explanation present |
+| `title_length_band` | str \| None | Title length band |
+| `specific_noun_density_band` | str \| None | Specific noun density band |
+| `emotional_intensity_band` | str \| None | Emotional intensity band |
+| `call_to_action_type` | str \| None | Call to action type |
+
+## Join Keys
+
+- `note_id` references `notes.note_id`
+
+## Chinese Aliases (from mapping.py FIELD_ALIASES)
+
+No dedicated aliases for `content_features` in FIELD_ALIASES (features are typically generated programmatically from note content analysis).
+
+## Sample Row
+
+```json
+{"note_id": "N001", "composition_type": "flat_lay", "scene_hint": "dining_table", "copy_angle": "lifestyle", "purchase_motive": "gift", "craft_terms_present": "yes"}
+```

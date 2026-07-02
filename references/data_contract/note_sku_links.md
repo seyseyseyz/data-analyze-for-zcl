@@ -1,0 +1,43 @@
+# note_sku_links
+
+Links notes to candidate products or SKUs.
+
+## Primary Key
+
+(`note_id`, `sku_id`)
+
+## Required Columns
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `note_id` | str (non-empty, stripped) | Note identifier |
+| `sku_id` | str (non-empty, stripped) | SKU identifier |
+| `link_type` | Literal['explicit','manual','inferred'] | How the link was established |
+| `confidence` | float in [0.0, 1.0] | Link confidence score, bounded [0,1] |
+
+## Optional Columns
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `evidence` | str \| None | Free-text evidence/justification for the link |
+
+## Allowed `link_type` values
+
+- `explicit`: source file provides the relationship.
+- `manual`: user confirms the relationship.
+- `inferred`: title, body, SKU name, product name, image filename, publish plan, or timing suggests a relationship.
+
+## Join Keys
+
+- `note_id` references `notes.note_id` (many-to-one, required)
+- `sku_id` references `skus.sku_id` (many-to-one, required)
+
+## Chinese Aliases (from mapping.py FIELD_ALIASES)
+
+No dedicated aliases for `note_sku_links` in FIELD_ALIASES (this table is typically constructed programmatically or manually).
+
+## Sample Row
+
+```json
+{"note_id": "N001", "sku_id": "S001", "link_type": "explicit", "confidence": 1.0, "evidence": null}
+```

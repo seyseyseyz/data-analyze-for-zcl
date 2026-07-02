@@ -1,0 +1,54 @@
+# Data Contract Index
+
+All tables used by the ceramics analytics pipeline. Each file documents required/optional columns, primary key, join keys, Chinese aliases, and a sample row.
+
+## Tables
+
+| Table | File | Description |
+|-------|------|-------------|
+| `notes` | [notes.md](notes.md) | One row per Xiaohongshu note with engagement metrics |
+| `products` | [products.md](products.md) | One row per product (vessel type, series, category) |
+| `skus` | [skus.md](skus.md) | One row per SKU with price and optional inventory |
+| `orders` | [orders.md](orders.md) | One row per order line (order_id + sku_id grain) |
+| `daily_sku_sales` | [daily_sku_sales.md](daily_sku_sales.md) | Derived daily aggregates: units, GMV, order count |
+| `note_sku_links` | [note_sku_links.md](note_sku_links.md) | Attribution links between notes and SKUs |
+| `content_features` | [content_features.md](content_features.md) | Cover and copy features extracted per note |
+| `comments` | [comments.md](comments.md) | Comment-level export per note |
+| `calendar_events` | [calendar_events.md](calendar_events.md) | External events: launches, promos, stockouts |
+| `experiments` | [experiments.md](experiments.md) | Planned/completed A/B test cells |
+| `hypotheses` | [hypotheses.md](hypotheses.md) | Persistent knowledge base of tested hypotheses |
+| `ad_performance_daily` | [ad_performance_daily.md](ad_performance_daily.md) | Paid traffic performance at available grain |
+
+## Join Graph
+
+```
+products
+  |
+  | product_id (optional)
+  v
+skus ─────────────────────────────────────────┐
+  |                                           |
+  | sku_id                  sku_id            | sku_id
+  v                           v              v
+orders              note_sku_links       daily_sku_sales
+                        |
+                        | note_id
+                        v
+                      notes
+                        |
+          ┌─────────────┼─────────────┐
+          |             |             |
+          v             v             v
+   content_features  comments   ad_performance_daily
+                                  (via note_id_optional)
+
+calendar_events ──> skus (affected_sku_id_optional)
+                ──> products (affected_product_id_optional)
+
+experiments ──> skus (sku_id)
+            ──> notes (note_id_optional)
+```
+
+## Usage Note
+
+For a single-task lookup, task_templates already list the exact fields needed; only load this index when the user asks about schema or when resolving cross-table joins.
