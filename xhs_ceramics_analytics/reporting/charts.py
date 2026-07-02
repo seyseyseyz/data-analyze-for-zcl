@@ -261,3 +261,25 @@ def _build_copy(result: AnalysisResult, strength: EvidenceStrength) -> str:
 
 _BUILDERS["cover_style_effect"] = _build_cover
 _BUILDERS["copy_angle_effect"] = _build_copy
+
+
+def _build_comment_demand(result: AnalysisResult, strength: EvidenceStrength) -> str:
+    rows = [r for r in result.tables.get("comment_demands", []) if int(r.get("comments") or 0) > 0]
+    if not rows:
+        return ""
+    total = sum(int(r["comments"]) for r in rows)
+    bar_rows = [
+        (
+            labels.value_label(str(r["demand_group"])),
+            float(r.get("comment_share") or 0.0),
+            labels.format_percent(float(r.get("comment_share") or 0.0)),
+            "var(--ink-strong)",
+        )
+        for r in rows
+    ]
+    de = strength == EvidenceStrength.WEAK
+    body = _hbar(bar_rows, value_max=max(v for _, v, _, _ in bar_rows), de_emphasize=de)
+    return f'{_chart_badge(strength, total)}{body}'
+
+
+_BUILDERS["comment_demand_mining"] = _build_comment_demand

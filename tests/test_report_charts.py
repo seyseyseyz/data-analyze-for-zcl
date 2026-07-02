@@ -131,3 +131,39 @@ def test_copy_chart_uses_copy_angle_column():
     html = charts.for_result(result)
     assert "送礼角度" in html          # value_label("gift")
     assert "<svg" in html
+
+
+def test_comment_demand_share_bar_uses_percent_labels():
+    result = _result(
+        "comment_demand_mining",
+        EvidenceStrength.MEDIUM,
+        {"comment_demands": [
+            {"demand_group": "capacity", "comments": 12, "notes": 5,
+             "comment_share": 0.48, "example_comments": ["多大容量"]},
+            {"demand_group": "price", "comments": 8, "notes": 4,
+             "comment_share": 0.32, "example_comments": ["多少钱"]},
+            {"demand_group": "other", "comments": 5, "notes": 3,
+             "comment_share": 0.20, "example_comments": ["好看"]},
+        ]},
+    )
+    html = charts.for_result(result)
+    assert "<svg" in html
+    assert "48%" in html                # format_percent(0.48)
+    assert "容量/尺寸需求" in html        # value_label("capacity")
+    assert "0.48" not in html           # never a raw ratio
+
+
+def test_comment_demand_skips_zero_comment_groups():
+    result = _result(
+        "comment_demand_mining",
+        EvidenceStrength.WEAK,
+        {"comment_demands": [
+            {"demand_group": "capacity", "comments": 3, "notes": 1,
+             "comment_share": 1.0, "example_comments": []},
+            {"demand_group": "gift", "comments": 0, "notes": 0,
+             "comment_share": 0.0, "example_comments": []},
+        ]},
+    )
+    html = charts.for_result(result)
+    assert "样本不足" in html            # weak evidence badge
+    assert "送礼角度" not in html         # zero-comment group omitted
