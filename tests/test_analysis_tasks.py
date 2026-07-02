@@ -98,6 +98,35 @@ def test_decision_and_knowledge_tasks_run(tmp_path, fixture_dir):
         assert table_name in result.tables
 
 
+def test_ad_data_quality_check_reports_paid_export_readiness(tmp_path, fixture_dir):
+    db_path = tmp_path / "analytics.duckdb"
+    build_database(db_path, [fixture_dir / "ads_campaign.csv"])
+
+    result = run_task("ad_data_quality_check", db_path)
+
+    assert result.task_id == "ad_data_quality_check"
+    assert result.title == "投放数据可用性检查"
+    assert result.findings[0].evidence_reason
+    row = result.tables["ad_data_quality"][0]
+    assert row["rows"] == 2
+    assert row["detected_grain"] == "campaign"
+    assert row["total_spend"] == 200
+    assert row["has_click_metrics"] is True
+    assert row["has_gmv_metrics"] is True
+
+
+def test_ad_data_quality_check_degrades_when_ad_table_missing(tmp_path):
+    db_path = tmp_path / "analytics.duckdb"
+    con = connect(db_path)
+    con.close()
+
+    result = run_task("ad_data_quality_check", db_path)
+
+    assert result.findings[0].evidence_strength.value == "not_judgable"
+    assert result.tables["ad_data_quality"] == []
+    assert "ad_performance_daily" in result.limitations[0]
+
+
 def test_note_funnel_returns_none_for_zero_denominators(tmp_path):
     db_path = tmp_path / "analytics.duckdb"
     con = connect(db_path)

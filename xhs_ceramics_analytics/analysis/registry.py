@@ -3,6 +3,7 @@ from typing import Callable
 
 from xhs_ceramics_analytics.analysis import (
     account_baseline,
+    ad_quality,
     comment_demand,
     copy_effect,
     cover_effect,
@@ -23,6 +24,7 @@ from xhs_ceramics_analytics.analysis.result import AnalysisResult
 
 TASKS: dict[str, Callable[[Path], AnalysisResult]] = {
     "data_quality_check": data_quality.run,
+    "ad_data_quality_check": ad_quality.run,
     "account_baseline": account_baseline.run,
     "note_funnel": note_funnel.run,
     "sku_counterfactual_lift": sku_lift.run,
