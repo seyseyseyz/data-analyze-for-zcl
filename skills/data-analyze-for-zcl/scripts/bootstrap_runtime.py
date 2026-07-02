@@ -141,7 +141,7 @@ def repair_reinstall_skill_shell() -> str:
     return '''set -e
 
 rm -rf "$HOME/.agents/skills/data-analyze-for-zcl"
-npx skills add seyseyseyz/data-analyze-for-zcl -g -y
+npx skills add seyseyseyz/data-analyze-for-zcl -g -y --skill data-analyze-for-zcl
 test -x "$HOME/.agents/skills/data-analyze-for-zcl/scripts/xhs-ca"
 test -d "$HOME/.agents/skills/data-analyze-for-zcl/assets/xhs-ca"
 '''

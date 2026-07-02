@@ -38,6 +38,14 @@ Install globally:
 npx skills add seyseyseyz/data-analyze-for-zcl -g -y
 ```
 
+Refresh an existing global install before testing bootstrap fixes:
+
+```bash
+rm -rf "$HOME/.agents/skills/data-analyze-for-zcl"
+npx skills add seyseyseyz/data-analyze-for-zcl -g -y --skill data-analyze-for-zcl
+~/.agents/skills/data-analyze-for-zcl/scripts/bootstrap
+```
+
 ## Quick Start
 
 ```bash
@@ -66,7 +74,7 @@ xhs-ca doctor --strict
 
 ## Your Own Exports
 
-1. Export your Xiaohongshu notes, products, SKUs, orders, comments, and calendar data as CSV files.
+1. Export your Xiaohongshu notes, products, SKUs, orders, comments, and calendar data as Excel or CSV files.
 2. Check the local environment:
 
 ```bash
@@ -76,7 +84,7 @@ xhs-ca doctor
 3. Build the local DuckDB database:
 
 ```bash
-xhs-ca build path/to/notes.csv path/to/products.csv path/to/skus.csv path/to/orders.csv
+xhs-ca build path/to/notes.xlsx path/to/products.xlsx path/to/skus.xlsx path/to/orders.xlsx
 ```
 
 4. Run a single analysis task or the full report menu:

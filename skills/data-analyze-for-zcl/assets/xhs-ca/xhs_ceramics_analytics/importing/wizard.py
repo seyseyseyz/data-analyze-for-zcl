@@ -3,13 +3,13 @@ from pathlib import Path
 import yaml
 
 from xhs_ceramics_analytics.importing.mapping import guess_field_mapping, guess_table_type
-from xhs_ceramics_analytics.importing.profile import profile_csv
+from xhs_ceramics_analytics.importing.profile import profile_file
 
 
 def build_mapping_for_files(files: list[Path]) -> dict[str, object]:
     tables: list[dict[str, object]] = []
     for path in files:
-        profile = profile_csv(path)
+        profile = profile_file(path)
         table_type = guess_table_type(profile)
         tables.append(
             {

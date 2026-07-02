@@ -147,6 +147,25 @@ def test_normalize_order_rows_treats_optional_missing_values_as_none():
     assert normalized[0].refund_status_optional is None
 
 
+def test_normalize_order_rows_cleans_currency_and_placeholder_amounts():
+    normalized = normalize_order_rows(
+        [
+            _order_row(paid_amount="¥1,298.50", quantity="1,000"),
+            _order_row(order_id="o2", paid_amount="--"),
+        ]
+    )
+
+    assert normalized[0].paid_amount == 1298.5
+    assert normalized[0].quantity == 1000
+    assert normalized[1].paid_amount is None
+
+
+def test_normalize_order_rows_accepts_excel_serial_datetime():
+    normalized = normalize_order_rows([_order_row(paid_time=45444.5)])
+
+    assert normalized[0].paid_time == datetime(2024, 6, 1, 12, 0)
+
+
 @pytest.mark.parametrize(
     ("model_cls", "kwargs", "field_name"),
     [

@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import duckdb
+import pandas as pd
 import pytest
 
 from xhs_ceramics_analytics.db.build import build_database
@@ -128,6 +129,69 @@ def test_build_database_uses_duckdb_columns_for_duplicate_headers(tmp_path: Path
             row[1] for row in con.sql("PRAGMA table_info('orders')").fetchall()
         }
         assert {"extra", "extra_1"}.issubset(order_columns)
+    finally:
+        con.close()
+
+
+def test_build_database_imports_qianfan_order_excel(tmp_path: Path):
+    orders_path = tmp_path / "qianfan_orders.xlsx"
+    with pd.ExcelWriter(orders_path) as writer:
+        pd.DataFrame({"说明": ["汇总页"]}).to_excel(writer, sheet_name="汇总", index=False)
+        pd.DataFrame(
+            [
+                ["导出时间", None, None, None, None],
+                ["订单号", "支付时间", "规格ID", "商品数量", "支付金额"],
+                ["o1", "2026-06-01 10:00:00", "s1", 2, 258],
+                ["o2", "2026-06-01 11:00:00", "s1", 3, 387],
+            ]
+        ).to_excel(writer, sheet_name="订单明细", index=False, header=False)
+    db_path = tmp_path / "analytics.duckdb"
+
+    build_database(db_path=db_path, files=[orders_path])
+
+    con = duckdb.connect(str(db_path))
+    try:
+        assert (
+            con.sql(
+                "SELECT SUM(units) FROM daily_sku_sales WHERE sku_id = 's1'"
+            ).fetchone()[0]
+            == 5
+        )
+        assert (tmp_path / "staging" / "orders.normalized.csv").exists()
+        order_columns = {
+            row[1] for row in con.sql("PRAGMA table_info('orders')").fetchall()
+        }
+        assert {"order_id", "paid_time", "sku_id", "quantity", "paid_amount"}.issubset(
+            order_columns
+        )
+    finally:
+        con.close()
+
+
+def test_build_database_normalizes_order_values_before_loading(tmp_path: Path):
+    orders_path = tmp_path / "qianfan_orders.xlsx"
+    with pd.ExcelWriter(orders_path) as writer:
+        pd.DataFrame(
+            [
+                ["订单号", "支付时间", "规格ID", "商品数量", "支付金额"],
+                ["o1", "2026-06-01 10:00:00", "s1", "1,000", "¥1,298.50"],
+                ["o2", "2026-06-01 11:00:00", "s1", "2", "--"],
+            ]
+        ).to_excel(writer, sheet_name="订单明细", index=False, header=False)
+    db_path = tmp_path / "analytics.duckdb"
+
+    build_database(db_path=db_path, files=[orders_path])
+
+    con = duckdb.connect(str(db_path))
+    try:
+        row = con.sql(
+            "SELECT SUM(quantity), SUM(paid_amount) FROM orders WHERE sku_id = 's1'"
+        ).fetchone()
+        assert row == (1002, pytest.approx(1298.5))
+        sales = con.sql(
+            "SELECT SUM(units), SUM(gmv) FROM daily_sku_sales WHERE sku_id = 's1'"
+        ).fetchone()
+        assert sales == (1002, pytest.approx(1298.5))
     finally:
         con.close()
 

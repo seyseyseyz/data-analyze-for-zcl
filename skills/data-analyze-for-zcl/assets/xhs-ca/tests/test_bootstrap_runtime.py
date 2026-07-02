@@ -64,6 +64,42 @@ def test_install_repair_shell_uses_temporary_pip_cache():
     assert "\"$SKILL_DIR/scripts/xhs-ca\" doctor --strict" in shell
 
 
+def test_bootstrap_wrappers_use_shared_python_selector():
+    test_path = Path(__file__).resolve()
+    bootstrap_scripts = [
+        candidate
+        for candidate in (
+            test_path.parents[1] / "scripts" / "bootstrap",
+            test_path.parents[1] / "skills" / "data-analyze-for-zcl" / "scripts" / "bootstrap",
+            test_path.parents[3] / "scripts" / "bootstrap",
+        )
+        if candidate.exists()
+    ]
+
+    assert bootstrap_scripts
+    for script in bootstrap_scripts:
+        body = script.read_text(encoding="utf-8")
+        assert "bootstrap_python.sh" in body
+        assert "is_compatible_python()" not in body
+
+
+def test_sync_runtime_copies_shared_bootstrap_selector():
+    test_path = Path(__file__).resolve()
+    sync_scripts = [
+        candidate
+        for candidate in (
+            test_path.parents[1] / "skills" / "data-analyze-for-zcl" / "scripts" / "sync-runtime",
+            test_path.parents[3] / "skills" / "data-analyze-for-zcl" / "scripts" / "sync-runtime",
+        )
+        if candidate.exists()
+    ]
+
+    assert sync_scripts
+    for script in sync_scripts:
+        body = script.read_text(encoding="utf-8")
+        assert "bootstrap_python.sh" in body
+
+
 def test_venv_needs_rebuild_when_python_is_missing(tmp_path):
     helper = load_bootstrap_runtime()
     runtime_dir = tmp_path / "runtime"
@@ -113,7 +149,10 @@ def test_main_prints_repair_kit_for_incomplete_skill_package(tmp_path, capsys):
     captured = capsys.readouterr()
     assert exit_code == 1
     assert "Copy the whole command block below into macOS Terminal" in captured.err
-    assert "npx skills add seyseyseyz/data-analyze-for-zcl -g -y" in captured.err
+    assert (
+        "npx skills add seyseyseyz/data-analyze-for-zcl -g -y --skill data-analyze-for-zcl"
+        in captured.err
+    )
     assert "Traceback" not in captured.err
 
 
@@ -153,7 +192,7 @@ def test_bootstrap_wrappers_accept_python311_without_python3(tmp_path):
     fake_cat = bin_dir / "cat"
     fake_cat.write_text("#!/bin/sh\n/bin/cat \"$@\"\n", encoding="utf-8")
     fake_cat.chmod(0o755)
-    env = {"PATH": str(bin_dir)}
+    env = {"PATH": str(bin_dir), "XHS_CA_PYTHON_CANDIDATES": "python3.11"}
 
     for script in bootstrap_scripts:
         result = subprocess.run(
@@ -170,6 +209,116 @@ def test_bootstrap_wrappers_accept_python311_without_python3(tmp_path):
     logged = log_file.read_text(encoding="utf-8")
     for script in bootstrap_scripts:
         assert str(script.parent / "bootstrap_runtime.py") in logged
+
+
+def test_bootstrap_wrappers_pass_selected_python_to_helper(tmp_path):
+    test_path = Path(__file__).resolve()
+    bootstrap_scripts = [
+        candidate
+        for candidate in (
+            test_path.parents[1] / "scripts" / "bootstrap",
+            test_path.parents[1] / "skills" / "data-analyze-for-zcl" / "scripts" / "bootstrap",
+            test_path.parents[3] / "scripts" / "bootstrap",
+        )
+        if candidate.exists()
+    ]
+    assert bootstrap_scripts
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    log_file = tmp_path / "selected-python.log"
+    fake_python = bin_dir / "python3.12"
+    fake_python.write_text(
+        "#!/bin/sh\n"
+        "if [ \"$1\" = \"-c\" ]; then\n"
+        "  exit 0\n"
+        "fi\n"
+        f"printf '%s\\n' \"$XHS_CA_PYTHON\" >> {log_file!s}\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    fake_python.chmod(0o755)
+    fake_dirname = bin_dir / "dirname"
+    fake_dirname.write_text(
+        "#!/bin/sh\n"
+        "case \"$1\" in\n"
+        "  */*) printf '%s\\n' \"${1%/*}\" ;;\n"
+        "  *) printf '.\\n' ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    fake_dirname.chmod(0o755)
+    env = {"PATH": str(bin_dir), "XHS_CA_PYTHON_CANDIDATES": "python3.12"}
+
+    for script in bootstrap_scripts:
+        result = subprocess.run(
+            ["/bin/bash", str(script)],
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        assert result.returncode == 0, result.stderr
+
+    selected = log_file.read_text(encoding="utf-8").splitlines()
+    assert selected == [str(fake_python)] * len(bootstrap_scripts)
+
+
+def test_bootstrap_wrappers_reject_incompatible_python3(tmp_path):
+    test_path = Path(__file__).resolve()
+    bootstrap_scripts = [
+        candidate
+        for candidate in (
+            test_path.parents[1] / "scripts" / "bootstrap",
+            test_path.parents[1] / "skills" / "data-analyze-for-zcl" / "scripts" / "bootstrap",
+            test_path.parents[3] / "scripts" / "bootstrap",
+        )
+        if candidate.exists()
+    ]
+    assert bootstrap_scripts
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    fake_python = bin_dir / "python3"
+    fake_python.write_text(
+        "#!/bin/sh\n"
+        "if [ \"$1\" = \"-c\" ]; then\n"
+        "  printf '3.9.6\\n'\n"
+        "  exit 1\n"
+        "fi\n"
+        "echo 'bootstrap_runtime should not be executed with Python 3.9' >&2\n"
+        "exit 42\n",
+        encoding="utf-8",
+    )
+    fake_python.chmod(0o755)
+    fake_dirname = bin_dir / "dirname"
+    fake_dirname.write_text(
+        "#!/bin/sh\n"
+        "case \"$1\" in\n"
+        "  */*) printf '%s\\n' \"${1%/*}\" ;;\n"
+        "  *) printf '.\\n' ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    fake_dirname.chmod(0o755)
+    fake_cat = bin_dir / "cat"
+    fake_cat.write_text("#!/bin/sh\n/bin/cat \"$@\"\n", encoding="utf-8")
+    fake_cat.chmod(0o755)
+    env = {"PATH": str(bin_dir), "XHS_CA_PYTHON_CANDIDATES": "python3"}
+
+    for script in bootstrap_scripts:
+        result = subprocess.run(
+            ["/bin/bash", str(script)],
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        assert result.returncode == 1
+        assert "Python 3.11+ was not found" in result.stderr
+        assert "bootstrap_runtime should not be executed" not in result.stderr
 
 
 def test_main_prints_repair_kit_when_install_command_cannot_start(tmp_path, monkeypatch, capsys):

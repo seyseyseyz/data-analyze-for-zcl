@@ -11,7 +11,7 @@ app = typer.Typer(help="Xiaohongshu ceramics analytics local runner.")
 
 @app.command()
 def build(
-    files: Annotated[list[Path], typer.Argument(help="CSV files to import.")],
+    files: Annotated[list[Path], typer.Argument(help="CSV or Excel files to import.")],
     db: Annotated[Path | None, typer.Option(help="Override DuckDB file path.")] = None,
     project_root: Annotated[
         Path | None,

@@ -15,6 +15,7 @@ rsync -a --delete \
   "$runtime_dir/"
 
 cp "$repo_root/scripts/bootstrap_runtime.py" "$skill_dir/scripts/bootstrap_runtime.py"
+cp "$repo_root/scripts/bootstrap_python.sh" "$skill_dir/scripts/bootstrap_python.sh"
 
 find "$runtime_dir" -type d -name "__pycache__" -prune -exec rm -rf {} +
 find "$runtime_dir" -type d -name ".pytest_cache" -prune -exec rm -rf {} +

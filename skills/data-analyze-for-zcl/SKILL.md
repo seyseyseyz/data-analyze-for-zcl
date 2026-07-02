@@ -11,8 +11,8 @@ Use this skill for local Xiaohongshu ceramics ecommerce analysis.
 
 1. Resolve this skill directory first. Use the bundled runtime under `assets/xhs-ca/`; do not assume the user has cloned the source repo separately.
 2. On first use, run this skill's `scripts/bootstrap`. It creates or repairs `assets/xhs-ca/.venv`, installs the bundled Python package, verifies the environment, and prints a Terminal repair command if the runtime cannot be prepared automatically.
-3. Ask the user for exported CSV files and any cover image folders they want to reference.
-4. Run this skill's `scripts/xhs-ca build ...` from the user's project/data directory to profile CSV headers, apply the closest standard table mapping, and build the local DuckDB database under that directory's `.xhs-ceramics-analytics/`.
+3. Ask the user for exported Excel/CSV files and any cover image folders they want to reference.
+4. Run this skill's `scripts/xhs-ca build ...` from the user's project/data directory to profile file headers, apply the closest standard table mapping, and build the local DuckDB database under that directory's `.xhs-ceramics-analytics/`.
 5. Run this skill's `scripts/xhs-ca run <task>` or `scripts/xhs-ca run all` for the full V1 report menu.
 6. Before summarizing generated reports, read `assets/xhs-ca/references/report_contract.md`. For a single-task report, also read the matching `assets/xhs-ca/task_templates/<task>.md`.
 7. Present conclusions with evidence strength, caveats, and next actions.
@@ -22,9 +22,17 @@ Use this skill for local Xiaohongshu ceramics ecommerce analysis.
 ```bash
 <skill-dir>/scripts/bootstrap
 <skill-dir>/scripts/xhs-ca doctor
-<skill-dir>/scripts/xhs-ca build path/to/notes.csv path/to/orders.csv path/to/skus.csv
+<skill-dir>/scripts/xhs-ca build path/to/notes.xlsx path/to/orders.xlsx path/to/skus.xlsx
 <skill-dir>/scripts/xhs-ca run all
 <skill-dir>/scripts/xhs-ca run sku_counterfactual_lift
+```
+
+If an older installed copy keeps selecting macOS Python 3.9, refresh the global skill before rerunning bootstrap:
+
+```bash
+rm -rf "$HOME/.agents/skills/data-analyze-for-zcl"
+npx skills add seyseyseyz/data-analyze-for-zcl -g -y --skill data-analyze-for-zcl
+~/.agents/skills/data-analyze-for-zcl/scripts/bootstrap
 ```
 
 ## Bundled Runtime

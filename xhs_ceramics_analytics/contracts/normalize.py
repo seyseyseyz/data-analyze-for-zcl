@@ -1,7 +1,8 @@
 from collections.abc import Mapping
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 import math
+import re
 
 import pandas as pd
 from pydantic import ValidationError
@@ -43,6 +44,9 @@ def parse_datetime(
         return None
     if isinstance(value, datetime):
         return value
+    if isinstance(value, int | float) and not isinstance(value, bool):
+        if math.isfinite(value) and 20000 <= float(value) <= 60000:
+            return datetime(1899, 12, 30) + timedelta(days=float(value))
     try:
         return datetime.fromisoformat(str(value).strip().replace("/", "-"))
     except ValueError as exc:
@@ -65,7 +69,7 @@ def parse_quantity(value: object, field_name: str | None = None, row_index: int 
         raise parse_error("quantity must be an integer", field_name, row_index)
 
     try:
-        quantity = Decimal(str(value).strip())
+        quantity = Decimal(_clean_number_text(value))
     except InvalidOperation as exc:
         raise parse_error("quantity must be an integer", field_name, row_index) from exc
 
@@ -79,8 +83,10 @@ def parse_optional_float(
 ) -> float | None:
     if is_missing(value):
         return None
+    if isinstance(value, str) and value.strip() in {"--", "-", "—", "N/A", "n/a"}:
+        return None
     try:
-        number = float(value)
+        number = float(_clean_number_text(value))
     except (TypeError, ValueError) as exc:
         raise parse_error("must be a number", field_name, row_index) from exc
     if not math.isfinite(number):
@@ -93,6 +99,13 @@ def parse_optional_text(value: object) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _clean_number_text(value: object) -> str:
+    text = str(value).strip()
+    text = text.replace(",", "")
+    text = re.sub(r"^[¥￥$]\s*", "", text)
+    return text.strip()
 
 
 def with_row_context(exc: ValueError, row_index: int) -> ValueError:
