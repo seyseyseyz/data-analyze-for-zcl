@@ -1,3 +1,5 @@
+Maintainer note — not loaded by the skill at runtime.
+
 # Upstream Sources
 
 This project reuses mature upstream workflows and tools instead of rebuilding toy replacements.

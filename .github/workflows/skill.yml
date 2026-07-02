@@ -1,0 +1,43 @@
+name: Skill CI
+
+on:
+  pull_request:
+    paths:
+      - "SKILL.md"
+      - "task_templates/**"
+      - "references/**"
+      - "xhs_ceramics_analytics/**"
+      - "skills/data-analyze-for-zcl/evals/**"
+      - "tests/**"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install ruff
+      - run: ruff check xhs_ceramics_analytics/ tests/
+
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e ".[dev]"
+      - run: python -m pytest -q
+
+  sync-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: bash scripts/sync-runtime
+      - run: git diff --exit-code
+        name: Verify skill bundle is in sync with canonical sources

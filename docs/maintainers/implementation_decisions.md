@@ -1,3 +1,5 @@
+Maintainer note — not loaded by the skill at runtime.
+
 # First Version Implementation Decisions
 
 These choices are part of the V1 design:

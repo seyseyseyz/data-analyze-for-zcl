@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# scripts/run-evals — Maintainer-facing eval checklist driver.
+# Reads evals.json and prints a TODO checklist per eval.
+# No LLM invocation; this is a human verification aid.
+
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+EVALS_FILE="$REPO_ROOT/skills/data-analyze-for-zcl/evals/evals.json"
+
+if [ ! -f "$EVALS_FILE" ]; then
+  echo "ERROR: evals.json not found at $EVALS_FILE" >&2
+  exit 1
+fi
+
+if ! command -v python3 &>/dev/null; then
+  echo "ERROR: python3 required but not found" >&2
+  exit 1
+fi
+
+python3 - "$EVALS_FILE" <<'PYEOF'
+import json
+import sys
+
+evals_path = sys.argv[1]
+with open(evals_path, "r", encoding="utf-8") as f:
+    data = json.load(f)
+
+evals = data.get("evals", [])
+print(f"Eval checklist — {len(evals)} evaluations")
+print("=" * 60)
+
+for ev in evals:
+    eid = ev.get("id", "?")
+    cat = ev.get("category", "unknown")
+    slug = ev.get("task_slug", ev.get("prompt", "")[:40])
+    trigger = ev.get("expected_trigger", None)
+
+    status_icon = "[ ]"
+    print(f"\n{status_icon} Eval #{eid} ({cat}) — {slug}")
+    print(f"    Prompt: {ev.get('prompt', 'N/A')[:80]}")
+    if trigger is not None:
+        print(f"    Expected trigger: {trigger}")
+    if ev.get("required_contains"):
+        print(f"    Must contain: {', '.join(ev['required_contains'][:5])}")
+    if ev.get("forbidden_contains"):
+        print(f"    Must NOT contain: {', '.join(ev['forbidden_contains'][:5])}")
+    if ev.get("expected_reads"):
+        print(f"    Expected reads: {', '.join(ev['expected_reads'][:4])}")
+
+print("\n" + "=" * 60)
+print(f"Total: {len(evals)} evals | Run manually and check each box.")
+PYEOF
