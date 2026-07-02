@@ -208,7 +208,7 @@ def ensure_venv(runtime_dir: Path, python: PythonCandidate) -> bool:
     return True
 
 
-def install_dependencies(runtime_dir: Path) -> bool:
+def install_dependencies(runtime_dir: Path, *, with_dev: bool = False) -> bool:
     cache_dir = runtime_dir / ".runtime" / "pip-cache"
     try:
         cache_dir.mkdir(parents=True, exist_ok=True)
@@ -217,15 +217,33 @@ def install_dependencies(runtime_dir: Path) -> bool:
     env = dict(os.environ)
     env["PIP_CACHE_DIR"] = str(cache_dir)
     python_bin = str(venv_python(runtime_dir))
+    install_target = f"{runtime_dir}[dev]" if with_dev else str(runtime_dir)
     commands = [
         ("pip-upgrade.log", [python_bin, "-m", "pip", "install", "-U", "pip"]),
-        ("pip-install.log", [python_bin, "-m", "pip", "install", "-e", f"{runtime_dir}[dev]"]),
+        ("pip-install.log", [python_bin, "-m", "pip", "install", "-e", install_target]),
     ]
     log_dir = runtime_dir / ".runtime" / "logs"
-    return all(
-        run_command(command, env=env, log_path=log_dir / log_name)
-        for log_name, command in commands
-    )
+    for log_name, command in commands:
+        log_path = log_dir / log_name
+        if not run_command(command, env=env, log_path=log_path):
+            _print_pip_log_tail(log_path)
+            return False
+    return True
+
+
+def _print_pip_log_tail(log_path: Path | None, lines: int = 40) -> None:
+    """Print the tail of a pip log to stderr for troubleshooting."""
+    if log_path is None or not log_path.exists():
+        return
+    try:
+        content = log_path.read_text(encoding="utf-8", errors="replace")
+        tail = content.splitlines()[-lines:]
+        print("\n--- pip log tail (last 40 lines) ---", file=sys.stderr)
+        for line in tail:
+            print(line, file=sys.stderr)
+        print("--- end pip log ---\n", file=sys.stderr)
+    except OSError:
+        pass
 
 
 def run_doctor(runtime_dir: Path, doctor_root: Path) -> bool:
@@ -248,7 +266,48 @@ def run_doctor(runtime_dir: Path, doctor_root: Path) -> bool:
     )
 
 
-def bootstrap(runtime_dir: Path, skill_dir: Path, doctor_root: Path) -> int:
+def check_runtime(runtime_dir: Path) -> int:
+    """Verify venv exists, Python version is compatible, and module is importable.
+
+    Returns 0 if healthy, 1 if stale/broken.
+    """
+    venv_bin = venv_python(runtime_dir)
+    version = python_version(venv_bin)
+    if version is None:
+        print("check: .venv/bin/python not found or broken", file=sys.stderr)
+        return 1
+    if not is_compatible_version(version):
+        print(
+            f"check: venv Python {'.'.join(map(str, version))} < 3.11 required",
+            file=sys.stderr,
+        )
+        return 1
+    # Verify the xhs_ceramics_analytics module is importable
+    try:
+        result = subprocess.run(
+            [str(venv_bin), "-c", "import xhs_ceramics_analytics"],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+    except OSError:
+        print("check: failed to invoke venv python", file=sys.stderr)
+        return 1
+    if result.returncode != 0:
+        print("check: xhs_ceramics_analytics module not importable", file=sys.stderr)
+        return 1
+    return 0
+
+
+def rebuild_venv(runtime_dir: Path, skill_dir: Path, doctor_root: Path, *, with_dev: bool = False) -> int:
+    """Nuke .venv and re-install from scratch."""
+    shutil.rmtree(runtime_dir / ".venv", ignore_errors=True)
+    print("Removed existing .venv, rebuilding...", file=sys.stderr)
+    return bootstrap(runtime_dir, skill_dir, doctor_root, with_dev=with_dev)
+
+
+def bootstrap(runtime_dir: Path, skill_dir: Path, doctor_root: Path, *, with_dev: bool = False) -> int:
     missing = missing_package_files(runtime_dir, skill_dir)
     if missing:
         names = ", ".join(str(path) for path in missing)
@@ -272,7 +331,7 @@ def bootstrap(runtime_dir: Path, skill_dir: Path, doctor_root: Path) -> int:
         print_repair("venv creation failed", repair_missing_python_shell(skill_dir, runtime_dir))
         return 1
 
-    if not install_dependencies(runtime_dir):
+    if not install_dependencies(runtime_dir, with_dev=with_dev):
         print_repair("Python dependency installation failed", repair_install_shell(skill_dir, runtime_dir))
         return 1
 
@@ -284,17 +343,38 @@ def bootstrap(runtime_dir: Path, skill_dir: Path, doctor_root: Path) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description="Bootstrap xhs-ca runtime environment.")
     parser.add_argument("--runtime-dir", required=True, type=Path)
     parser.add_argument("--skill-dir", required=True, type=Path)
     parser.add_argument("--doctor-root", required=True, type=Path)
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Verify venv health without installing. Exit 0 if healthy, 1 if stale.",
+    )
+    parser.add_argument(
+        "--rebuild-venv",
+        action="store_true",
+        help="Nuke .venv and re-install from scratch.",
+    )
+    parser.add_argument(
+        "--with-dev",
+        action="store_true",
+        help="Install [dev] extras (test dependencies). Omitted by default.",
+    )
     args = parser.parse_args(argv)
 
-    return bootstrap(
-        runtime_dir=args.runtime_dir.resolve(),
-        skill_dir=args.skill_dir.resolve(),
-        doctor_root=args.doctor_root.resolve(),
-    )
+    runtime_dir = args.runtime_dir.resolve()
+    skill_dir = args.skill_dir.resolve()
+    doctor_root = args.doctor_root.resolve()
+
+    if args.check:
+        return check_runtime(runtime_dir)
+
+    if args.rebuild_venv:
+        return rebuild_venv(runtime_dir, skill_dir, doctor_root, with_dev=args.with_dev)
+
+    return bootstrap(runtime_dir, skill_dir, doctor_root, with_dev=args.with_dev)
 
 
 if __name__ == "__main__":
