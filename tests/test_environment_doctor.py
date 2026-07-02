@@ -93,13 +93,14 @@ def test_run_checks_marks_old_python_as_missing(tmp_path: Path):
     assert "Install Python 3.11" in str(python_check.next_step)
 
 
-def test_bootstrap_script_is_executable_and_runs_doctor():
+def test_bootstrap_script_uses_runtime_repair_helper():
     script = Path("scripts/bootstrap")
 
     assert script.exists()
     assert os.access(script, os.X_OK)
 
     body = script.read_text(encoding="utf-8")
-    assert "python3 -m venv .venv" in body
-    assert 'python -m pip install -e ".[dev]"' in body
-    assert "xhs-ca doctor" in body
+    assert "bootstrap_runtime.py" in body
+    assert "--runtime-dir" in body
+    assert "--doctor-root" in body
+    assert "python3 -m venv .venv" not in body

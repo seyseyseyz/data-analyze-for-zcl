@@ -1,18 +1,24 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd "$(dirname "$0")/.."
+repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 
 if ! command -v python3 >/dev/null 2>&1; then
-  echo "Python 3 is required. Install Python 3.11 or newer, then rerun ./scripts/bootstrap." >&2
+  cat >&2 <<'EOF'
+data-analyze-for-zcl runtime is not ready: python3 was not found.
+
+Copy the whole command block below into macOS Terminal. After it finishes, return to Codex and rerun the analysis.
+
+```bash
+set -e
+echo "Install Python 3.11 or 3.12, then rerun ./scripts/bootstrap from the project root."
+exit 1
+```
+EOF
   exit 1
 fi
 
-if [ ! -d ".venv" ]; then
-  python3 -m venv .venv
-fi
-
-. .venv/bin/activate
-python -m pip install -U pip
-python -m pip install -e ".[dev]"
-xhs-ca doctor --strict
+exec python3 "$repo_root/scripts/bootstrap_runtime.py" \
+  --runtime-dir "$repo_root" \
+  --skill-dir "$repo_root" \
+  --doctor-root "$repo_root"
