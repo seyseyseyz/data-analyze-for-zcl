@@ -380,6 +380,45 @@
       gap: 16px;
     }
 
+    .chart {
+      border: 1px solid #EAEAEA;
+      border-radius: 12px;
+      padding: 28px;
+      background: var(--surface);
+      display: grid;
+      gap: 12px;
+    }
+    .chart-badge { align-self: start; }
+    .chart-multiples {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+    .chart-svg { width: 100%; height: auto; display: block; overflow: visible; }
+    .chart-svg text {
+      font-family: 'SF Pro Display', 'Geist Sans', 'Helvetica Neue', sans-serif;
+      fill: var(--ink);
+    }
+    .chart-svg .ca-title,
+    .chart-svg .ca-cat { fill: var(--muted); font-size: 12px; }
+    .chart-svg .ca-num {
+      fill: var(--ink-strong);
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+    }
+    .chart-svg .ca-empty { fill: var(--muted); font-size: 14px; }
+    .chart-svg .ca-axis,
+    .chart-svg .ca-grid { stroke: var(--line); stroke-width: 1; }
+    @media (max-width: 860px) {
+      .chart-multiples { grid-template-columns: 1fr; }
+    }
+    @media print {
+      .chart, .chart-svg {
+        print-color-adjust: exact;
+        -webkit-print-color-adjust: exact;
+      }
+    }
+
     .result-block {
       display: grid;
       gap: 16px;
@@ -721,6 +760,9 @@
           <span class="tag info">How to read</span>
           <h3>这份报告怎么读</h3>
           <p>可信度说明这条结论适合怎么用：直接决策、短期观察、转成实验，或先补数据。</p>
+          {% if report.evidence_chart_svg %}
+          <div class="chart">{{ report.evidence_chart_svg }}</div>
+          {% endif %}
           <div class="action-meta-grid">
             {% for item in report.evidence_counts %}
             <div class="action-cell">
@@ -855,6 +897,10 @@
               </article>
               {% endfor %}
             </div>
+            {% endif %}
+
+            {% if result.chart_svg %}
+            <div class="chart">{{ result.chart_svg }}</div>
             {% endif %}
 
             {% for table in result.table_views %}

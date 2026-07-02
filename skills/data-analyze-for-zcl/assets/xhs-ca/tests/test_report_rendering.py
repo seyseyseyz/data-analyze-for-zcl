@@ -526,3 +526,126 @@ def test_render_html_labels_paid_traffic_fields():
     assert "点击率" in html
     assert "投产比" in html
     assert "增加预算" in html
+
+
+def test_evidence_chart_lands_in_guide_section():
+    html = render_html(
+        [
+            AnalysisResult(
+                task_id="cover_style_effect",
+                title="封面风格效果",
+                findings=[
+                    Finding(
+                        title="封面风格效果已比较",
+                        conclusion="生活方式类封面表现更好。",
+                        evidence_strength=EvidenceStrength.MEDIUM,
+                    )
+                ],
+                tables={
+                    "cover_effects": [
+                        {"composition_type": "flatlay", "notes": 5,
+                         "avg_reads": 1200.0, "avg_collects": 48.0},
+                        {"composition_type": "lifestyle", "notes": 4,
+                         "avg_reads": 800.0, "avg_collects": 60.0},
+                    ]
+                },
+            )
+        ]
+    )
+    guide = html.split('id="guide"', 1)[1].split('id="actions"', 1)[0]
+    assert 'class="chart"' in guide
+    assert "<svg" in guide
+
+
+def test_task_charts_land_in_analysis_section():
+    html = render_html(
+        [
+            AnalysisResult(
+                task_id="cover_style_effect",
+                title="封面风格效果",
+                findings=[
+                    Finding(
+                        title="封面风格效果已比较",
+                        conclusion="生活方式类封面表现更好。",
+                        evidence_strength=EvidenceStrength.MEDIUM,
+                    )
+                ],
+                tables={
+                    "cover_effects": [
+                        {"composition_type": "flatlay", "notes": 5,
+                         "avg_reads": 1200.0, "avg_collects": 48.0},
+                        {"composition_type": "lifestyle", "notes": 4,
+                         "avg_reads": 800.0, "avg_collects": 60.0},
+                    ]
+                },
+            )
+        ]
+    )
+    analysis = html.split('id="analysis"', 1)[1]
+    assert 'class="chart"' in analysis
+
+
+def test_html_report_has_no_script_or_external_refs():
+    html = render_html(
+        [
+            AnalysisResult(
+                task_id="cover_style_effect",
+                title="封面风格效果",
+                findings=[
+                    Finding(
+                        title="封面风格效果已比较",
+                        conclusion="生活方式类封面表现更好。",
+                        evidence_strength=EvidenceStrength.MEDIUM,
+                    )
+                ],
+                tables={
+                    "cover_effects": [
+                        {"composition_type": "flatlay", "notes": 5,
+                         "avg_reads": 1200.0, "avg_collects": 48.0},
+                        {"composition_type": "lifestyle", "notes": 4,
+                         "avg_reads": 800.0, "avg_collects": 60.0},
+                    ]
+                },
+            )
+        ]
+    )
+    assert "<script" not in html
+    assert "http://" not in html
+    assert "https://" not in html
+    assert "src=" not in html
+
+
+def test_section_keeps_table_when_a_chart_builder_raises(monkeypatch):
+    from xhs_ceramics_analytics.reporting import charts
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("chart exploded")
+
+    monkeypatch.setitem(charts._BUILDERS, "cover_style_effect", boom)
+
+    html = render_html(
+        [
+            AnalysisResult(
+                task_id="cover_style_effect",
+                title="封面风格效果",
+                findings=[
+                    Finding(
+                        title="封面风格效果已比较",
+                        conclusion="生活方式类封面表现更好。",
+                        evidence_strength=EvidenceStrength.MEDIUM,
+                    )
+                ],
+                tables={
+                    "cover_effects": [
+                        {"composition_type": "flatlay", "notes": 5,
+                         "avg_reads": 1200.0, "avg_collects": 48.0},
+                        {"composition_type": "lifestyle", "notes": 4,
+                         "avg_reads": 800.0, "avg_collects": 60.0},
+                    ]
+                },
+            )
+        ]
+    )
+    # the render still completes and the drill-down table for the section survives
+    assert "封面风格效果" in html
+    assert "table-details" in html

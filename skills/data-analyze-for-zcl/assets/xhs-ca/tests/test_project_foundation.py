@@ -8,7 +8,7 @@ from xhs_ceramics_analytics.paths import outputs_dir, project_root, state_dir
 
 
 def test_package_version_is_defined():
-    assert __version__ == "0.1.0"
+    assert __version__ == "0.2.0"
 
 
 def test_state_and_outputs_dirs_are_created(tmp_path: Path):

@@ -6,7 +6,13 @@ import typer
 from xhs_ceramics_analytics.doctor import has_blocking_failures, next_steps, run_checks
 from xhs_ceramics_analytics.paths import outputs_dir, state_dir
 
-app = typer.Typer(help="Xiaohongshu ceramics analytics local runner.")
+app = typer.Typer(
+    help=(
+        "Xiaohongshu ceramics analytics local runner.\n\n"
+        "CI tip: use `xhs-ca doctor --strict` as the CI-safe validation entry point "
+        "(exits non-zero on blocking failures)."
+    )
+)
 
 
 @app.command()

@@ -17,7 +17,6 @@ REQUIRED_MODULES = (
     "pydantic",
     "yaml",
     "jinja2",
-    "plotly",
     "typer",
     "rapidfuzz",
 )
