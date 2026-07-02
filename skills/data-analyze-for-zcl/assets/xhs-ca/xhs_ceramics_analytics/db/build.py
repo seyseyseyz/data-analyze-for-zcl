@@ -212,8 +212,28 @@ def create_daily_sku_sales(con) -> None:
     required_columns = {"order_id", "paid_time", "sku_id", "quantity", "paid_amount"}
     if not required_columns.issubset(order_columns):
         return
-    con.execute(
+    refund_filter = ""
+    if "refund_status_optional" in order_columns:
+        refund_filter = """
+          AND (
+            refund_status_optional IS NULL
+            OR lower(trim(CAST(refund_status_optional AS VARCHAR))) NOT IN (
+              'refund',
+              'refunded',
+              'refund_success',
+              'partial_refund',
+              'cancelled',
+              'canceled',
+              '已退款',
+              '退款成功',
+              '部分退款',
+              '已取消',
+              '取消'
+            )
+          )
         """
+    con.execute(
+        f"""
         CREATE OR REPLACE TABLE daily_sku_sales AS
         SELECT
           CAST(paid_time AS DATE) AS date,
@@ -223,6 +243,7 @@ def create_daily_sku_sales(con) -> None:
           COUNT(DISTINCT order_id) AS order_count
         FROM orders
         WHERE paid_time IS NOT NULL AND sku_id IS NOT NULL
+          {refund_filter}
         GROUP BY 1, 2
         ORDER BY 1, 2
         """

@@ -15,7 +15,7 @@ def run(db_path: Path) -> AnalysisResult:
 
     evidence_strength = (
         score_evidence(len(rows), has_controls=False, confounder_count=1)
-        if rows
+        if rows and _has_metric_evidence(rows)
         else EvidenceStrength.NOT_JUDGABLE
     )
     return AnalysisResult(
@@ -86,12 +86,22 @@ def _fetch_copy_effects(con) -> tuple[list[dict[str, object]], list[str]]:
     limitations = []
     if "reads" not in note_columns or "collects" not in note_columns:
         limitations.append("notes 表的阅读/收藏指标不完整。")
-    return _rows(result), limitations
+    rows = _rows(result)
+    if rows and not _has_metric_evidence(rows):
+        limitations.append("没有匹配的笔记指标，文案效果不可判断。")
+    return rows, limitations
 
 
 def _rows(result) -> list[dict[str, object]]:
     columns = result.columns
     return [dict(zip(columns, row, strict=True)) for row in result.fetchall()]
+
+
+def _has_metric_evidence(rows: list[dict[str, object]]) -> bool:
+    return any(
+        row.get("avg_reads") is not None or row.get("avg_collects") is not None
+        for row in rows
+    )
 
 
 def _table_exists(con, table_name: str) -> bool:

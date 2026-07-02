@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from xhs_ceramics_analytics.analysis.registry import run_task
 from xhs_ceramics_analytics.db.duck import connect
 from xhs_ceramics_analytics.evidence import EvidenceStrength
@@ -84,6 +86,54 @@ def test_content_product_effects_degrade_when_feature_columns_missing(tmp_path: 
         assert result.limitations
 
 
+@pytest.mark.parametrize(
+    ("task_id", "table_name"),
+    [
+        ("cover_style_effect", "cover_effects"),
+        ("copy_angle_effect", "copy_effects"),
+        ("product_content_interaction", "product_interactions"),
+    ],
+)
+def test_content_effects_report_unmatched_note_metrics(
+    tmp_path: Path,
+    task_id: str,
+    table_name: str,
+):
+    db_path = tmp_path / f"{task_id}-unmatched.duckdb"
+    con = connect(db_path)
+    try:
+        con.execute(
+            """
+            CREATE TABLE content_features (
+              note_id VARCHAR,
+              composition_type VARCHAR,
+              copy_angle VARCHAR
+            )
+            """
+        )
+        con.execute("INSERT INTO content_features VALUES ('feature-only', 'single', 'gift')")
+        con.execute(
+            """
+            CREATE TABLE notes (
+              note_id VARCHAR,
+              reads DOUBLE,
+              collects DOUBLE
+            )
+            """
+        )
+        con.execute("INSERT INTO notes VALUES ('other-note', 100, 10)")
+    finally:
+        con.close()
+
+    result = run_task(task_id, db_path)
+    row = result.tables[table_name][0]
+
+    assert row["avg_reads"] is None
+    assert row["avg_collects"] is None
+    assert result.findings[0].evidence_strength == EvidenceStrength.NOT_JUDGABLE
+    assert "没有匹配的笔记指标" in " ".join(result.limitations)
+
+
 def test_product_opportunity_lists_skus_without_sales(tmp_path: Path):
     db_path = tmp_path / "analytics.duckdb"
     con = connect(db_path)
@@ -137,3 +187,110 @@ def test_product_opportunity_uses_sales_without_sku_table(tmp_path: Path):
     assert row["opportunity_type"] == "sales_response_present"
     assert result.findings[0].evidence_strength == EvidenceStrength.MEDIUM
     assert result.limitations == ["缺少 skus 表，SKU 名称使用 sku_id。"]
+
+
+def test_product_opportunity_describes_total_sales_as_sales_performance(
+    tmp_path: Path,
+):
+    db_path = tmp_path / "analytics.duckdb"
+    con = connect(db_path)
+    try:
+        con.execute("CREATE TABLE skus (sku_id VARCHAR, sku_name VARCHAR)")
+        con.execute("INSERT INTO skus VALUES ('s1', '青釉咖啡杯')")
+        con.execute(
+            """
+            CREATE TABLE daily_sku_sales (
+              date DATE,
+              sku_id VARCHAR,
+              units DOUBLE,
+              gmv DOUBLE
+            )
+            """
+        )
+        con.execute(
+            """
+            INSERT INTO daily_sku_sales VALUES
+              (DATE '2026-06-01', 's1', 4, 516)
+            """
+        )
+    finally:
+        con.close()
+
+    result = run_task("product_opportunity_matrix", db_path)
+
+    assert "销量表现" in result.findings[0].conclusion
+    assert "销售响应" not in result.findings[0].conclusion
+
+
+def test_product_opportunity_evidence_reason_does_not_assume_missing_note_links(
+    tmp_path: Path,
+):
+    db_path = tmp_path / "analytics.duckdb"
+    con = connect(db_path)
+    try:
+        con.execute("CREATE TABLE skus (sku_id VARCHAR, sku_name VARCHAR)")
+        con.execute("INSERT INTO skus VALUES ('s1', '青釉咖啡杯')")
+        con.execute(
+            """
+            CREATE TABLE daily_sku_sales (
+              date DATE,
+              sku_id VARCHAR,
+              units DOUBLE,
+              gmv DOUBLE
+            )
+            """
+        )
+        con.execute(
+            """
+            INSERT INTO daily_sku_sales VALUES
+              (DATE '2026-06-01', 's1', 4, 516)
+            """
+        )
+        con.execute(
+            """
+            CREATE TABLE note_sku_links (
+              note_id VARCHAR,
+              sku_id VARCHAR
+            )
+            """
+        )
+        con.execute("INSERT INTO note_sku_links VALUES ('n1', 's1')")
+    finally:
+        con.close()
+
+    result = run_task("product_opportunity_matrix", db_path)
+
+    assert result.findings[0].evidence_reason
+    assert "缺少显式 note-SKU 关联" not in result.findings[0].evidence_reason
+
+
+def test_product_opportunity_does_not_treat_empty_sales_table_as_sales_evidence(
+    tmp_path: Path,
+):
+    db_path = tmp_path / "empty-sales.duckdb"
+    con = connect(db_path)
+    try:
+        con.execute("CREATE TABLE skus (sku_id VARCHAR, sku_name VARCHAR)")
+        con.execute("INSERT INTO skus VALUES ('s1', '青釉咖啡杯')")
+        con.execute(
+            """
+            CREATE TABLE daily_sku_sales (
+              date DATE,
+              sku_id VARCHAR,
+              units DOUBLE,
+              gmv DOUBLE
+            )
+            """
+        )
+    finally:
+        con.close()
+
+    result = run_task("product_opportunity_matrix", db_path)
+    row = result.tables["product_opportunities"][0]
+
+    assert row["sku_id"] == "s1"
+    assert row["units"] is None
+    assert row["gmv"] is None
+    assert row["opportunity_type"] == "needs_sales_data"
+    assert result.findings[0].evidence_strength == EvidenceStrength.NOT_JUDGABLE
+    assert "没有可用的 SKU 销售记录" in " ".join(result.limitations)

@@ -719,11 +719,22 @@
         {% endfor %}
         <article class="card span-12">
           <span class="tag info">How to read</span>
-          <h3>低可信度结论，是实验线索</h3>
-          <p>
-            可信度说明的是这条结论能否直接用于决策。低可信度结论仍然有价值，
-            只是更适合转成下周实验，而不是直接当作长期策略。
-          </p>
+          <h3>这份报告怎么读</h3>
+          <p>可信度说明这条结论适合怎么用：直接决策、短期观察、转成实验，或先补数据。</p>
+          <div class="action-meta-grid">
+            {% for item in report.evidence_counts %}
+            <div class="action-cell">
+              <span>
+                {% if item.value == "not_judgable" %}
+                不可判断
+                {% else %}
+                {{ item.label }}可信度
+                {% endif %}
+              </span>
+              <p>{{ item.help }}</p>
+            </div>
+            {% endfor %}
+          </div>
         </article>
       </div>
     </section>
@@ -811,6 +822,10 @@
                 <span class="tag {{ finding.evidence_class }}">可信度 {{ finding.evidence }}</span>
                 <h3>{{ finding.title }}</h3>
                 <p>{{ finding.body }}</p>
+
+                {% if finding.evidence_reason %}
+                <p><strong>可信度原因：</strong>{{ finding.evidence_reason }}</p>
+                {% endif %}
 
                 {% if finding.key_numbers %}
                 <div class="numbers">

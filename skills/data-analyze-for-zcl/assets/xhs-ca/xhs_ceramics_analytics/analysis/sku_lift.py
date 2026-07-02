@@ -57,6 +57,13 @@ def run(db_path: Path) -> AnalysisResult:
             caveats=list(link_context["caveats"]),
             recommended_action=str(link_context["recommended_action"]),
         )
+    if not _has_matching_sales_dates(rows):
+        return _missing_result(
+            reason="没有匹配销售日期，无法区分真实 0 销量和销售数据缺失。",
+            caveats=list(link_context["caveats"]),
+            recommended_action="先补齐这些 note-SKU 关联在观察窗口内的 SKU 日销售记录。",
+        )
+    rows = _strip_internal_columns(rows)
 
     evidence_strength = score_evidence(
         len({(row["note_id"], row["sku_id"]) for row in rows}),
@@ -72,6 +79,7 @@ def run(db_path: Path) -> AnalysisResult:
                 "生成发布前后的销量观察窗口。"
             ),
             evidence_strength=evidence_strength,
+            evidence_reason=_evidence_reason(str(link_context["source"])),
             key_numbers=_key_numbers(rows, str(link_context["source"])),
             caveats=list(link_context["caveats"]),
             recommended_action=(
@@ -134,7 +142,19 @@ def _window_rows(con, link_query: str) -> list[dict[str, object]]:
                 END
               ),
               0.0
-            ) AS post_units
+            ) AS post_units,
+            COUNT(
+              DISTINCT CASE
+                WHEN (
+                  sales.date >= CAST(lc.publish_time AS DATE) + ws.pre_start_day * INTERVAL '1 day'
+                  AND sales.date < CAST(lc.publish_time AS DATE) + ws.pre_end_day * INTERVAL '1 day'
+                ) OR (
+                  sales.date >= CAST(lc.publish_time AS DATE) + ws.post_start_day * INTERVAL '1 day'
+                  AND sales.date < CAST(lc.publish_time AS DATE) + ws.post_end_day * INTERVAL '1 day'
+                )
+                THEN sales.date
+              END
+            ) AS matched_sales_days
           FROM link_candidates AS lc
           CROSS JOIN window_specs AS ws
           LEFT JOIN daily_sku_sales AS sales
@@ -148,6 +168,7 @@ def _window_rows(con, link_query: str) -> list[dict[str, object]]:
           window_name AS window,
           pre_units,
           post_units,
+          matched_sales_days,
           post_units - pre_units AS absolute_lift,
           CASE
             WHEN pre_units > 0 THEN (post_units - pre_units) / pre_units
@@ -167,6 +188,17 @@ def _window_rows(con, link_query: str) -> list[dict[str, object]]:
     )
     columns = result.columns
     return [dict(zip(columns, row, strict=True)) for row in result.fetchall()]
+
+
+def _has_matching_sales_dates(rows: list[dict[str, object]]) -> bool:
+    return any((row.get("matched_sales_days") or 0) > 0 for row in rows)
+
+
+def _strip_internal_columns(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    return [
+        {key: value for key, value in row.items() if key != "matched_sales_days"}
+        for row in rows
+    ]
 
 
 def _key_numbers(rows: list[dict[str, object]], link_source: str) -> dict[str, object]:
@@ -293,6 +325,10 @@ def _missing_result(
                     "无法从当前数据组装笔记锚定的 SKU 销量观察窗口。"
                 ),
                 evidence_strength=EvidenceStrength.NOT_JUDGABLE,
+                evidence_reason=(
+                    "缺少销量、发布时间或 note-SKU 关联数据，"
+                    "当前结果只适合指导先补哪类数据。"
+                ),
                 key_numbers={"note_sku_links": 0, "windows": 0},
                 caveats=caveats,
                 recommended_action=recommended_action,
@@ -305,6 +341,18 @@ def _missing_result(
 
 def _table_exists(con, table_name: str) -> bool:
     return table_name in {row[0] for row in con.sql("SHOW TABLES").fetchall()}
+
+
+def _evidence_reason(link_source: str) -> str:
+    if link_source == "note_sku_links":
+        return (
+            "有显式 note-SKU 关联和发布前后销量窗口，"
+            "但缺少受控对照，所以适合作为当前经营判断的辅助证据。"
+        )
+    return (
+        "有发布前后销量窗口，但 note-SKU 关联由候选 SKU 兜底，"
+        "适合先转成下周受控实验验证。"
+    )
 
 
 def _table_columns(con, table_name: str) -> set[str]:

@@ -69,6 +69,31 @@ def test_weekly_review_handles_null_daily_sku_sales_summary(tmp_path: Path):
     assert product_section["value"] is None
 
 
+def test_weekly_review_marks_empty_daily_sku_sales_as_missing(tmp_path: Path):
+    db_path = _build_db(
+        tmp_path / "weekly-empty-sales.duckdb",
+        [
+            """
+            CREATE TABLE daily_sku_sales (
+              sku_id VARCHAR,
+              units DOUBLE,
+              gmv DOUBLE
+            )
+            """,
+        ],
+    )
+
+    result = run_task("weekly_business_review", db_path)
+    product_section = next(
+        row for row in result.tables["weekly_sections"] if row["section"] == "product_opportunity"
+    )
+
+    assert product_section["status"] == "missing"
+    assert product_section["value"] is None
+    assert product_section["evidence_count"] == 0
+    assert "为空" in product_section["summary"]
+
+
 def test_reshoot_downranks_tiny_samples(tmp_path: Path):
     db_path = _build_db(
         tmp_path / "reshoot-tiny-sample.duckdb",
@@ -119,7 +144,11 @@ def test_hypothesis_without_comment_signal_stays_unknown(tmp_path: Path):
     assert "收集" in str(demand_row["next_test"]) or "评论" in str(demand_row["next_test"])
 
 
-def test_experiment_matrix_uses_future_default_planning_date(tmp_path: Path):
+def test_experiment_matrix_uses_future_default_planning_date(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("XHS_CA_TODAY", "2026-07-02")
     db_path = _build_db(
         tmp_path / "experiment-default-date.duckdb",
         [
@@ -131,4 +160,4 @@ def test_experiment_matrix_uses_future_default_planning_date(tmp_path: Path):
     result = run_task("weekly_experiment_matrix", db_path)
     first_row = result.tables["experiment_plan"][0]
 
-    assert first_row["date"] == "2026-07-01"
+    assert first_row["date"] == "2026-07-03"

@@ -248,3 +248,36 @@ def test_task9_relative_lift_is_none_when_pre_window_is_zero(tmp_path):
     assert lift_by_window["d0_1"]["pre_units"] == 0.0
     assert lift_by_window["d0_1"]["relative_lift"] is None
     assert lift_by_window["d8_14"]["relative_lift"] is None
+
+
+def test_task9_not_judgable_when_note_sku_has_no_matching_sales_dates(tmp_path):
+    db_path = tmp_path / "analytics.duckdb"
+    con = connect(db_path)
+    try:
+        _create_notes(con)
+        _create_note_sku_links(con)
+        _create_daily_sku_sales(con)
+        con.execute(
+            """
+            INSERT INTO notes VALUES ('n1', TIMESTAMP '2026-06-10 09:00:00')
+            """
+        )
+        con.execute("INSERT INTO note_sku_links VALUES ('n1', 's1')")
+        con.execute(
+            """
+            INSERT INTO daily_sku_sales VALUES
+              (DATE '2026-06-10', 'other-sku', 3.0)
+            """
+        )
+    finally:
+        con.close()
+
+    lift = _run("sku_counterfactual_lift", db_path)
+    curve = _run("content_response_curve", db_path)
+
+    assert lift.tables["sku_lift"] == []
+    assert lift.findings[0].evidence_strength == EvidenceStrength.NOT_JUDGABLE
+    assert "没有匹配销售日期" in " ".join(lift.limitations)
+    assert curve.tables["response_windows"] == []
+    assert curve.findings[0].evidence_strength == EvidenceStrength.NOT_JUDGABLE
+    assert "没有匹配销售日期" in " ".join(curve.limitations)

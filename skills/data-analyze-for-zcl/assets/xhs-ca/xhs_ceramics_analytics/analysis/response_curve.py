@@ -50,6 +50,13 @@ def run(db_path: Path) -> AnalysisResult:
             caveats=list(link_context["caveats"]),
             recommended_action=str(link_context["recommended_action"]),
         )
+    if not _has_matching_sales_dates(rows):
+        return _missing_result(
+            reason="没有匹配销售日期，无法区分真实 0 销量和销售数据缺失。",
+            caveats=list(link_context["caveats"]),
+            recommended_action="先补齐这些 note-SKU 关联在观察窗口内的 SKU 日销售记录。",
+        )
+    rows = _strip_internal_columns(rows)
 
     return AnalysisResult(
         task_id="content_response_curve",
@@ -66,6 +73,7 @@ def run(db_path: Path) -> AnalysisResult:
                     has_controls=False,
                     confounder_count=1 if link_context["source"] == "note_sku_links" else 3,
                 ),
+                evidence_reason=_evidence_reason(str(link_context["source"])),
                 key_numbers={
                     "note_sku_rows": len(rows),
                     "link_source": link_context["source"],
@@ -137,7 +145,14 @@ def _response_rows(con, link_query: str) -> list[dict[str, object]]:
               END
             ),
             0.0
-          ) AS d8_14_units
+          ) AS d8_14_units,
+          COUNT(
+            DISTINCT CASE
+              WHEN sales.date >= CAST(lc.publish_time AS DATE)
+               AND sales.date < CAST(lc.publish_time AS DATE) + INTERVAL '15 days'
+              THEN sales.date
+            END
+          ) AS matched_sales_days
         FROM link_candidates AS lc
         LEFT JOIN daily_sku_sales AS sales
           ON CAST(sales.sku_id AS VARCHAR) = lc.sku_id
@@ -147,6 +162,17 @@ def _response_rows(con, link_query: str) -> list[dict[str, object]]:
     )
     columns = result.columns
     return [dict(zip(columns, row, strict=True)) for row in result.fetchall()]
+
+
+def _has_matching_sales_dates(rows: list[dict[str, object]]) -> bool:
+    return any((row.get("matched_sales_days") or 0) > 0 for row in rows)
+
+
+def _strip_internal_columns(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    return [
+        {key: value for key, value in row.items() if key != "matched_sales_days"}
+        for row in rows
+    ]
 
 
 def _link_context(con) -> dict[str, object]:
@@ -260,6 +286,10 @@ def _missing_result(
                     "无法从当前数据组装笔记锚定的响应窗口。"
                 ),
                 evidence_strength=EvidenceStrength.NOT_JUDGABLE,
+                evidence_reason=(
+                    "缺少销量、发布时间或 note-SKU 关联数据，"
+                    "当前结果只适合指导先补哪类数据。"
+                ),
                 key_numbers={"note_sku_rows": 0},
                 caveats=caveats,
                 recommended_action=recommended_action,
@@ -272,6 +302,18 @@ def _missing_result(
 
 def _table_exists(con, table_name: str) -> bool:
     return table_name in {row[0] for row in con.sql("SHOW TABLES").fetchall()}
+
+
+def _evidence_reason(link_source: str) -> str:
+    if link_source == "note_sku_links":
+        return (
+            "有显式 note-SKU 关联和笔记发布时间窗口，"
+            "但仍是观测性响应曲线，适合辅助判断后续实验节奏。"
+        )
+    return (
+        "有笔记发布时间和 SKU 数据，但 note-SKU 关联由候选 SKU 兜底，"
+        "适合先作为时间窗口线索，再用受控实验验证。"
+    )
 
 
 def _table_columns(con, table_name: str) -> set[str]:
