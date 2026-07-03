@@ -194,3 +194,81 @@ def test_note_finding_degrades_without_content_features(tmp_path):
     finding = next(f for f in result.findings if f.title == "笔记退款反思")
     assert finding.key_numbers["top_feature"] is None
     assert any("特征" in c for c in finding.caveats)
+
+
+def _make_sku_performance(con, rows):
+    con.execute(
+        """
+        CREATE TABLE sku_performance (
+          product_id VARCHAR, product_name VARCHAR,
+          gmv DOUBLE, net_gmv_pay DOUBLE,
+          refund_rate_pay DOUBLE, refund_orders_pay DOUBLE
+        )
+        """
+    )
+    con.executemany(
+        "INSERT INTO sku_performance VALUES (?, ?, ?, ?, ?, ?)", rows
+    )
+
+
+def _make_products(con, rows):
+    con.execute(
+        """
+        CREATE TABLE products (
+          product_id VARCHAR, vessel_type VARCHAR,
+          series VARCHAR, category VARCHAR, price_band VARCHAR
+        )
+        """
+    )
+    con.executemany("INSERT INTO products VALUES (?, ?, ?, ?, ?)", rows)
+
+
+def test_product_finding_flags_high_refund_and_feature(tmp_path):
+    con, db_path = _con(tmp_path)
+    _refund_overview_two(con)
+    _make_sku_performance(
+        con,
+        [
+            ("p1", "青釉杯", 10000.0, 6000.0, 0.40, 100.0),
+            ("p2", "白瓷盘", 9000.0, 5500.0, 0.39, 100.0),
+            ("p3", "茶壶", 8000.0, 7800.0, 0.02, 100.0),
+        ],
+    )
+    _make_products(
+        con,
+        [
+            ("p1", "杯", "青釉", "杯具", "50-100"),
+            ("p2", "盘", "青釉", "盘具", "50-100"),
+            ("p3", "壶", "白瓷", "壶具", "100-200"),
+        ],
+    )
+    con.close()
+    result = run_task("refund_structure_diagnosis", db_path)
+    finding = next(f for f in result.findings if f.title == "产品退款反思")
+    ids = {r["product_id"] for r in result.tables["product_refund_concentration"]}
+    assert {"p1", "p2", "p3"} == ids
+    assert finding.key_numbers["high_refund_product_count"] >= 1
+    assert finding.key_numbers["top_feature"] is not None
+
+
+def test_product_finding_degrades_without_products(tmp_path):
+    con, db_path = _con(tmp_path)
+    _refund_overview_two(con)
+    _make_sku_performance(
+        con, [("p1", "青釉杯", 10000.0, 6000.0, 0.40, 100.0),
+              ("p2", "茶壶", 8000.0, 7800.0, 0.02, 100.0)]
+    )
+    con.close()
+    result = run_task("refund_structure_diagnosis", db_path)
+    finding = next(f for f in result.findings if f.title == "产品退款反思")
+    assert finding.key_numbers["top_feature"] is None
+    assert any("特征" in c for c in finding.caveats)
+
+
+def test_product_finding_skipped_without_sku_performance(tmp_path):
+    con, db_path = _con(tmp_path)
+    _refund_overview_two(con)
+    con.close()
+    result = run_task("refund_structure_diagnosis", db_path)
+    assert "产品退款反思" not in [f.title for f in result.findings]
+    assert any("sku_performance" in lim for lim in result.limitations)

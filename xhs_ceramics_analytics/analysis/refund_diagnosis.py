@@ -53,6 +53,11 @@ def run(db_path: Path) -> AnalysisResult:
         if note_finding is not None:
             findings.append(note_finding)
             tables["high_refund_notes"] = note_rows
+
+        product_finding, product_rows = _product_finding(con, limitations)
+        if product_finding is not None:
+            findings.append(product_finding)
+            tables["product_refund_concentration"] = product_rows
     finally:
         con.close()
     return AnalysisResult(
@@ -310,6 +315,117 @@ def _top_feature(cohort: list[dict], feature_keys: tuple[str, ...]) -> str | Non
             if best is None or count > best[2]:
                 best = (key, value, count)
     return f"{best[0]}={best[1]}" if best else None
+
+
+_PRODUCT_FEATURES = ("vessel_type", "series", "category", "price_band")
+
+
+def _product_finding(con, limitations: list[str]) -> tuple[Finding | None, list[dict]]:
+    if not _table_exists(con, "sku_performance"):
+        limitations.append("缺少 sku_performance 表，跳过产品退款反思。")
+        return None, []
+    cols = _table_columns(con, "sku_performance")
+    if "refund_rate_pay" not in cols or "product_id" not in cols:
+        limitations.append("sku_performance 缺少 product_id/refund_rate_pay，跳过产品退款反思。")
+        return None, []
+    has_orders = "refund_orders_pay" in cols
+    has_products = _table_exists(con, "products")
+    orders_expr = "SUM(CAST(refund_orders_pay AS DOUBLE))" if has_orders else "NULL"
+    gmv_expr = "SUM(CAST(gmv AS DOUBLE))" if "gmv" in cols else "NULL"
+    net_expr = "SUM(CAST(net_gmv_pay AS DOUBLE))" if "net_gmv_pay" in cols else "NULL"
+    agg = con.sql(
+        f"""
+        SELECT product_id, ANY_VALUE(product_name) AS product_name,
+               {gmv_expr} AS gmv, {net_expr} AS net_gmv,
+               AVG(CAST(refund_rate_pay AS DOUBLE)) AS rate,
+               {orders_expr} AS refund_orders
+        FROM sku_performance GROUP BY product_id
+        """
+    ).fetchall()
+    columns = ["product_id", "product_name", "gmv", "net_gmv", "rate", "refund_orders"]
+    records = [dict(zip(columns, r)) for r in agg]
+
+    attrs: dict[str, dict] = {}
+    if has_products:
+        pcols = _table_columns(con, "products")
+        sel = ", ".join(f for f in _PRODUCT_FEATURES if f in pcols)
+        if sel:
+            for r in con.sql(f"SELECT product_id, {sel} FROM products").fetchall():
+                keys = ["product_id"] + [f for f in _PRODUCT_FEATURES if f in pcols]
+                attrs[r[0]] = dict(zip(keys, r))
+
+    total_refund = sum(_num(r["gmv"]) - _num(r["net_gmv"]) for r in records)
+    total_k = (
+        sum(_num(r["rate"]) * _num(r["refund_orders"]) for r in records)
+        if has_orders
+        else 0.0
+    )
+    total_n = sum(_num(r["refund_orders"]) for r in records) if has_orders else 0.0
+    baseline = (total_k / total_n) if total_n else (
+        sum(_num(r["rate"]) for r in records) / len(records) if records else 0.0
+    )
+
+    product_rows: list[dict] = []
+    high: list[dict] = []
+    for r in records:
+        refund_amount = _num(r["gmv"]) - _num(r["net_gmv"])
+        rate = _num(r["rate"])
+        n = _num(r["refund_orders"])
+        attr = attrs.get(r["product_id"], {})
+        row = {
+            "product_id": r["product_id"],
+            "product_name": r["product_name"],
+            "refund_amount": refund_amount,
+            "amount_share": refund_amount / total_refund if total_refund else None,
+            "refund_rate": rate,
+            "n": n if has_orders else None,
+            "vessel_type": attr.get("vessel_type"),
+            "series": attr.get("series"),
+            "category": attr.get("category"),
+            "price_band": attr.get("price_band"),
+        }
+        product_rows.append(row)
+        if has_orders and n > 0:
+            lo, _ = wilson_interval(round(rate * n), n)
+            flagged = min_n_guard(n) and lo > baseline
+        else:
+            flagged = rate > baseline
+        if flagged:
+            high.append(row)
+
+    product_rows.sort(key=lambda r: r["refund_amount"], reverse=True)
+    top_feature = _top_feature(high, _PRODUCT_FEATURES) if has_products else None
+    top_share = sum(r["amount_share"] or 0 for r in product_rows[:3])
+    caveats = ["观察性反思，非因果——高退款产品的共有特征仅供假设生成。"]
+    if not has_products:
+        caveats.append("缺少 products，仅列高退款产品，无法归因特征。")
+    if not has_orders:
+        caveats.append("缺少 refund_orders_pay，产品退款率未做订单量 Wilson 守卫。")
+    conclusion = (
+        f"高退款产品 {len(high)} 个，退款金额前三占 {round(top_share * 100)}%。"
+        + (f" 高退款集中在 {top_feature}。" if top_feature else "")
+    )
+    finding = Finding(
+        title="产品退款反思",
+        conclusion=conclusion,
+        evidence_strength=score_evidence(
+            int(total_n) if has_orders else len(records),
+            has_controls=False,
+            confounder_count=1,
+        ),
+        key_numbers={
+            "high_refund_product_count": len(high),
+            "top_products_amount_share": top_share,
+            "baseline_rate": baseline,
+            "top_feature": top_feature,
+        },
+        caveats=caveats,
+        recommended_action="对高退款产品优先做质量抽检 / 详情页尺寸与色差描述修订，评估下架或换供应。",
+        evidence_reason="产品退款金额=支付-退款后支付；高退款以退款率对比基线（有订单量时 Wilson 守卫）。",
+        confounders=["品类结构", "定价带", "上新周期"],
+        next_test="对疑似器型/系列做质量抽检或描述修订后复测退款率。",
+    )
+    return finding, product_rows
 
 
 def _layer_zh(layer: str | None) -> str:
