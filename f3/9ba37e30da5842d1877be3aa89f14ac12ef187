@@ -1,0 +1,55 @@
+skills/data-analyze-for-zcl/assets/xhs-ca/task_templates/sku_structure_diagnosis.md
+  s_6bd2349b4ebd4d::t_27ddc541fff709 1-127
+xhs_ceramics_analytics/cli.py
+  s_6bd2349b4ebd4d::t_5fa7369952362b 124-133
+  s_6bd2349b4ebd4d::t_d1f540d9e8a34e 167-197
+  s_6bd2349b4ebd4d::t_24bac245151ed0 92-94
+task_templates/note_commercial_diagnosis.md
+  s_6bd2349b4ebd4d::t_2c6a3c72af15fe 1-119
+xhs_ceramics_analytics/analysis/coverage.py
+  s_6bd2349b4ebd4d::t_65e72754b017a4 1-56
+task_templates/sku_structure_diagnosis.md
+  s_6bd2349b4ebd4d::t_2abaa709eace62 1-125
+xhs_ceramics_analytics/analysis/registry.py
+  s_6bd2349b4ebd4d::t_98318895dd7fda 15,26
+  s_6bd2349b4ebd4d::t_7a2b635775a03e 54-55
+skills/data-analyze-for-zcl/SKILL.md
+  s_6bd2349b4ebd4d::t_062456b555f9f1 26
+  s_6bd2349b4ebd4d::t_d77b53d51ab7a2 66-68,72-78
+  s_6bd2349b4ebd4d::t_c21219e27428be 20
+tests/test_sku_structure.py
+  s_6bd2349b4ebd4d::t_cdeda8858ae335 1-134
+xhs_ceramics_analytics/reporting/html.py
+  s_6bd2349b4ebd4d::t_a6e4a7b4ab8180 190,192,200,202
+references/task_menu.md
+  s_6bd2349b4ebd4d::t_a24ee9c9ba35c9 3
+  s_6bd2349b4ebd4d::t_19e9e459739f3d 24-29
+tests/test_coverage.py
+  s_6bd2349b4ebd4d::t_f14b1456ce3841 1-44
+skills/data-analyze-for-zcl/assets/xhs-ca/references/task_menu.md
+  s_6bd2349b4ebd4d::t_27ddc541fff709 5,26-31
+tests/test_note_commercial.py
+  s_6bd2349b4ebd4d::t_bee889faf8d51d 1-116
+xhs_ceramics_analytics/analysis/sku_structure.py
+  s_6bd2349b4ebd4d::t_3890219b7e37ce 1-355
+xhs_ceramics_analytics/analysis/note_commercial.py
+  s_6bd2349b4ebd4d::t_919cda42658d33 1-359
+skills/data-analyze-for-zcl/assets/xhs-ca/task_templates/note_commercial_diagnosis.md
+  s_6bd2349b4ebd4d::t_27ddc541fff709 1-121
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.28-trip",
+  "base_commit_sha": "f39ba37e30da5842d1877be3aa89f14ac12ef187",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
