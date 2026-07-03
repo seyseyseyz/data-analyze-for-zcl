@@ -123,3 +123,41 @@ def test_guess_field_mapping_is_wrapper_over_map_columns():
     assert guess_field_mapping(profile, "refund_overview") == map_columns(
         profile, "refund_overview"
     ).mapping
+
+
+from xhs_ceramics_analytics.importing.overrides import load_overrides  # noqa: E402
+
+
+def test_load_overrides_absent_file_returns_empty(tmp_path):
+    assert load_overrides(tmp_path / "nope.yaml") == {}
+
+
+def test_load_overrides_empty_file_returns_empty(tmp_path):
+    path = tmp_path / "empty.yaml"
+    path.write_text("", encoding="utf-8")
+    assert load_overrides(path) == {}
+
+
+def test_load_overrides_parses_nested_dict_of_sets(tmp_path):
+    path = tmp_path / "o.yaml"
+    path.write_text(
+        "refund_overview:\n"
+        "  refund_users:\n"
+        "    - 退款人数合计\n"
+        "    - 退款客户数\n"
+        "business_overview_daily:\n"
+        "  net_gmv_pay: 退款后金额\n",  # scalar → one-element list
+        encoding="utf-8",
+    )
+    result = load_overrides(path)
+    assert result == {
+        "refund_overview": {"refund_users": {"退款人数合计", "退款客户数"}},
+        "business_overview_daily": {"net_gmv_pay": {"退款后金额"}},
+    }
+
+
+def test_load_overrides_malformed_top_level_raises(tmp_path):
+    path = tmp_path / "bad.yaml"
+    path.write_text("- just\n- a\n- list\n", encoding="utf-8")
+    with pytest.raises(ValueError):
+        load_overrides(path)
