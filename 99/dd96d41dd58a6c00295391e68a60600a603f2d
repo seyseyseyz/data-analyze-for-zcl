@@ -1,0 +1,34 @@
+xhs_ceramics_analytics/analysis/core_business.py
+  s_6bd2349b4ebd4d::t_d615fadbc197ce 451-454
+  s_6bd2349b4ebd4d::t_f39748206728f1 11
+  s_6bd2349b4ebd4d::t_53fe1b62974281 407-413
+tests/test_audience_structure.py
+  s_6bd2349b4ebd4d::t_1726f52f598efa 219-238
+tests/test_funnel_scope.py
+  s_6bd2349b4ebd4d::t_d6871894cad726 1-61
+docs/superpowers/specs/2026-07-04-report-quality-design-overhaul.md
+  s_6bd2349b4ebd4d::t_8406fb5901571c 1-130
+xhs_ceramics_analytics/analysis/funnel_scope.py
+  s_6bd2349b4ebd4d::t_dd5efca3ca5e51 1-59
+xhs_ceramics_analytics/analysis/audience_structure.py
+  s_6bd2349b4ebd4d::t_d665f76cbdd4ac 34-35
+  s_6bd2349b4ebd4d::t_e3a412825f879d 12-15
+  s_6bd2349b4ebd4d::t_22efc5c920d4b3 114-120
+  s_6bd2349b4ebd4d::t_9b9b12e9c993f7 289-296,302-307,311
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.28-trip",
+  "base_commit_sha": "99dd96d41dd58a6c00295391e68a60600a603f2d",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
