@@ -1,0 +1,20 @@
+docs/superpowers/plans/2026-07-03-ingestion-hardening.md
+  s_6bd2349b4ebd4d::t_3a3fc68b007c53 895
+  s_6bd2349b4ebd4d::t_26eb9223dc3eb5 1017
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.28-trip",
+  "base_commit_sha": "0dd688650e918916d7b9dcba26fc8daf18bf981b",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
