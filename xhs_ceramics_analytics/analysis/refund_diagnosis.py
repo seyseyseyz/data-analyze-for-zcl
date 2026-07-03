@@ -7,6 +7,7 @@ from xhs_ceramics_analytics.analytics.confidence import (
     two_proportion,
     wilson_interval,
 )
+from xhs_ceramics_analytics.analytics.trends import direction_label, mom_change
 from xhs_ceramics_analytics.db.duck import connect
 from xhs_ceramics_analytics.evidence import EvidenceStrength, score_evidence
 
@@ -42,6 +43,11 @@ def run(db_path: Path) -> AnalysisResult:
         if carrier_finding is not None:
             findings.append(carrier_finding)
             tables["carrier_refund_comparison"] = carrier_rows
+
+        trend_finding, trend_rows = _trend_finding(con, limitations)
+        if trend_finding is not None:
+            findings.append(trend_finding)
+            tables["refund_trend"] = trend_rows
     finally:
         con.close()
     return AnalysisResult(
@@ -157,6 +163,50 @@ def _carrier_finding(con, limitations: list[str]) -> tuple[Finding | None, list[
         confounders=["载体流量结构", "客群差异"],
     )
     return finding, by_carrier
+
+
+def _trend_finding(con, limitations: list[str]) -> tuple[Finding | None, list[dict]]:
+    if not _table_exists(con, "business_overview_daily"):
+        limitations.append("缺少 business_overview_daily 表，跳过退款率时间趋势。")
+        return None, []
+    cols = _table_columns(con, "business_overview_daily")
+    if "refund_rate_pay" not in cols or "date" not in cols:
+        limitations.append("business_overview_daily 缺少 date/refund_rate_pay，跳过趋势。")
+        return None, []
+    result = con.sql(
+        """
+        SELECT CAST(date AS VARCHAR) AS period, AVG(CAST(refund_rate_pay AS DOUBLE)) AS rate
+        FROM business_overview_daily
+        WHERE refund_rate_pay IS NOT NULL
+        GROUP BY 1 ORDER BY 1
+        """
+    )
+    trend_rows = [{"period": p, "refund_rate": rate} for p, rate in result.fetchall()]
+    if len(trend_rows) < 2:
+        limitations.append("退款率序列不足两期，跳过趋势。")
+        return None, []
+    series = [(r["period"], r["refund_rate"]) for r in trend_rows]
+    steps = mom_change(series)
+    overall_delta = series[-1][1] - series[0][1]
+    direction = direction_label(overall_delta)
+    finding = Finding(
+        title="退款率时间趋势",
+        conclusion=(
+            f"退款率从 {round(series[0][1] * 100)}% {direction}到 "
+            f"{round(series[-1][1] * 100)}%（{len(series)} 期）。"
+        ),
+        evidence_strength=score_evidence(len(series), has_controls=False, confounder_count=1),
+        key_numbers={
+            "trend_direction": direction,
+            "first_rate": series[0][1],
+            "last_rate": series[-1][1],
+        },
+        caveats=["观察性趋势，非因果；仅报告方向与幅度，未做显著性检验。"],
+        evidence_reason="逐期退款率走势，观察性描述。",
+        confounders=["促销周期", "季节性"],
+        appendix=str(steps),
+    )
+    return finding, trend_rows
 
 
 def _layer_zh(layer: str | None) -> str:

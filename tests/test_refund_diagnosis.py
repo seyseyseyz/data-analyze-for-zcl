@@ -87,3 +87,38 @@ def test_carrier_finding_skipped_for_single_carrier(tmp_path):
     result = run_task("refund_structure_diagnosis", db_path)
     assert "载体退款率对比" not in [f.title for f in result.findings]
     assert any("载体" in lim for lim in result.limitations)
+
+
+def _make_business_overview(con, rows):
+    con.execute(
+        "CREATE TABLE business_overview_daily (date DATE, refund_rate_pay DOUBLE)"
+    )
+    con.executemany("INSERT INTO business_overview_daily VALUES (?, ?)", rows)
+
+
+def test_trend_finding_reports_direction(tmp_path):
+    con, db_path = _con(tmp_path)
+    _make_refund_overview(
+        con, [("笔记", 10000.0, 2000.0, 3000.0, 5000.0, 100.0, 0.10, 90.0),
+              ("商卡", 8000.0, 1000.0, 2000.0, 5000.0, 80.0, 0.08, 70.0)]
+    )
+    _make_business_overview(
+        con, [("2026-04-30", 0.05), ("2026-05-31", 0.08), ("2026-06-30", 0.12)]
+    )
+    con.close()
+    result = run_task("refund_structure_diagnosis", db_path)
+    finding = next(f for f in result.findings if f.title == "退款率时间趋势")
+    assert finding.key_numbers["trend_direction"] == "上升"
+    assert len(result.tables["refund_trend"]) == 3
+
+
+def test_trend_finding_skipped_without_business_overview(tmp_path):
+    con, db_path = _con(tmp_path)
+    _make_refund_overview(
+        con, [("笔记", 10000.0, 2000.0, 3000.0, 5000.0, 100.0, 0.10, 90.0),
+              ("商卡", 8000.0, 1000.0, 2000.0, 5000.0, 80.0, 0.08, 70.0)]
+    )
+    con.close()
+    result = run_task("refund_structure_diagnosis", db_path)
+    assert "退款率时间趋势" not in [f.title for f in result.findings]
+    assert any("business_overview_daily" in lim for lim in result.limitations)
