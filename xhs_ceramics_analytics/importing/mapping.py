@@ -301,6 +301,55 @@ GRAIN_KEYS: dict[str, tuple[str, ...]] = {
 }
 
 
+# Downstream hard-dependencies by canonical name: grain keys (a missing grain key
+# corrupts the coalesce in _combine_frames) plus every column a built mart/task SELECTs.
+# Made explicit — NOT derived from the classification signature (chosen for discrimination,
+# omits mart-consumed columns like net_gmv_pay) nor the `_optional` convention (the new
+# §2/§5/§6/§7 tables do not use it). Enforced by test_required_columns_invariants.
+REQUIRED_COLUMNS: dict[str, set[str]] = {
+    "notes": {
+        "note_id", "publish_time", "title", "reads",
+        "impressions", "likes", "collects", "comments",
+    },
+    "products": {"product_id", "product_name", "vessel_type", "series"},
+    "skus": {"sku_id", "product_id", "sku_name", "price"},
+    "orders": {"order_id", "paid_time", "sku_id", "quantity", "paid_amount"},
+    "comments": {"note_id", "comment_time", "comment_text"},
+    "content_features": {"note_id", "composition_type", "scene_hint", "copy_angle"},
+    "calendar_events": {"date", "event_type", "event_name", "severity"},
+    "ad_performance_daily": {"date", "spend", "impressions", "clicks"},
+    "business_overview_daily": {
+        "date", "gmv", "paid_orders", "paid_buyers", "aov",
+        "paid_units", "refund_amount_pay", "net_gmv_pay",  # mart-SUM deps, NOT in signature
+    },
+    "sku_performance": {"sku_id", "net_gmv_pay", "refund_rate_pay", "add_to_cart_users"},
+    "search_overview": {
+        "date", "carrier", "gmv", "paid_orders",
+        "card_impression_users", "product_click_rate", "pay_conversion",
+    },
+    "search_terms": {
+        "search_term", "gmv",
+        "card_impression_users", "product_click_rate", "pay_conversion",
+    },
+    "shop_page_funnel": {
+        "date", "audience_type", "first_purchase_cycle", "shop_visitors", "shop_payers",
+    },
+    "shop_page_source": {
+        "date", "audience_type", "first_purchase_cycle", "source_page",
+        "shop_visitors", "enter_pay_rate",
+    },
+    "refund_overview": {
+        "stat_period", "account_name", "carrier",
+        "refund_amount_pay", "refund_users", "refund_rate_pay",
+        "pre_ship_refund_amount", "post_ship_refund_amount", "return_refund_amount",
+    },
+    "traffic_source": {
+        "xhs_id", "channel", "note_type",
+        "gmv", "paid_orders", "product_clicks", "product_click_users",
+    },
+}
+
+
 _FULLWIDTH_PUNCT = str.maketrans(
     {
         "（": "(",
