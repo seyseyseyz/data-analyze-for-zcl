@@ -892,6 +892,7 @@ git commit -m "feat(ingestion): thread overrides + write mapping_diagnostics tab
 **Files:**
 - Modify: `tests/fixtures/business_overview_daily.csv` (add `支付件数` → `paid_units`, `退款金额（支付时间）` → `refund_amount_pay`)
 - Modify: `tests/fixtures/refund_overview.csv` (add `发货后退款金额（支付时间）` → `post_ship_refund_amount`)
+- Modify: `tests/fixtures/notes_commerce.csv` (add `曝光数` → `impressions`) — the `notes` golden fixture in `_ALL` also needs its Required `impressions` column, which resolves via the shipped alias at `mapping.py:84` (`{曝光数, 曝光次数, 展现数}`); otherwise `mapping_diagnostics` carries a `notes/impressions` row and the happy-path test fails.
 - Test: `tests/test_real_export_build.py::test_golden_full_export_has_empty_mapping_diagnostics` (written in Task 5)
 
 **Interfaces:**
@@ -1013,7 +1014,7 @@ Expected: rsync output; `overrides.py`, updated `mapping.py`/`build.py`, `test_i
 - [ ] **Step 2: Run the mirror suite**
 
 Run: `cd skills/data-analyze-for-zcl/assets/xhs-ca && ../../../../.venv/bin/python -m pytest -q; cd -`
-Expected: `281 passed` (same count as root). If the interpreter path differs, use the repo's `.venv/bin/python` with the mirror as CWD.
+Expected: `278 passed, 3 skipped` (0 failures; 281 collected). The 3 skips are pre-existing structural skips — `test_bootstrap_runtime.py` and `test_project_foundation.py` guard with `pytest.skip` when the source `skills/` dir and `sync-runtime` script are absent, which is always true inside the non-recursive mirror. No ingestion-hardening test is skipped. If the interpreter path differs, use the repo's `.venv/bin/python` with the mirror as CWD.
 
 - [ ] **Step 3: Run the root suite once more (final regression gate)**
 
