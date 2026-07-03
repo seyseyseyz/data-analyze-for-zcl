@@ -1,16 +1,16 @@
 import re
 from html import escape
-from numbers import Number
 
 from jinja2 import Environment, PackageLoader
 
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding, Subsection
 from xhs_ceramics_analytics.reporting.markdown import render_markdown
 from xhs_ceramics_analytics.reporting.section_order import APPENDIX_TASKS
-from xhs_ceramics_analytics.reporting.labels import (
-    VALUE_LABELS as _VALUE_LABELS,
-    format_number as _format_number,
-    format_percent as _format_percent,
+from xhs_ceramics_analytics.reporting.formatting import (
+    field_help as _field_help,
+    field_label as _field_label,
+    format_scalar as _format_scalar,
+    should_render_table as _should_render_table,
 )
 from xhs_ceramics_analytics.reporting import charts
 
@@ -27,203 +27,6 @@ _EVIDENCE_HELP = {
     "medium": "可以用于本周决策，但建议继续观察。",
     "weak": "适合作为实验方向，暂不适合直接下定论。",
     "not_judgable": "当前数据不足，需要先补齐导入或埋点。",
-}
-
-_FIELD_LABELS = {
-    "absolute_lift": ("绝对提升", "发布后销量减去发布前销量。"),
-    "active_days": ("活跃发布天数", "有笔记发布记录的天数。"),
-    "add_to_cart_users": ("加购人数", "将商品加入购物车的人数。"),
-    "avg_collect_rate": ("平均收藏率", "收藏数除以阅读数后的平均值。"),
-    "avg_collects": ("平均收藏数", "每组内容平均获得的收藏数。"),
-    "avg_comment_rate": ("平均评论率", "评论数除以阅读数后的平均值。"),
-    "avg_like_rate": ("平均点赞率", "点赞数除以阅读数后的平均值。"),
-    "avg_read_rate": ("平均阅读率", "阅读数除以曝光数后的平均值。"),
-    "avg_reads": ("平均阅读数", "每组内容平均获得的阅读数。"),
-    "budget_action": ("预算动作", "系统根据消耗、点击和投产给出的下周预算建议。"),
-    "campaign_name_optional": ("投放计划", "后台导出的投放计划名称。"),
-    "candidate_notes": ("候选笔记数", "进入重拍或重发候选池的笔记数量。"),
-    "category_l2": ("二级品类", "商品的二级品类。"),
-    "click_to_order": ("点击到订单", "笔记支付订单数除以商品点击次数。"),
-    "collect_rate": ("收藏率", "收藏数除以阅读数。"),
-    "collects": ("收藏数", "笔记获得的收藏数量。"),
-    "comment_rate": ("评论率", "评论数除以阅读数。"),
-    "comment_share": ("评论占比", "该需求类型在全部评论中的占比。"),
-    "comments": ("评论数", "评论数量。"),
-    "composition_type": ("封面构图", "首图或封面的画面类型。"),
-    "conservative_collect_rate": ("保守收藏率", "对小样本降权后的收藏率。"),
-    "content_angles": ("内容角度数", "计划里覆盖的文案角度数量。"),
-    "copy_angle": ("文案角度", "内容采用的表达方向，例如送礼、生活方式、餐桌场景。"),
-    "copy_groups": ("文案角度组数", "参与文案角度对比的分组数量。"),
-    "cover_groups": ("封面类型组数", "参与封面效果对比的分组数量。"),
-    "cpc_calc": ("点击成本", "投放消耗除以点击量。"),
-    "cpm_calc": ("千次曝光成本", "每一千次曝光对应的投放消耗。"),
-    "cost_per_order_calc": ("单订单成本", "投放消耗除以成交订单数。"),
-    "ctr_calc": ("点击率", "点击量除以曝光量。"),
-    "creative_name_optional": ("创意名称", "后台导出的素材或创意名称。"),
-    "date": ("日期", "对应的数据日期。"),
-    "day_index": ("第几天", "实验计划中的第几天。"),
-    "days": ("实验天数", "计划覆盖的天数。"),
-    "demand_group": ("需求类型", "从评论中识别出的用户需求类别。"),
-    "detected_grain": ("识别粒度", "系统根据字段判断出的导出粒度。"),
-    "d0_1_units": ("0-1 天销量", "笔记发布后 0 到 1 天内的销量。"),
-    "d1_3_units": ("1-3 天销量", "笔记发布后 1 到 3 天内的销量。"),
-    "d4_7_units": ("4-7 天销量", "笔记发布后 4 到 7 天内的销量。"),
-    "d8_14_units": ("8-14 天销量", "笔记发布后 8 到 14 天内的销量。"),
-    "d8_14_rows": ("长窗口样本数", "有 8 到 14 天观察窗口的样本数量。"),
-    "evidence_count": ("证据数量", "支撑该判断的数据条数。"),
-    "evidence_items": ("证据项", "复盘中可用的证据数量。"),
-    "evidence_strength": ("可信度", "这条结论目前能被用于经营决策的程度。"),
-    "evidence_summary": ("证据摘要", "支撑假设的简短说明。"),
-    "example_comments": ("评论示例", "该需求类型下的代表性评论。"),
-    "experiment_seed": ("实验标识", "用于追踪这次实验组合的唯一标记。"),
-    "first_d8_14_absolute_lift": (
-        "首个 8-14 天绝对提升",
-        "第一条长窗口样本的发布后销量减发布前销量。",
-    ),
-    "first_d8_14_post_units": (
-        "首个 8-14 天发布后销量",
-        "第一条长窗口样本的发布后销量。",
-    ),
-    "gmv": ("销售额", "该 SKU 在观察期内产生的成交金额。"),
-    "gmv_optional": ("成交金额", "投放后台或订单侧可见的成交金额。"),
-    "gmv_per_click": ("每次点击GMV", "笔记支付金额除以商品点击次数。"),
-    "hypotheses": ("假设数量", "当前生成的经营假设数量。"),
-    "hypothesis": ("经营假设", "等待下周实验验证的判断。"),
-    "hypothesis_id": ("假设编号", "用于持续追踪同一条假设的编号。"),
-    "impressions": ("曝光数", "内容被看到的次数。"),
-    "label": ("标签", "假设或分组的人类可读名称。"),
-    "like_rate": ("点赞率", "点赞数除以阅读数。"),
-    "likes": ("点赞数", "笔记获得的点赞数量。"),
-    "link_source": ("关联来源", "笔记和 SKU 之间的匹配方式。"),
-    "metric": ("指标", "该模块当前用于判断的核心指标。"),
-    "mix_share": ("内容占比", "该内容角度在全部内容中的占比。"),
-    "needs_more_data": ("是否需要更多数据", "样本不足时会标记为需要继续观察。"),
-    "net_gmv_pay": ("退款后GMV", "支付金额减去退款金额后的净额（平台按支付时间口径给出）。"),
-    "next_test": ("下一步实验", "建议下周验证这条假设的方式。"),
-    "note_gmv": ("笔记支付金额", "该笔记带来的支付金额。"),
-    "note_id": ("笔记编号", "笔记的内部编号，用来追踪具体是哪一条内容。"),
-    "note_sku_links": ("笔记-SKU 关联数", "可用于归因分析的笔记和 SKU 组合数量。"),
-    "note_sku_rows": ("笔记-SKU 数据行", "响应窗口中可用的笔记和 SKU 组合行数。"),
-    "notes": ("笔记数", "参与该统计的笔记数量。"),
-    "observed_groups": ("观察到的需求组数", "评论中实际出现的需求类型数量。"),
-    "opportunity_score": ("机会分", "综合收藏率和阅读空间计算的候选优先级。"),
-    "opportunity_type": ("机会类型", "系统给商品机会的初步分类。"),
-    "paid_active_days": ("活跃投放天数", "该投放对象出现数据的天数。"),
-    "paid_amount": ("成交金额", "订单实际支付金额。"),
-    "planned_rows": ("计划档期数", "下周实验矩阵生成的发布档期数量。"),
-    "platform_source": ("投放平台", "聚光、薯条、商家后台或其他来源。"),
-    "post_units": ("发布后销量", "笔记发布后窗口内的 SKU 销量。"),
-    "posts": ("发布笔记数", "统计期内发布的笔记数量。"),
-    "pre_units": ("发布前销量", "笔记发布前窗口内的 SKU 销量。"),
-    "price": ("价格", "商品价格或用于估算的金额。"),
-    "publish_time": ("发布时间", "笔记发布的具体时间。"),
-    "rank": ("排序", "候选项的优先级顺序。"),
-    "read_gap_to_max": ("阅读差距", "相对最高阅读数还差多少。"),
-    "read_rate": ("阅读率", "阅读数除以曝光数。"),
-    "reads": ("阅读数", "笔记获得的阅读数量。"),
-    "ready_sections": ("有源数据模块数", "复盘里已经找到可用数据的模块数量。"),
-    "reason": ("入选原因", "系统将该项列入候选的原因。"),
-    "refund_rate_pay": ("退款率(支付时间)", "退款金额占支付金额的比例，按支付时间口径统计。"),
-    "relative_lift": ("相对提升", "绝对提升相对发布前销量的比例。"),
-    "roas_calc": ("投产比", "成交金额除以投放消耗。"),
-    "roles": ("内容角色数", "内容组合中出现的文案角色数量。"),
-    "rows": ("数据行数", "该数据表里可用于分析的记录数量。"),
-    "sales_days": ("销售天数", "观察期内有销售记录的天数。"),
-    "section": ("复盘模块", "每周复盘中的模块名称。"),
-    "sections": ("模块数", "每周复盘覆盖的模块数量。"),
-    "seed": ("假设种子", "生成假设时使用的稳定追踪键。"),
-    "sku_count": ("SKU 数量", "参与商品机会分析的 SKU 数量。"),
-    "sku_id": ("SKU 编号", "具体商品规格的内部编号。"),
-    "sku_name": ("SKU 名称", "商品规格名称。"),
-    "slot_index": ("第几个时段", "当天计划中的发布时段序号。"),
-    "slot_time": ("发布时间段", "建议发布的时间段。"),
-    "slots_per_day": ("每日时段数", "每天安排的发布档期数量。"),
-    "source": ("来源任务", "该复盘模块来自哪个分析任务。"),
-    "spend": ("投放消耗", "投放后台记录的广告消耗。"),
-    "status": ("状态", "该项当前是否可用或需要补数据。"),
-    "summary": ("摘要", "该模块的可读说明。"),
-    "success_metric": ("判断指标", "用于判断实验是否有效的核心指标。"),
-    "table": ("数据表", "导入数据库中的表名。"),
-    "table_count": ("数据表数量", "成功导入的数据表数量。"),
-    "theme": ("假设主题", "假设所属的经营主题。"),
-    "title": ("标题", "笔记或项目标题。"),
-    "top_candidate": ("首选候选", "当前排序最高的候选笔记。"),
-    "top_group": ("最高需求类型", "评论里数量最多的需求类型。"),
-    "top_role": ("最高内容角度", "当前出现最多或表现较好的内容角度。"),
-    "top_sku_units": ("头部 SKU 销量", "销量最高 SKU 的销售件数。"),
-    "total_spend": ("总投放消耗", "当前投放表里汇总的广告消耗。"),
-    "unique_skus": ("SKU 覆盖数", "实验计划里覆盖的 SKU 数量。"),
-    "units": ("销售件数", "该 SKU 在观察期内卖出的件数。"),
-    "value": ("数值", "该模块对应指标的结果。"),
-    "window": ("观察窗口", "围绕笔记发布时间划分的时间窗口。"),
-    "windows": ("观察窗口数", "生成的时间窗口数量。"),
-    "combinations": ("内容组合数", "封面和文案角度组合后的分组数量。"),
-    # --- 深度诊断模块（趋势分解 / 漏损拆分 / 多重比较 / 渠道·退款根因） ---
-    "wow_last_pct": ("最近周环比", "最近一周 GMV 相对上一周的变化幅度。"),
-    "peak_dow": ("周内高峰日", "一周中平均 GMV 最高的星期几。"),
-    "changepoint_date": ("结构性变化点", "GMV 水平出现明显跳变的日期（观察性，非因果）。"),
-    "click_leak_count": ("点击漏损词数", "点击率低于基线、需优化封面/标题/词货匹配的搜索词数量。"),
-    "conversion_leak_count": ("转化漏损词数", "点击正常但转化低于基线、需优化商详/价格/信任状的搜索词数量。"),
-    "click_baseline": ("点击率基线", "按曝光加权的整体点击率，用于拆分漏损类型。"),
-    "conversion_baseline": ("转化率基线", "按点击加权的整体成交转化率，用于拆分漏损类型。"),
-    "baseline_effectiveness": ("基线成交效率", "全部搜索词的加权成交效率，作为高机会/高流失的判定基准。"),
-    "opportunity_count": ("高机会词数", "Wilson 下界高于基线的搜索词数量。"),
-    "leak_count": ("高流失词数", "Wilson 上界低于基线的搜索词数量。"),
-    "leak_type": ("漏损类型", "高流失词的漏损环节：点击漏损或转化漏损。"),
-    "top_term": ("头部搜索词", "按 GMV 或流量排序最靠前的可分类搜索词。"),
-    "new_customer_dependence": ("新客付费占比", "新客付费人数占新老客付费总人数的比例。"),
-    "repeat_conversion_premium": ("老客转化溢价", "老客转化率相对新客转化率的倍数减一。"),
-    "fdr_survivors": ("FDR 显著数", "经 Benjamini-Hochberg 5% 多重比较校正后仍显著的异常项数量。"),
-    "expected_false_positives": ("预计假阳性", "在当前检验数量下预计的假阳性个数。"),
-    "fdr_significant": ("FDR 是否显著", "该异常项是否通过 BH-FDR 5% 校正。"),
-    "fdr_significant_count": ("FDR 显著数", "通过 BH-FDR 5% 校正的异常项数量。"),
-    "p_value": ("单侧 p 值", "该项高于基线的单侧二项检验 p 值。"),
-    "notes_with_orders": ("有成交笔记数", "至少产生一笔成交的笔记数量。"),
-    "notes_with_reads": ("有阅读笔记数", "至少有阅读的笔记数量。"),
-    "converting_share": ("成交笔记占比", "有成交笔记占有阅读笔记的比例。"),
-    "baseline_conversion": ("基线转化率", "整体阅读到成交的正基线，用于识别高流量低转化。"),
-    "high_traffic_low_conv_count": ("高流量低转化笔记数", "阅读进入前 25% 但转化上界仍低于基线的笔记数量。"),
-    "baseline_refund_rate": ("退款率基线", "按成交单加权的整体退款率，作为异常判定基准。"),
-    "high_refund_sku_count": ("高退款 SKU 数", "退款率高于基线且样本充足的 SKU 数量。"),
-    "dominant_carrier": ("主力载体", "GMV 占比最高的承载载体（笔记/商品卡）。"),
-    "dominant_gmv_share": ("主力载体占比", "主力载体的 GMV 占比。"),
-    "carrier": ("载体", "流量承载形式：笔记或商品卡。"),
-    "carrier_zh": ("载体", "流量承载形式的中文名。"),
-    "channel_scale": ("渠道规模", "该渠道的曝光或点击规模。"),
-    "channel": ("渠道", "流量来源渠道。"),
-    "conversion": ("转化率", "成交人数除以访客或点击人数。"),
-    "conversion_source": ("转化口径", "转化率取真实计数还是由率推算。"),
-    "conv_diff": ("转化率差异", "两组之间成交转化率的绝对差（百分点）。"),
-    "conv_significant": ("转化差异显著性", "两样本比例检验结合效应量后的显著性判断。"),
-    "refund_diff": ("退款率差异", "两组之间退款率的绝对差（百分点）。"),
-    "refund_significant": ("退款差异显著性", "两样本比例检验结合效应量后的显著性判断。"),
-    "higher_refund_carrier": ("高退款载体", "退款率更高的载体。"),
-    "visitors": ("访客数", "该分组的访客或曝光人数。"),
-    "buyers": ("成交人数", "该分组的成交买家数。"),
-    "net_gmv": ("退款后GMV", "支付金额减退款金额后的净额。"),
-    "aov_high": ("高客单", "对比中客单价较高的一方。"),
-    "aov_low": ("低客单", "对比中客单价较低的一方。"),
-    "note_conversion": ("笔记转化率", "笔记载体的成交转化率。"),
-    "card_conversion": ("商品卡转化率", "商品卡载体的成交转化率。"),
-    "note_refund_rate": ("笔记退款率", "笔记载体的退款率。"),
-    "card_refund_rate": ("商品卡退款率", "商品卡载体的退款率。"),
-    "note_aov": ("笔记客单价", "笔记载体的客单价。"),
-    "card_aov": ("商品卡客单价", "商品卡载体的客单价。"),
-    "card_gmv": ("商品卡GMV", "商品卡载体产生的成交金额。"),
-    "top_category": ("最高退款品类", "退款率或退款额最高的品类。"),
-    "top_category_rate": ("最高退款品类退款率", "退款率最高品类的退款率。"),
-    "dominant_stage": ("主导退款环节", "退款集中的环节：发货前或发货后。"),
-    "stage": ("退款环节", "退款发生的环节。"),
-    "stage_zh": ("退款环节", "退款环节的中文名。"),
-    "pre_ship": ("发货前退款", "发货前发生的退款。"),
-    "post_ship": ("发货后退款", "发货后发生的退款。"),
-    "pre_ship_rate": ("发货前退款率", "发货前退款占成交的比例。"),
-    "post_ship_rate": ("发货后退款率", "发货后退款占成交的比例。"),
-    "highest_refund_band": ("最高退款价格带", "退款率最高的价格带。"),
-    "band": ("价格带", "商品按价格划分的区间。"),
-    "band_count": ("价格带数", "参与对比的价格带数量。"),
-    "refund_orders": ("退款单数", "该分组的退款订单数量。"),
-    "refund_rate": ("退款率", "退款金额或退款单占比。"),
 }
 
 _MAX_TABLE_ROWS = 20
@@ -452,34 +255,6 @@ _USER_TABLE_COLUMNS = {
     ),
 }
 
-_PERCENT_FIELDS = {
-    "avg_collect_rate",
-    "avg_comment_rate",
-    "avg_like_rate",
-    "avg_read_rate",
-    "collect_rate",
-    "comment_rate",
-    "comment_share",
-    "confidence_weight",
-    "ctr_calc",
-    "like_rate",
-    "mix_share",
-    "read_gap_to_max",
-    "read_rate",
-    "relative_lift",
-}
-
-_MONEY_FIELDS = {
-    "cost_per_order_calc",
-    "cpc_calc",
-    "cpm_calc",
-    "gmv",
-    "gmv_optional",
-    "paid_amount",
-    "price",
-    "spend",
-    "total_spend",
-}
 
 
 def render_html(results: list[AnalysisResult]) -> str:
@@ -872,7 +647,9 @@ def _result_view(result: AnalysisResult) -> dict[str, object]:
         "findings": [_finding_view(finding) for finding in result.findings],
         "chart_svg": charts.for_result(result),
         "table_views": [
-            _table_view(table_name, rows) for table_name, rows in result.tables.items()
+            _table_view(table_name, rows)
+            for table_name, rows in result.tables.items()
+            if _should_render_table(rows)
         ],
         "limitations": result.limitations,
         "subsections": [_subsection_view(subsection) for subsection in result.subsections],
@@ -1343,57 +1120,16 @@ def _evidence_label(value: str) -> str:
     return _EVIDENCE_LABELS.get(value, value)
 
 
-def _field_label(field_name: str) -> str:
-    label = _FIELD_LABELS.get(field_name)
-    if label is not None:
-        return label[0]
-    return field_name.replace("_", " ")
-
-
-def _field_help(field_name: str) -> str:
-    label = _FIELD_LABELS.get(field_name)
-    if label is not None:
-        return label[1]
-    return "原始数据字段，保留用于查数和追溯。"
+def _display_cell(field_name: str, value: object) -> str:
+    return _format_scalar(field_name, value)
 
 
 def _display_value(value: object) -> str:
-    return _display_cell("", value)
+    return _format_scalar("", value)
 
 
 def _display_cell_filter(value: object, field_name: str) -> str:
-    return _display_cell(field_name, value)
-
-
-def _display_cell(field_name: str, value: object) -> str:
-    if isinstance(value, list):
-        return "、".join(str(_display_cell(field_name, item)) for item in value)
-    if isinstance(value, tuple):
-        return "、".join(str(_display_cell(field_name, item)) for item in value)
-    if value is None:
-        return "暂无数据"
-    if isinstance(value, bool):
-        return "是" if value else "否"
-    if isinstance(value, str):
-        return _VALUE_LABELS.get(value, value)
-    if isinstance(value, Number):
-        numeric = float(value)
-        if field_name == "relative_lift":
-            if numeric > 0:
-                return f"提升 {_format_percent(numeric)}"
-            if numeric < 0:
-                return f"下降 {_format_percent(abs(numeric))}"
-            return "持平 0%"
-        if _is_percent_field(field_name):
-            return _format_percent(numeric)
-        if field_name in _MONEY_FIELDS:
-            return _format_number(numeric)
-        return _format_number(numeric)
-    return str(value)
-
-
-def _is_percent_field(field_name: str) -> bool:
-    return field_name in _PERCENT_FIELDS or field_name.endswith("_rate")
+    return _format_scalar(field_name, value)
 
 
 def _primary_evidence_value(result: AnalysisResult | None) -> str:
