@@ -4,8 +4,10 @@ from typing import Callable
 from xhs_ceramics_analytics.analysis import (
     account_baseline,
     ad_quality,
+    audience_structure,
     comment_demand,
     copy_effect,
+    core_business,
     cover_effect,
     data_quality,
     experiment_matrix,
@@ -18,6 +20,7 @@ from xhs_ceramics_analytics.analysis import (
     refund_diagnosis,
     response_curve,
     reshoot,
+    search_efficiency,
     sku_lift,
     weekly_review,
 )
@@ -43,6 +46,9 @@ TASKS: dict[str, Callable[[Path], AnalysisResult]] = {
     "hypothesis_knowledge_base": hypothesis.run,
     "weekly_business_review": weekly_review.run,
     "refund_structure_diagnosis": refund_diagnosis.run,
+    "core_business_diagnosis": core_business.run,
+    "search_efficiency_diagnosis": search_efficiency.run,
+    "audience_structure_diagnosis": audience_structure.run,
 }
 
 
