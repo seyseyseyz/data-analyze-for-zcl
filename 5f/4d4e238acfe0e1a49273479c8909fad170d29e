@@ -1,0 +1,29 @@
+skills/data-analyze-for-zcl/SKILL.md
+  s_6bd2349b4ebd4d::t_5799bdac9e9e54 66,72
+  s_6bd2349b4ebd4d::t_e4619b882716c3 28
+  s_6bd2349b4ebd4d::t_d41731f163004d 24,26,30
+  s_6bd2349b4ebd4d::t_7d5807b477c254 69-71,73-74,76
+xhs_ceramics_analytics/cli.py
+  s_6bd2349b4ebd4d::t_7a1f451c4b0d9e 88-96,102-108,110-112,119-122,124-127,129-130,132-133,143
+  s_6bd2349b4ebd4d::t_350d77f864fe37 109
+  s_6bd2349b4ebd4d::t_6126f1e0601834 128
+tests/test_cli_combined_report.py
+  s_6bd2349b4ebd4d::t_ceae84fac42295 1-37,39-47,52-53,57,59-111
+  s_6bd2349b4ebd4d::t_c1cc0994fb32b1 38,48-51,54-56,58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.28-trip",
+  "base_commit_sha": "5f4d4e238acfe0e1a49273479c8909fad170d29e",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
