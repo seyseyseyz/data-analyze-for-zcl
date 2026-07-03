@@ -87,7 +87,7 @@ def test_markdown_renders_limitations_and_table_preview(tmp_path: Path):
     assert "限制：" in report
     assert "笔记表缺少漏斗指标字段" in report
     assert "notes columns missing for funnel rates" not in report
-    assert "表格 `note_funnel`：1 行" in report
+    assert "表格 `note_funnel`：共 1 行，当前展示 1 行" in report
     assert "| note_id | reads | read_rate | like_rate | collect_rate | comment_rate |" in report
 
 

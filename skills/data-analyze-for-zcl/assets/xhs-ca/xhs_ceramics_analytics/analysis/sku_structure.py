@@ -285,6 +285,11 @@ def _conversion_finding(
         limitations.append("sku_performance 无有效加购数据，跳过加购转化与客单价结构。")
         return None, []
 
+    # This finding's universe (加购人数>0) differs from the GMV-Pareto universe
+    # (GMV>0). A SKU with carts but no paid GMV counts here yet not there, so the
+    # two SKU counts legitimately diverge — reconcile them explicitly.
+    gmv_universe = sum(1 for r in rows if _num(r.get("gmv")) > 0) if "gmv" in cols else None
+
     total_cart = sum(_num(r.get("add_to_cart_users")) for r in usable)
     total_pay = sum(_num(r.get("paid_buyers")) for r in usable)
     overall_cart_to_pay = bounded_rate(total_pay / total_cart) if total_cart else None
@@ -330,13 +335,28 @@ def _conversion_finding(
         key_numbers={
             "overall_cart_to_pay": overall_cart_to_pay,
             "median_aov": median_aov,
+            "conversion_universe": len(usable),
+            "gmv_universe": gmv_universe,
         },
-        caveats=["观察性诊断，非因果——加购转化与客单价结构可能受流量质量、活动折扣与品类共同影响。"],
+        caveats=_conversion_caveats(len(usable), gmv_universe),
         recommended_action=_LEVER_CONVERSION,
         evidence_reason="加购转化用真实 add_to_cart_users/paid_buyers 聚合，客单价用 aov 中位数描述，均为观察性。",
         confounders=list(_CONFOUNDERS),
     )
     return finding, conv_rows
+
+
+def _conversion_caveats(conversion_universe: int, gmv_universe: int | None) -> list[str]:
+    caveats = [
+        "观察性诊断，非因果——加购转化与客单价结构可能受流量质量、活动折扣与品类共同影响。"
+    ]
+    if gmv_universe is not None:
+        caveats.append(
+            f"本节口径为「加购人数>0」的 SKU 全集（{conversion_universe} 个），"
+            f"与 GMV 集中度的「GMV>0」有效 SKU 全集（{gmv_universe} 个）不同："
+            f"有加购但未成交/无 GMV 的 SKU 计入本节、不计入 GMV 集中度，故两处 SKU 数不一致。"
+        )
+    return caveats
 
 
 # --------------------------------------------------------------------------- #

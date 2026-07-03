@@ -216,6 +216,26 @@ def test_cycle_finding_reports_weakest_cycle(tmp_path):
     assert finding.key_numbers["weakest_cycle"] == "首购"
 
 
+def test_cycle_finding_identical_nested_windows_no_spurious_weakest(tmp_path):
+    # Real data: nested cumulative windows 180天 ⊂ 365天 end up numerically
+    # identical. Declaring a "weakest" among equal windows and a 0.0pp gap is noise.
+    con, db_path = _con(tmp_path)
+    _make_funnel_full(
+        con,
+        [
+            ("2026-06-01", "新客", "180天", 19012.0, 1109.0, 8000.0, 0.42, 0.14, 0.0583),
+            ("2026-06-01", "新客", "365天", 19012.0, 1109.0, 8000.0, 0.42, 0.14, 0.0583),
+        ],
+    )
+    con.close()
+    result = run_task(TASK, db_path)
+    finding = next(f for f in result.findings if f.title == "首购周期漏斗")
+    # No spurious weakest declared when windows do not differ meaningfully.
+    assert finding.key_numbers["weakest_cycle"] is None
+    assert "无有效差异" in finding.conclusion
+    assert "最弱周期为" not in finding.conclusion
+
+
 # ---- Finding 3 source structure -------------------------------------------
 
 

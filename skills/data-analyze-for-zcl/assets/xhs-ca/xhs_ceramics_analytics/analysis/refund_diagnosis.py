@@ -7,7 +7,7 @@ from xhs_ceramics_analytics.analytics.confidence import (
     two_proportion,
     wilson_interval,
 )
-from xhs_ceramics_analytics.analytics.trends import direction_label, mom_change
+from xhs_ceramics_analytics.analytics.trends import mom_change, trend_summary
 from xhs_ceramics_analytics.db.duck import connect
 from xhs_ceramics_analytics.evidence import EvidenceStrength, score_evidence
 
@@ -19,6 +19,7 @@ _LAYER_COLUMNS = {
     "post_ship": "post_ship_refund_amount",
     "return": "return_refund_amount",
 }
+_SHIP_STAGE_LAYERS = ("pre_ship", "post_ship")
 _LAYER_LEVERS = {
     "pre_ship": "发货前退款最高：优化下单后拦截话术、库存与发货时效、价格波动预期管理。",
     "post_ship": "发货后退款最高：排查物流破损与时效、加强客服响应与签收提醒。",
@@ -73,16 +74,35 @@ def _layer_finding(con, limitations: list[str]) -> tuple[Finding, list[dict]]:
     cols = _table_columns(con, "refund_overview")
     rows = _fetch_all(con, "refund_overview")
     present = {name: col for name, col in _LAYER_COLUMNS.items() if col in cols}
-    layer_rows: list[dict] = []
     total = sum(_num(r.get("refund_amount_pay")) for r in rows)
-    for layer, col in present.items():
-        amount = sum(_num(r.get(col)) for r in rows)
-        share = amount / total if total else None
-        layer_rows.append({"layer": layer, "refund_amount": amount, "share": share})
+    amounts = {layer: sum(_num(r.get(col)) for r in rows) for layer, col in present.items()}
+    # pre_ship + post_ship partition the ship-stage axis (they sum to 100% of
+    # refunds); 退货退款 is a *return-type* subset of post-ship, on a different
+    # axis. Sharing one denominator would make the column sum ~127% and imply
+    # additivity, so each axis gets its own denominator.
+    ship_stage_total = sum(amt for layer, amt in amounts.items() if layer in _SHIP_STAGE_LAYERS)
+    layer_rows: list[dict] = []
+    for layer in present:
+        amount = amounts[layer]
+        if layer in _SHIP_STAGE_LAYERS:
+            axis, denom = "ship_stage", ship_stage_total
+        else:
+            axis, denom = "return_type", total
+        layer_rows.append(
+            {
+                "layer": layer,
+                "axis": axis,
+                "refund_amount": amount,
+                "share": amount / denom if denom else None,
+            }
+        )
     for missing in _LAYER_COLUMNS.keys() - present.keys():
         limitations.append(f"refund_overview 缺少 {_LAYER_COLUMNS[missing]}，跳过 {missing} 层。")
 
-    dominant = max(layer_rows, key=lambda r: r["refund_amount"], default=None)
+    # Dominant layer is judged within the ship-stage partition only — 退货退款 lives
+    # on a different axis and cannot be compared share-for-share against it.
+    ship_rows = [r for r in layer_rows if r["axis"] == "ship_stage"]
+    dominant = max(ship_rows, key=lambda r: r["refund_amount"], default=None)
     # overall refund rate + Wilson CI via reverse-derived paid-order base
     k = sum(_num(r.get("refund_orders_pay")) for r in rows)
     n = sum(
@@ -95,12 +115,21 @@ def _layer_finding(con, limitations: list[str]) -> tuple[Finding, list[dict]]:
 
     dominant_layer = dominant["layer"] if dominant else None
     conclusion = (
-        f"总退款 {round(total)} 元中，占比最高的是 {_layer_zh(dominant_layer)}"
-        f"（{round((dominant['share'] or 0) * 100)}%）。"
+        f"总退款 {round(total)} 元，按发货阶段划分（发货前+发货后=100%）占比最高的是 "
+        f"{_layer_zh(dominant_layer)}（{round((dominant['share'] or 0) * 100)}%）。"
         if dominant
-        else "退款金额层级列缺失，无法拆解。"
+        else "发货阶段退款金额列缺失，无法拆解。"
     )
-    caveats = ["观察性拆解，非因果；层级份额基于聚合快照。"]
+    caveats = [
+        "观察性拆解，非因果；层级份额基于聚合快照。",
+        "本节为退款金额份额口径；退款率口径见退款根因诊断，分渠道退款率见渠道结构与健康诊断，三者非重复。",
+    ]
+    return_row = next((r for r in layer_rows if r["axis"] == "return_type"), None)
+    if return_row is not None:
+        caveats.append(
+            f"退货退款为发货后退款的子集（占总退款额 "
+            f"{round((return_row['share'] or 0) * 100)}%），与发货前/后不在同一划分轴，份额不相加。"
+        )
     if lo is not None:
         caveats.append(f"整体退款率 {rate_band(lo, hi)}（样本 n≈{round(n)}）。")
     finding = Finding(
@@ -191,19 +220,26 @@ def _trend_finding(con, limitations: list[str]) -> tuple[Finding | None, list[di
         GROUP BY 1 ORDER BY 1
         """
     )
-    trend_rows = [{"period": p, "refund_rate": rate} for p, rate in result.fetchall()]
-    if len(trend_rows) < 2:
+    base_rows = [{"period": p, "refund_rate": rate} for p, rate in result.fetchall()]
+    if len(base_rows) < 2:
         limitations.append("退款率序列不足两期，跳过趋势。")
         return None, []
-    series = [(r["period"], r["refund_rate"]) for r in trend_rows]
+    series = [(r["period"], r["refund_rate"]) for r in base_rows]
+    # Per-period deltas belong in the table columns, not a stringified appendix.
     steps = mom_change(series)
-    overall_delta = series[-1][1] - series[0][1]
-    direction = direction_label(overall_delta)
+    trend_rows = [
+        {"period": s["period"], "refund_rate": s["value"], "refund_rate_delta": s["delta"],
+         "pct": s["pct"], "direction": s["direction"]}
+        for s in steps
+    ]
+    # Direction from OLS slope over all periods — a noisy endpoint can't flip it.
+    summary = trend_summary(series)
+    direction = summary["direction"]
     finding = Finding(
         title="退款率时间趋势",
         conclusion=(
-            f"退款率从 {round(series[0][1] * 100)}% {direction}到 "
-            f"{round(series[-1][1] * 100)}%（{len(series)} 期）。"
+            f"退款率整体呈{direction}趋势（{len(series)} 期，"
+            f"起 {round(series[0][1] * 100)}% 止 {round(series[-1][1] * 100)}%）。"
         ),
         evidence_strength=score_evidence(len(series), has_controls=False, confounder_count=1),
         key_numbers={
@@ -211,10 +247,13 @@ def _trend_finding(con, limitations: list[str]) -> tuple[Finding | None, list[di
             "first_rate": series[0][1],
             "last_rate": series[-1][1],
         },
-        caveats=["观察性趋势，非因果；仅报告方向与幅度，未做显著性检验。"],
-        evidence_reason="逐期退款率走势，观察性描述。",
+        caveats=[
+            "观察性趋势，非因果；方向按最小二乘斜率判定（非首末两点），未做显著性检验。",
+            "日度退款率波动较大，逐期环比见退款趋势表。",
+        ],
+        evidence_reason="逐期退款率走势，方向用最小二乘斜率，观察性描述。",
         confounders=["促销周期", "季节性"],
-        appendix=str(steps),
+        appendix="趋势方向用最小二乘斜率；逐期环比（delta/pct）见 refund_trend 表。",
     )
     return finding, trend_rows
 

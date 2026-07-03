@@ -143,12 +143,13 @@ def run(
     markdown_out = output_dir / f"{basename}.md"
     html_out = output_dir / f"{basename}.html"
     errors_out = output_dir / "render_errors.txt"
-    markdown_out.write_text(render_markdown(results), encoding="utf-8")
+    report_title = name or None
+    markdown_out.write_text(render_markdown(results, title=report_title), encoding="utf-8")
     typer.echo(f"Wrote report: {markdown_out}")
     if html_out.exists():
         html_out.unlink()
     try:
-        html_out.write_text(render_html(results), encoding="utf-8")
+        html_out.write_text(render_html(results, title=report_title), encoding="utf-8")
     except Exception as exc:
         errors_out.write_text(
             f"HTML rendering failed for report {basename}: {exc}\n",

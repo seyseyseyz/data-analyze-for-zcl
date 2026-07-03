@@ -17,7 +17,7 @@ from xhs_ceramics_analytics.analytics.confidence import (
     two_proportion,
     wilson_interval,
 )
-from xhs_ceramics_analytics.analytics.trends import direction_label, mom_change
+from xhs_ceramics_analytics.analytics.trends import mom_change, trend_summary
 from xhs_ceramics_analytics.db.duck import connect
 from xhs_ceramics_analytics.evidence import EvidenceStrength, score_evidence
 
@@ -225,25 +225,31 @@ def _trend_finding(con, limitations: list[str]) -> tuple[Finding | None, list[di
         if pc is None or r.get("date") is None:
             continue
         by_date.setdefault(str(r.get("date")), []).append(pc)
-    trend_rows = [
-        {"period": d, "avg_pay_conversion": sum(vals) / len(vals)}
-        for d, vals in sorted(by_date.items())
-        if vals
+    period_avgs = [
+        (d, sum(vals) / len(vals)) for d, vals in sorted(by_date.items()) if vals
     ]
-    if len(trend_rows) < 2:
+    if len(period_avgs) < 2:
         limitations.append("搜索转化序列不足两期，跳过趋势。")
         return None, []
 
-    series = [(r["period"], r["avg_pay_conversion"]) for r in trend_rows]
+    series = period_avgs
+    # Per-period deltas belong in the table columns, not a stringified appendix.
     steps = mom_change(series)
-    overall_delta = series[-1][1] - series[0][1]
-    direction = direction_label(overall_delta)
+    trend_rows = [
+        {"period": s["period"], "avg_pay_conversion": s["value"],
+         "avg_pay_conversion_delta": s["delta"],
+         "pct": s["pct"], "direction": s["direction"]}
+        for s in steps
+    ]
+    # Direction from OLS slope over all periods — a noisy endpoint can't flip it.
+    summary = trend_summary(series)
+    direction = summary["direction"]
     recommended_action = _LEVER_TREND_DECLINE if direction == "下降" else None
     finding = Finding(
         title="搜索转化时间趋势",
         conclusion=(
-            f"搜索成交转化率从 {_pct(series[0][1])} {direction}到 "
-            f"{_pct(series[-1][1])}（{len(series)} 期）。"
+            f"搜索成交转化率整体呈{direction}趋势（{len(series)} 期，"
+            f"起 {_pct(series[0][1])} 止 {_pct(series[-1][1])}）。"
         ),
         evidence_strength=score_evidence(
             len(series), has_controls=False, confounder_count=1
@@ -254,11 +260,15 @@ def _trend_finding(con, limitations: list[str]) -> tuple[Finding | None, list[di
             "last_rate": series[-1][1],
             "periods": len(series),
         },
-        caveats=[_OBS_CAVEAT, "仅报告方向与幅度，未对趋势做显著性检验。"],
+        caveats=[
+            _OBS_CAVEAT,
+            "方向按最小二乘斜率判定（非首末两点），未对趋势做显著性检验。",
+            "日度成交转化波动较大，逐期环比见搜索转化趋势表。",
+        ],
         recommended_action=recommended_action,
-        evidence_reason="逐期平均成交转化率走势，观察性描述。",
+        evidence_reason="逐期平均成交转化率走势，方向用最小二乘斜率，观察性描述。",
         confounders=_TREND_CONFOUNDERS,
-        appendix=str(steps),
+        appendix="趋势方向用最小二乘斜率；逐期环比（delta/pct）见搜索转化趋势表。",
     )
     return finding, trend_rows
 

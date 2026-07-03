@@ -9,6 +9,10 @@ and ``shop_payers``, so audience/cycle conversion uses ``k = Σ shop_payers`` an
 """
 from pathlib import Path
 
+from xhs_ceramics_analytics.analysis.funnel_scope import (
+    ROLLUP as _ROLLUP,
+    normalize_funnel_rows,
+)
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.analytics.confidence import (
     bounded_rate,
@@ -27,11 +31,8 @@ TITLE = "人群结构诊断"
 # the z-test flags it — "显著" is gated on a reported non-trivial effect size.
 _MIN_MEANINGFUL_DIFF = 0.02
 
-# ``shop_page_funnel`` carries a platform ``全部`` rollup row (= 新客 + 老客) and
-# cumulative first-purchase windows (180天 ⊂ 365天). Naively summing every row
-# double-counts visitors. We drop the rollup and fix a single canonical window.
-_ROLLUP = "全部"
-
+# ``shop_page_funnel`` scope (rollup drop + cumulative-window collapse) is defined
+# once in ``funnel_scope``; ``_ROLLUP`` above is imported from there.
 _DEDUP_CAVEAT = (
     "漏斗按天记录，跨天汇总的访客/支付人数可能重复计入回访用户，份额为近似。"
 )
@@ -110,24 +111,13 @@ def _conversion_finding(con, limitations: list[str]) -> tuple[Finding, list[dict
 
     # Split the platform ``全部`` rollup from the real audience segments, and fix a
     # single canonical first-purchase window so 180天/365天 do not double-count.
-    rollup_rows = [r for r in rows if has_audience and r.get("audience_type") == _ROLLUP]
-    segment_rows = [
-        r for r in rows if not (has_audience and r.get("audience_type") == _ROLLUP)
-    ]
-    if has_cycle:
-        cycle_vals = [
-            r.get("first_purchase_cycle")
-            for r in segment_rows
-            if r.get("first_purchase_cycle") not in (None, _ROLLUP)
-        ]
-        canonical_cycle = _canonical_cycle(cycle_vals)
-        if canonical_cycle is not None:
-            segment_rows = [
-                r for r in segment_rows if r.get("first_purchase_cycle") == canonical_cycle
-            ]
-            limitations.append(
-                f"首购周期为累计窗口，人群对比固定取 {canonical_cycle} 避免 180/365 天窗口重复计数。"
-            )
+    segment_rows, rollup_rows, canonical_cycle = normalize_funnel_rows(
+        rows, has_audience, has_cycle
+    )
+    if canonical_cycle is not None:
+        limitations.append(
+            f"首购周期为累计窗口，人群对比固定取 {canonical_cycle} 避免 180/365 天窗口重复计数。"
+        )
 
     # Overall conversion prefers the platform 全部 rollup (true store-wide total);
     # falls back to the canonical-window segment sum when no rollup row exists.
@@ -293,23 +283,32 @@ def _cycle_finding(con, limitations: list[str]) -> tuple[Finding | None, list[di
         )
     cycle_rows.sort(key=lambda r: r["visitors"], reverse=True)
 
-    guarded = [r for r in cycle_rows if r["ci_low"] is not None]
-    weakest = min(guarded, key=lambda r: r["ci_low"], default=None)
-    weakest_cycle = weakest["first_purchase_cycle"] if weakest else None
-
     convs = [r["conversion"] for r in cycle_rows if r["conversion"] is not None]
     gap = (max(convs) - min(convs)) if len(convs) >= 2 else None
+
+    # Nested cumulative windows (180天 ⊂ 365天) can be numerically identical; a
+    # "weakest" among windows that do not differ meaningfully is noise. Only
+    # declare a weakest when the between-window gap clears a minimal threshold.
+    windows_differ = gap is not None and gap >= _MIN_MEANINGFUL_DIFF
+    guarded = [r for r in cycle_rows if r["ci_low"] is not None]
+    weakest = min(guarded, key=lambda r: r["ci_low"], default=None) if windows_differ else None
+    weakest_cycle = weakest["first_purchase_cycle"] if weakest else None
 
     caveats = [
         "观察性漏斗，非因果；小样本周期未做 Wilson 守卫。",
         "首购周期为累计窗口（180天 ⊂ 365天），各窗口访客/支付存在重叠，仅作漏斗对比不可相加。",
         _DEDUP_CAVEAT,
     ]
-    if weakest is None:
+    if weakest_cycle:
+        cycle_note = f"最弱周期为 {weakest_cycle}（Wilson 下界最低）。"
+    elif gap is not None and not windows_differ:
+        cycle_note = "各累计窗口转化无有效差异（差异低于阈值，视为同一窗口）。"
+    else:
+        cycle_note = "各周期样本量不足，暂无稳健最弱周期。"
         caveats.append("各周期样本量均不足 30，转化率未做置信区间判定。")
     conclusion = (
         f"共 {len(cycle_rows)} 个首购周期。"
-        + (f"最弱周期为 {weakest_cycle}（Wilson 下界最低）。" if weakest_cycle else "各周期样本量不足，暂无稳健最弱周期。")
+        + cycle_note
         + (f" 周期间转化差 {round(gap * 100, 1)}pp。" if gap is not None else "")
     )
     total_n = sum(r["visitors"] for r in cycle_rows)
@@ -500,24 +499,6 @@ def _composition_gap_finding(conclusion: str) -> Finding:
 # --------------------------------------------------------------------------- #
 # Shared helpers (ported from refund_diagnosis)
 # --------------------------------------------------------------------------- #
-def _canonical_cycle(cycles) -> str | None:
-    """Pick a single cumulative first-purchase window to avoid double-counting.
-
-    Numeric windows are nested (180天 ⊂ 365天); summing both counts the same
-    visitors twice, so we keep the widest window present (largest embedded
-    number). Returns ``None`` when no label carries a number — non-numeric cycle
-    labels are treated as ordinary buckets and left un-deduplicated.
-    """
-    numbered = []
-    for c in cycles:
-        digits = "".join(ch for ch in str(c) if ch.isdigit())
-        if digits:
-            numbered.append((int(digits), c))
-    if numbered:
-        return max(numbered, key=lambda t: t[0])[1]
-    return None
-
-
 def _num(value) -> float:
     return float(value) if value is not None else 0.0
 

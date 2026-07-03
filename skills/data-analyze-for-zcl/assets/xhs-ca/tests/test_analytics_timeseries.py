@@ -53,3 +53,26 @@ def test_changepoint_detects_step():
 
 def test_changepoint_short_series_none():
     assert changepoint([1.0, 2.0])["index"] is None
+
+
+def test_changepoint_min_segment_excludes_single_point_tail():
+    # A lone extreme final point must NOT become the changepoint (endpoint artifact).
+    values = [10.0] * 20 + [1000.0]
+    cp = changepoint(values)
+    # With the default min-segment guard the after-segment must have >= 3 points,
+    # so index cannot be the last position (n-1 = 20).
+    assert cp["index"] is None or cp["index"] <= len(values) - 3
+
+
+def test_changepoint_min_segment_none_when_too_short_for_two_segments():
+    # 5 points with min_segment=3 cannot form two >=3 segments.
+    assert changepoint([1.0, 2.0, 3.0, 4.0, 5.0], min_segment=3)["index"] is None
+
+
+def test_parse_date_accepts_integer_yyyymmdd():
+    # Real business_overview_daily dates arrive as integer YYYYMMDD, not ISO.
+    series = [(20260406 + i, 10.0 if i % 7 < 5 else 1.0) for i in range(14)]
+    result = dow_seasonality(series)
+    # Previously integer dates were unparseable → {}; now they must yield weekdays.
+    assert result != {}
+    assert result["peak_dow"] in ("周一", "周二", "周三", "周四", "周五")

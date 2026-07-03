@@ -133,7 +133,10 @@ def _ship_stage_finding(
     if pre_rate is not None and post_rate is not None and pre_rate != post_rate:
         dominant_stage = "pre_ship" if pre_rate > post_rate else "post_ship"
 
-    caveats = ["观察性诊断，非因果——发货前后退款差异可能由品类结构、物流时效与描述一致性共同驱动。"]
+    caveats = [
+        "观察性诊断，非因果——发货前后退款差异可能由品类结构、物流时效与描述一致性共同驱动。",
+        "本节为订单加权退款率口径；退款金额份额口径见退款结构诊断，分渠道退款率见渠道结构与健康诊断，三者非重复。",
+    ]
     if dominant_stage is not None:
         dominant_zh = _SHIP_STAGE_ZH[dominant_stage]
         lever_hint = "物流时效/悔单/价保" if dominant_stage == "pre_ship" else "质量/描述不符/尺寸"

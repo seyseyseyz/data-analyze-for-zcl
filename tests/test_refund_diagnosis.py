@@ -38,9 +38,10 @@ def test_missing_refund_overview_is_not_judgable(tmp_path):
     assert "refund_overview" in result.limitations[0]
 
 
-def test_layer_finding_identifies_dominant_layer(tmp_path):
+def test_layer_finding_identifies_dominant_ship_stage_not_return(tmp_path):
     con, db_path = _con(tmp_path)
-    # return layer dominates total refund amount
+    # pre=3000, post=5000 (ship-stage axis, sum 8000); return=10000 is on the
+    # return-type axis and must NOT win the ship-stage dominance comparison.
     _make_refund_overview(
         con,
         [
@@ -51,11 +52,24 @@ def test_layer_finding_identifies_dominant_layer(tmp_path):
     con.close()
     result = run_task("refund_structure_diagnosis", db_path)
     layer = result.tables["refund_layer_breakdown"]
-    kn = result.findings[0].key_numbers
-    assert kn["dominant_layer"] == "return"
+    finding = result.findings[0]
+    kn = finding.key_numbers
+    # dominant is the largest SHIP-STAGE layer (post_ship 5000 > pre_ship 3000),
+    # never 退货退款 (a different axis).
+    assert kn["dominant_layer"] == "post_ship"
+    assert kn["dominant_share"] == 5000.0 / 8000.0  # denominator is ship-stage total
     assert {r["layer"] for r in layer} == {"pre_ship", "post_ship", "return"}
-    assert result.findings[0].recommended_action  # lever text present
-    assert result.findings[0].evidence_strength.value == "weak"
+    axis = {r["layer"]: r["axis"] for r in layer}
+    assert axis == {"pre_ship": "ship_stage", "post_ship": "ship_stage", "return": "return_type"}
+    # ship-stage shares partition to 100%; return is measured against total refund
+    ship_shares = sum(r["share"] for r in layer if r["axis"] == "ship_stage")
+    assert abs(ship_shares - 1.0) < 1e-9
+    # caveat spells out that 退货退款 is not additive with the ship-stage split
+    assert any("退货退款" in c and "不" in c for c in finding.caveats)
+    # cross-reference caveat naming the other refund modules' calibers
+    assert any("退款根因诊断" in c and "渠道结构与健康诊断" in c for c in finding.caveats)
+    assert finding.recommended_action  # lever text present
+    assert finding.evidence_strength.value == "weak"
 
 
 def test_carrier_finding_compares_two_carriers(tmp_path):
