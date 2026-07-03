@@ -1,0 +1,49 @@
+xhs_ceramics_analytics/analytics/timeseries.py
+  s_6bd2349b4ebd4d::t_cf070e298ff14d 95-97
+xhs_ceramics_analytics/analysis/search_efficiency.py
+  s_6bd2349b4ebd4d::t_68f28a9fae0216 239-240
+xhs_ceramics_analytics/reporting/formatting.py
+  s_6bd2349b4ebd4d::t_90c17b52b80ddf 141-145
+  s_6bd2349b4ebd4d::t_a926ce31345843 89
+  s_6bd2349b4ebd4d::t_365cd168585b14 25-33,35-36,41-42,49-51,57,60,63
+  s_6bd2349b4ebd4d::t_107d976dc7c462 21-24,37-40,43,45-47,52-54,59,62,68
+  s_6bd2349b4ebd4d::t_885245523a881b 55,64-65,69-73
+xhs_ceramics_analytics/analysis/refund_root_cause_diagnosis.py
+  s_6bd2349b4ebd4d::t_b0c02729511f6e 138
+xhs_ceramics_analytics/analysis/funnel_scope.py
+  s_6bd2349b4ebd4d::t_c30d5d83e6c2a6 38-42,44-45,53-64,66-76
+xhs_ceramics_analytics/analysis/refund_diagnosis.py
+  s_6bd2349b4ebd4d::t_b4189908be9063 125
+  s_6bd2349b4ebd4d::t_dfe11cba35dd92 231
+xhs_ceramics_analytics/reporting/field_labels.py
+  s_6bd2349b4ebd4d::t_9baa15dc2ad881 210-218
+tests/test_refund_diagnosis.py
+  s_6bd2349b4ebd4d::t_8e42e13b8acc00 70
+tests/test_reporting_formatting.py
+  s_6bd2349b4ebd4d::t_b9a90a0a1bd5a5 45-55,74-81
+  s_6bd2349b4ebd4d::t_3ebe58a0c6d499 24-44,82-94
+  s_6bd2349b4ebd4d::t_f619983467cd4d 136-142
+  s_6bd2349b4ebd4d::t_4a53b67d83b58f 56-73
+xhs_ceramics_analytics/analysis/core_business.py
+  s_6bd2349b4ebd4d::t_b936468df6b53c 193
+  s_6bd2349b4ebd4d::t_0b510ae4da6e40 207
+  s_6bd2349b4ebd4d::t_0bdc0468f12a65 221-222
+tests/test_funnel_scope.py
+  s_6bd2349b4ebd4d::t_e91f373ea979d3 38-59
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.28-trip",
+  "base_commit_sha": "018bd1c59ac8be0e87051ddebfe41fdcd7320be0",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
