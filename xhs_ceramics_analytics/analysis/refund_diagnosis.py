@@ -4,6 +4,7 @@ from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.analytics.confidence import (
     min_n_guard,
     rate_band,
+    two_proportion,
     wilson_interval,
 )
 from xhs_ceramics_analytics.db.duck import connect
@@ -36,6 +37,11 @@ def run(db_path: Path) -> AnalysisResult:
         layer_finding, layer_rows = _layer_finding(con, limitations)
         findings.append(layer_finding)
         tables["refund_layer_breakdown"] = layer_rows
+
+        carrier_finding, carrier_rows = _carrier_finding(con, limitations)
+        if carrier_finding is not None:
+            findings.append(carrier_finding)
+            tables["carrier_refund_comparison"] = carrier_rows
     finally:
         con.close()
     return AnalysisResult(
@@ -99,6 +105,58 @@ def _layer_finding(con, limitations: list[str]) -> tuple[Finding, list[dict]]:
         confounders=["促销节奏", "季节性", "品类结构"],
     )
     return finding, layer_rows
+
+
+def _carrier_finding(con, limitations: list[str]) -> tuple[Finding | None, list[dict]]:
+    cols = _table_columns(con, "refund_overview")
+    if "carrier" not in cols:
+        limitations.append("refund_overview 缺少 carrier 列，跳过载体对比。")
+        return None, []
+    rows = _fetch_all(con, "refund_overview")
+    by_carrier: list[dict] = []
+    for r in rows:
+        rate = _num(r.get("refund_rate_pay"))
+        orders = _num(r.get("refund_orders_pay"))
+        n = round(orders / rate) if rate > 0 else 0
+        by_carrier.append(
+            {
+                "carrier": r.get("carrier"),
+                "refund_rate": rate,
+                "refund_orders": orders,
+                "n": n,
+            }
+        )
+    if len({c["carrier"] for c in by_carrier}) < 2:
+        limitations.append("refund_overview 只有单一载体，跳过载体对比。")
+        return None, []
+    top2 = sorted(by_carrier, key=lambda c: c["refund_rate"], reverse=True)[:2]
+    a, b = top2[0], top2[1]
+    test = two_proportion(a["refund_orders"], a["n"], b["refund_orders"], b["n"])
+    sig = "显著" if test["significant"] else "不显著"
+    conclusion = (
+        f"{a['carrier']} 退款率（{round(a['refund_rate'] * 100)}%）高于 "
+        f"{b['carrier']}（{round(b['refund_rate'] * 100)}%），差异{sig}。"
+    )
+    finding = Finding(
+        title="载体退款率对比",
+        conclusion=conclusion,
+        evidence_strength=score_evidence(
+            int(a["n"] + b["n"]), has_controls=False, confounder_count=1
+        ),
+        key_numbers={
+            "carrier_high": a["carrier"],
+            "diff": test["diff"],
+            "significant": test["significant"],
+            "ci_overlap": test["ci_overlap"],
+        },
+        caveats=[
+            "观察性对比，非因果；样本量以退款订单/退款率反推。",
+            "显著性用两样本比例 z 检验，辅以 Wilson 区间重叠判断。",
+        ],
+        evidence_reason="载体间退款率差异用两样本比例检验，观察性。",
+        confounders=["载体流量结构", "客群差异"],
+    )
+    return finding, by_carrier
 
 
 def _layer_zh(layer: str | None) -> str:
