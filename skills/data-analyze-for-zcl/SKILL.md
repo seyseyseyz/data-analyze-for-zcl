@@ -19,7 +19,7 @@ Use this skill when the user provides Xiaohongshu (小红书 / 千帆) exported 
 
 4. **Task selection (REQUIRED)** — read `assets/xhs-ca/references/task_menu.md`. Based on the files the user provided, list which tasks are runnable and which lack required data. Confirm with the user which task(s) to run. `run all` is the exception, not the default — only use it when the user explicitly asks for a full operating review.
 
-5. **Build** — run `scripts/xhs-ca build <files...>`. If header-mapping fails, read `assets/xhs-ca/references/xhs_glossary.md` and `assets/xhs-ca/references/data_contract/_index.md`, then negotiate unmapped columns with the user before retrying.
+5. **Build** — run `scripts/xhs-ca build <files...>`. If header-mapping fails, read `assets/xhs-ca/references/xhs_glossary.md` and `assets/xhs-ca/references/data_contract/_index.md`, then negotiate unmapped columns with the user before retrying. After the build, follow the **字段映射自愈** section below to resolve any `mapping_diagnostics` rows before analysis.
 
 6. **Data quality** — always run `xhs-ca run data_quality_check` first. If paid-traffic data was provided, also run `ad_data_quality_check`. Surface any empty tables or missing required columns before proceeding to analysis tasks.
 
@@ -30,6 +30,26 @@ Use this skill when the user provides Xiaohongshu (小红书 / 千帆) exported 
 9. **Delivery verification (REQUIRED)** — before the final response, verify every delivered Markdown report has a matching single-file HTML report. For built-in tasks, check the generated `<slug>.html`; for custom integrated reports, check the `render-html` output. If HTML rendering fails, keep the Markdown report, report the error path/message, and do not imply HTML was delivered.
 
 10. **Summarize** — present findings with: evidence tier (Strong/Medium/Weak/Not-judgable), key numbers, caveats verbatim from the report, next-data-needed, recommended action, and the Markdown + HTML file paths. NEVER claim deterministic note-to-order attribution.
+
+## 字段映射自愈 (Field-mapping self-heal)
+
+The build never rejects a file for a drifted Chinese header — it degrades and records the gap. After every `xhs-ca build`, adjudicate the gaps before analysis:
+
+1. **Read the diagnostics.** Query the `mapping_diagnostics` table (`table_name, file, required_column, status, candidate_sources, reason, action`). If it is empty, mapping is clean — proceed.
+2. **Judge each row, caliber-aware.** Open the named file's headers and decide which raw header (if any) is the missing `required_column`. **口径不可混淆:** `（支付时间）`/`_pay` and `（退款时间）`/`_refundtime` are different calibers that map to different canonical columns — never map a 退款时间 header onto a `_pay` column or vice-versa. `status="missing"` (empty `candidate_sources`) means no unmatched header exists — the column is genuinely absent; do NOT invent a mapping, report it as next-data-needed. `status="ambiguous"` means the header in `candidate_sources` is present but unmatched — a wording drift you can adjudicate.
+3. **Risk gate (hybrid).**
+   - *Obvious + unique* — exactly one plausible header in `candidate_sources`, same caliber, high confidence → append the alias to `mapping_overrides.yaml` and re-run `xhs-ca build`.
+   - *Ambiguous / caliber-uncertain / multiple candidates* → present the candidate header(s) to the operator, get confirmation, then write.
+4. **`mapping_overrides.yaml` format** (lives in the state dir next to `analytics.duckdb`; overrides only ADD aliases, never remove a shipped one):
+   ```yaml
+   refund_overview:
+     refund_users:
+       - 退款人数合计
+   business_overview_daily:
+     net_gmv_pay:
+       - 退款后金额
+   ```
+5. **Re-build.** Re-running `xhs-ca build` applies the learned alias deterministically; the column becomes canonical and marts see it. The judgment is frozen — identical `(export, overrides)` always produces the identical build.
 
 ## Commands
 
