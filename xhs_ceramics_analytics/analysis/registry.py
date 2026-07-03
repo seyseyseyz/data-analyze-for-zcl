@@ -15,6 +15,7 @@ from xhs_ceramics_analytics.analysis import (
     portfolio,
     product_interaction,
     product_opportunity,
+    refund_diagnosis,
     response_curve,
     reshoot,
     sku_lift,
@@ -41,6 +42,7 @@ TASKS: dict[str, Callable[[Path], AnalysisResult]] = {
     "reshoot_repost_candidates": reshoot.run,
     "hypothesis_knowledge_base": hypothesis.run,
     "weekly_business_review": weekly_review.run,
+    "refund_structure_diagnosis": refund_diagnosis.run,
 }
 
 
