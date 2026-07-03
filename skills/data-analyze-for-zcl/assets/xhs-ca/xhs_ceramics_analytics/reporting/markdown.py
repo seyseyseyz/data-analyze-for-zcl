@@ -37,31 +37,66 @@ def render_markdown(results: list[AnalysisResult]) -> str:
                 lines.append(f"- {_display_limitation(limitation)}")
             lines.append("")
         for finding in result.findings:
-            lines.extend(
-                [
-                    f"### {finding.title}",
-                    "",
-                    finding.conclusion,
-                    "",
-                    f"证据强度：{_evidence_label(finding.evidence_strength.value)}",
-                    "",
-                ]
-            )
-            if finding.key_numbers:
-                lines.append("关键数字：")
-                for key, value in finding.key_numbers.items():
-                    lines.append(f"- `{key}`: {value}")
-                lines.append("")
-            if finding.caveats:
-                lines.append("注意事项：")
-                for caveat in finding.caveats:
-                    lines.append(f"- {caveat}")
-                lines.append("")
-            if finding.recommended_action:
-                lines.extend(["建议动作：", "", finding.recommended_action, ""])
+            lines.extend(_render_finding(finding))
+        for subsection in result.subsections:
+            lines.extend(_render_subsection(subsection))
+        if result.named_examples:
+            lines.extend(_render_named_examples(result.named_examples))
         for table_name, rows in result.tables.items():
             lines.extend(_render_table_preview(table_name, rows))
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _render_finding(finding, heading_level: str = "###") -> list[str]:
+    lines = [
+        f"{heading_level} {finding.title}",
+        "",
+        finding.conclusion,
+        "",
+        f"证据强度：{_evidence_label(finding.evidence_strength.value)}",
+        "",
+    ]
+    if finding.key_numbers:
+        lines.append("关键数字：")
+        for key, value in finding.key_numbers.items():
+            lines.append(f"- `{key}`: {value}")
+        lines.append("")
+    if finding.caveats:
+        lines.append("注意事项：")
+        for caveat in finding.caveats:
+            lines.append(f"- {caveat}")
+        lines.append("")
+    if finding.confounders:
+        lines.append("可能的混淆因素：")
+        for confounder in finding.confounders:
+            lines.append(f"- {confounder}")
+        lines.append("")
+    if finding.recommended_action:
+        lines.extend(["建议动作：", "", finding.recommended_action, ""])
+    if finding.next_test:
+        lines.extend(["下一步验证：", "", finding.next_test, ""])
+    if finding.appendix:
+        lines.extend(["方法与附录：", "", finding.appendix, ""])
+    return lines
+
+
+def _render_subsection(subsection) -> list[str]:
+    lines = [f"#### {subsection.title}", ""]
+    if subsection.body:
+        lines.extend([subsection.body, ""])
+    for finding in subsection.findings:
+        lines.extend(_render_finding(finding, heading_level="#####"))
+    return lines
+
+
+def _render_named_examples(examples: list[dict]) -> list[str]:
+    lines = ["命名示例：", ""]
+    for example in examples:
+        label = example.get("label") or example.get("name") or ""
+        detail = example.get("detail") or example.get("note") or ""
+        lines.append(f"- **{label}**：{detail}" if detail else f"- **{label}**")
+    lines.append("")
+    return lines
 
 
 def _render_table_preview(table_name: str, rows: list[dict[str, object]]) -> list[str]:

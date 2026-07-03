@@ -12,6 +12,17 @@ class Finding:
     caveats: list[str] = field(default_factory=list)
     recommended_action: str | None = None
     evidence_reason: str | None = None
+    confounders: list[str] = field(default_factory=list)
+    next_test: str | None = None
+    appendix: str | None = None
+
+
+@dataclass
+class Subsection:
+    title: str
+    body: str | None = None
+    table_name: str | None = None
+    findings: list[Finding] = field(default_factory=list)
 
 
 @dataclass
@@ -21,3 +32,5 @@ class AnalysisResult:
     findings: list[Finding]
     tables: dict[str, list[dict[str, object]]] = field(default_factory=dict)
     limitations: list[str] = field(default_factory=list)
+    subsections: list[Subsection] = field(default_factory=list)
+    named_examples: list[dict[str, object]] = field(default_factory=list)

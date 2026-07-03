@@ -36,10 +36,40 @@ One row per Xiaohongshu note.
 | `platform_url` | str \| None | Platform URL |
 | `raw_file` | str \| None | Source raw file name/path for lineage |
 | `raw_row_id` | str \| None | Source row identifier for lineage |
+| `related_product_id` | str \| None | Linked/related product ID (关联商品ID) |
+| `related_product_name` | str \| None | Linked/related product name (关联商品名称) |
+| `video_seconds` | int >= 0 \| None | Video duration in seconds (video notes only) |
+| `note_gmv` | float >= 0 \| None | GMV attributed to this note (支付时间口径) |
+| `note_paid_orders` | int >= 0 \| None | Paid order count attributed to this note |
+| `note_paid_buyers` | int >= 0 \| None | Paid buyer count attributed to this note |
+| `product_clicks` | int >= 0 \| None | Product card click count from this note |
+| `product_click_rate_pv` | float [0,1] \| None | Product card click rate by PV |
+| `product_click_users` | int >= 0 \| None | Product card click user count from this note |
+| `pay_conversion_pv` | float [0,1] \| None | Pay conversion rate by PV |
+| `pay_conversion_uv` | float [0,1] \| None | Pay conversion rate by UV |
+| `note_refund_amount_pay` | float >= 0 \| None | Refund amount attributed to this note (支付时间口径) |
+| `note_refund_rate_pay` | float [0,1] \| None | Refund rate attributed to this note (支付时间口径) |
+| `note_refund_orders_pay` | int >= 0 \| None | Refund order count attributed to this note (支付时间口径) |
+| `add_to_cart_units` | int >= 0 \| None | Add-to-cart unit count from this note |
+| `to_shop_home_count` | int >= 0 \| None | Visits to shop home page from this note |
+| `to_shop_home_gmv` | float >= 0 \| None | GMV from shop-home-page visits attributed to this note |
+| `to_live_count` | int >= 0 \| None | Visits to livestream from this note |
+| `to_live_gmv` | float >= 0 \| None | GMV from livestream visits attributed to this note |
+| `follow_clicks` | int >= 0 \| None | Follow-button click count from this note |
+| `danmu_count` | int >= 0 \| None | Danmu (bullet-comment) count |
+| `avg_read_seconds` | float >= 0 \| None | Average read duration in seconds |
+| `completion_rate_pv` | float [0,1] \| None | Video completion rate by PV |
 
 ## Join Keys
 
 - `note_id` is referenced by `note_sku_links.note_id` and `content_features.note_id` and `comments.note_id`
+
+## Source Files
+
+- Real export: `4.商品笔记数据` × 3 files (商品笔记数据 exports carry 38 columns each). All 3 merge on the
+  `note_id` grain key. The files are row-disjoint (each covers a different set of notes), so the
+  coalesce-on-`note_id` merge reduces to a plain union — no double-counting, and it dedups if a
+  `note_id` happens to appear in more than one file.
 
 ## Chinese Aliases (from mapping.py FIELD_ALIASES)
 
@@ -54,6 +84,30 @@ One row per Xiaohongshu note.
 | `comments` | 评论数, 评论次数 |
 | `shares` | 分享数, 分享次数 |
 | `impressions` | 曝光数, 曝光次数, 展现数 |
+| `note_type` | 笔记类型 |
+| `related_product_id` | 关联商品ID |
+| `related_product_name` | 关联商品名称 |
+| `video_seconds` | 视频时长 |
+| `note_gmv` | 笔记支付金额 |
+| `note_paid_orders` | 笔记支付订单数 |
+| `note_paid_buyers` | 笔记支付人数 |
+| `product_clicks` | 笔记商品点击次数 |
+| `product_click_rate_pv` | 笔记商品点击率（PV） |
+| `product_click_users` | 笔记商品点击人数 |
+| `pay_conversion_pv` | 支付转化率（PV） |
+| `pay_conversion_uv` | 支付转化率（UV） |
+| `note_refund_amount_pay` | 笔记退款金额（支付时间） |
+| `note_refund_rate_pay` | 笔记退款率（支付时间） |
+| `note_refund_orders_pay` | 笔记退款订单数（支付时间） |
+| `add_to_cart_units` | 加购件数 |
+| `to_shop_home_count` | 进店次数 |
+| `to_shop_home_gmv` | 进店支付金额 |
+| `to_live_count` | 进直播间次数 |
+| `to_live_gmv` | 直播间支付金额 |
+| `follow_clicks` | 关注按钮点击次数 |
+| `danmu_count` | 弹幕数 |
+| `avg_read_seconds` | 人均阅读时长 |
+| `completion_rate_pv` | 完播率（PV） |
 
 ## Sample Row
 

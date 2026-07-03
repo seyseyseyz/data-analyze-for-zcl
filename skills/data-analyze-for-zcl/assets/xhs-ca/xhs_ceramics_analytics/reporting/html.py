@@ -4,7 +4,7 @@ from numbers import Number
 
 from jinja2 import Environment, PackageLoader
 
-from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
+from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding, Subsection
 from xhs_ceramics_analytics.reporting.markdown import render_markdown
 from xhs_ceramics_analytics.reporting.labels import (
     VALUE_LABELS as _VALUE_LABELS,
@@ -31,6 +31,7 @@ _EVIDENCE_HELP = {
 _FIELD_LABELS = {
     "absolute_lift": ("绝对提升", "发布后销量减去发布前销量。"),
     "active_days": ("活跃发布天数", "有笔记发布记录的天数。"),
+    "add_to_cart_users": ("加购人数", "将商品加入购物车的人数。"),
     "avg_collect_rate": ("平均收藏率", "收藏数除以阅读数后的平均值。"),
     "avg_collects": ("平均收藏数", "每组内容平均获得的收藏数。"),
     "avg_comment_rate": ("平均评论率", "评论数除以阅读数后的平均值。"),
@@ -40,6 +41,8 @@ _FIELD_LABELS = {
     "budget_action": ("预算动作", "系统根据消耗、点击和投产给出的下周预算建议。"),
     "campaign_name_optional": ("投放计划", "后台导出的投放计划名称。"),
     "candidate_notes": ("候选笔记数", "进入重拍或重发候选池的笔记数量。"),
+    "category_l2": ("二级品类", "商品的二级品类。"),
+    "click_to_order": ("点击到订单", "笔记支付订单数除以商品点击次数。"),
     "collect_rate": ("收藏率", "收藏数除以阅读数。"),
     "collects": ("收藏数", "笔记获得的收藏数量。"),
     "comment_rate": ("评论率", "评论数除以阅读数。"),
@@ -82,6 +85,7 @@ _FIELD_LABELS = {
     ),
     "gmv": ("销售额", "该 SKU 在观察期内产生的成交金额。"),
     "gmv_optional": ("成交金额", "投放后台或订单侧可见的成交金额。"),
+    "gmv_per_click": ("每次点击GMV", "笔记支付金额除以商品点击次数。"),
     "hypotheses": ("假设数量", "当前生成的经营假设数量。"),
     "hypothesis": ("经营假设", "等待下周实验验证的判断。"),
     "hypothesis_id": ("假设编号", "用于持续追踪同一条假设的编号。"),
@@ -93,7 +97,9 @@ _FIELD_LABELS = {
     "metric": ("指标", "该模块当前用于判断的核心指标。"),
     "mix_share": ("内容占比", "该内容角度在全部内容中的占比。"),
     "needs_more_data": ("是否需要更多数据", "样本不足时会标记为需要继续观察。"),
+    "net_gmv_pay": ("退款后GMV", "支付金额减去退款金额后的净额（平台按支付时间口径给出）。"),
     "next_test": ("下一步实验", "建议下周验证这条假设的方式。"),
+    "note_gmv": ("笔记支付金额", "该笔记带来的支付金额。"),
     "note_id": ("笔记编号", "笔记的内部编号，用来追踪具体是哪一条内容。"),
     "note_sku_links": ("笔记-SKU 关联数", "可用于归因分析的笔记和 SKU 组合数量。"),
     "note_sku_rows": ("笔记-SKU 数据行", "响应窗口中可用的笔记和 SKU 组合行数。"),
@@ -116,6 +122,7 @@ _FIELD_LABELS = {
     "reads": ("阅读数", "笔记获得的阅读数量。"),
     "ready_sections": ("有源数据模块数", "复盘里已经找到可用数据的模块数量。"),
     "reason": ("入选原因", "系统将该项列入候选的原因。"),
+    "refund_rate_pay": ("退款率(支付时间)", "退款金额占支付金额的比例，按支付时间口径统计。"),
     "relative_lift": ("相对提升", "绝对提升相对发布前销量的比例。"),
     "roas_calc": ("投产比", "成交金额除以投放消耗。"),
     "roles": ("内容角色数", "内容组合中出现的文案角色数量。"),
@@ -748,6 +755,8 @@ def _result_view(result: AnalysisResult) -> dict[str, object]:
             _table_view(table_name, rows) for table_name, rows in result.tables.items()
         ],
         "limitations": result.limitations,
+        "subsections": [_subsection_view(subsection) for subsection in result.subsections],
+        "named_examples": result.named_examples,
     }
 
 
@@ -766,6 +775,18 @@ def _finding_view(finding: Finding) -> dict[str, object]:
         "caveats": finding.caveats,
         "recommended_action": finding.recommended_action,
         "evidence_reason": finding.evidence_reason,
+        "confounders": finding.confounders,
+        "next_test": finding.next_test,
+        "appendix": finding.appendix,
+    }
+
+
+def _subsection_view(subsection: Subsection) -> dict[str, object]:
+    return {
+        "title": subsection.title,
+        "body": subsection.body,
+        "table_name": subsection.table_name,
+        "findings": [_finding_view(finding) for finding in subsection.findings],
     }
 
 

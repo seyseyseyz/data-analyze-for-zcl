@@ -1,12 +1,18 @@
 import re
+from collections import defaultdict
 from pathlib import Path
 
 import pandas as pd
 
 from xhs_ceramics_analytics.contracts.normalize import normalize_order_rows
 from xhs_ceramics_analytics.db.duck import connect
-from xhs_ceramics_analytics.db.marts import create_ad_metrics_view, create_note_metrics_view
+from xhs_ceramics_analytics.db.marts import (
+    create_ad_metrics_view,
+    create_business_overview_monthly,
+    create_note_metrics_view,
+)
 from xhs_ceramics_analytics.importing.mapping import (
+    GRAIN_KEYS,
     TABLE_SIGNATURES,
     guess_field_mapping,
     guess_table_type,
@@ -18,24 +24,36 @@ from xhs_ceramics_analytics.importing.profile import (
     profile_file,
 )
 
-_DERIVED_TABLES = ("daily_sku_sales",)
+_DERIVED_TABLES = ("daily_sku_sales", "business_overview_monthly")
 _DERIVED_VIEWS = ("note_metrics", "ad_metrics")
+_AUX_TABLES = ("needs_data", "build_manifest", "data_quality")
+_TABULAR_SUFFIXES = {".csv", *EXCEL_SUFFIXES}
+_DOMAIN_HINTS = (("退款原因", "退款原因"), ("人群", "人群画像"))
+# Two files that both report a metric for the same grain key may round differently.
+# A relative gap at or below this is treated as agreement (silent merge); above it
+# is a data-quality conflict naming both files. Distinct from Task 12's refund
+# reconcile tolerance, which cross-checks computed vs platform net_gmv.
+MERGE_CONFLICT_TOLERANCE = 0.05
 
 
 def build_database(db_path: Path, files: list[Path]) -> None:
     con = connect(db_path)
     try:
         _drop_refresh_objects(con)
-        for file in files:
-            profile = profile_file(file)
-            table_type = guess_table_type(profile)
-            if file.suffix.lower() in EXCEL_SUFFIXES:
-                _load_dataframe_table(con, db_path, file, profile, table_type)
-            elif table_type == "orders":
-                _load_csv_orders_table(con, db_path, file, table_type)
-            else:
-                _load_csv_table(con, file, profile, table_type)
+        grouped, needs_data = _group_files_by_type(con, files)
+        conflicts: list[dict] = []
+        manifest: list[dict] = []
+        for table_type, tagged in grouped.items():
+            conflicts.extend(_detect_conflicts(tagged, table_type))
+            manifest.extend(_build_manifest_records(table_type, tagged))
+            merged = _combine_frames([frame for _, frame in tagged], table_type)
+            _create_table_from_frame(con, db_path, table_type, merged)
+        _create_needs_data_table(con, db_path, needs_data)
+        _create_build_manifest_table(con, db_path, manifest)
+        _create_data_quality_table(con, db_path, conflicts)
         create_daily_sku_sales(con)
+        if "business_overview_daily" in _existing_tables(con):
+            create_business_overview_monthly(con)
         if "notes" in _existing_tables(con):
             create_note_metrics_view(con)
         if "ad_performance_daily" in _existing_tables(con):
@@ -44,43 +62,166 @@ def build_database(db_path: Path, files: list[Path]) -> None:
         con.close()
 
 
-def _drop_refresh_objects(con) -> None:
-    for view in _DERIVED_VIEWS:
-        con.execute(f"DROP VIEW IF EXISTS {_quote_identifier(view)}")
-    for table in [*_DERIVED_TABLES, *TABLE_SIGNATURES]:
-        con.execute(f"DROP TABLE IF EXISTS {_quote_identifier(table)}")
+def _group_files_by_type(con, files: list[Path]) -> tuple[dict[str, list], list[dict]]:
+    # Each value is a list of ``(file_name, canonical_frame)`` pairs. Carrying the
+    # source file name here is what lets Task 3 record provenance (build_manifest)
+    # and cross-file conflicts (data_quality) — the frame alone loses that.
+    grouped: dict[str, list] = defaultdict(list)
+    needs_data: list[dict] = []
+    for file in files:
+        if file.suffix.lower() not in _TABULAR_SUFFIXES:
+            needs_data.append(_needs_data_record(file, "非表格文件（如PNG截图）", "OCR 或手工录入"))
+            continue
+        try:
+            profile = profile_file(file)
+            table_type = guess_table_type(profile)
+        except ValueError as exc:  # incl. AmbiguousTableTypeError
+            needs_data.append(_needs_data_record(file, str(exc), "确认导出列或手工映射"))
+            continue
+        grouped[table_type].append(
+            (file.name, _canonical_frame(con, file, profile, table_type))
+        )
+    return grouped, needs_data
 
 
-def _load_csv_table(con, file: Path, profile: FileProfile, table_type: str) -> None:
-    load_profile = FileProfile(
-        path=profile.path,
-        table_name=profile.table_name,
-        columns=_duckdb_csv_columns(con, file),
-        row_count=profile.row_count,
-        sample_rows=profile.sample_rows,
+def _needs_data_record(file: Path, reason: str, action: str) -> dict:
+    domain = "未识别文件"
+    for hint, name in _DOMAIN_HINTS:
+        if hint in file.name:
+            domain = name
+            break
+    return {"file": file.name, "domain": domain, "reason": reason, "action": action}
+
+
+def _create_needs_data_table(con, db_path: Path, needs_data: list[dict]) -> None:
+    frame = pd.DataFrame(needs_data, columns=["file", "domain", "reason", "action"])
+    _create_table_from_frame(con, db_path, "needs_data", frame)
+
+
+def _build_manifest_records(table_type: str, tagged: list) -> list[dict]:
+    """One provenance row per contributing file (spec §A.2)."""
+    return [
+        {"table_name": table_type, "file": name, "row_count": int(len(frame))}
+        for name, frame in tagged
+    ]
+
+
+def _create_build_manifest_table(con, db_path: Path, manifest: list[dict]) -> None:
+    frame = pd.DataFrame(manifest, columns=["table_name", "file", "row_count"])
+    _create_table_from_frame(con, db_path, "build_manifest", frame)
+
+
+def _coerce_number(value: object) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _values_conflict(a: object, b: object) -> bool:
+    """True when two files disagree on a shared column beyond tolerance.
+
+    Nulls never conflict — coalesce fills them. Numeric values compare by
+    relative gap against ``MERGE_CONFLICT_TOLERANCE``; non-numeric by exact string.
+    """
+    if pd.isna(a) or pd.isna(b):
+        return False
+    a_num, b_num = _coerce_number(a), _coerce_number(b)
+    if a_num is not None and b_num is not None:
+        scale = max(abs(a_num), abs(b_num))
+        if scale == 0:
+            return False
+        return abs(a_num - b_num) / scale > MERGE_CONFLICT_TOLERANCE
+    return str(a) != str(b)
+
+
+def _format_grain_key(key_cols: list[str], key: tuple) -> str:
+    return ", ".join(f"{col}={value}" for col, value in zip(key_cols, key))
+
+
+def _detect_conflicts(tagged: list, table_type: str) -> list[dict]:
+    """Cross-file coalesce conflicts for a grain-keyed type (spec §A.2).
+
+    For each pair of files that describe the same grain key, any shared column
+    whose values disagree beyond tolerance becomes one data-quality row naming
+    both files. Non-grain-keyed types (plain-union) and single-file types skip.
+    """
+    keys = GRAIN_KEYS.get(table_type)
+    if not keys or len(tagged) < 2:
+        return []
+    key_cols = [key for key in keys if all(key in frame.columns for _, frame in tagged)]
+    if not key_cols:
+        return []
+    indexed: list[tuple[str, dict]] = []
+    for name, frame in tagged:
+        rows = {tuple(row[col] for col in key_cols): row for _, row in frame.iterrows()}
+        indexed.append((name, rows))
+    conflicts: list[dict] = []
+    for i in range(len(indexed)):
+        name_a, rows_a = indexed[i]
+        for j in range(i + 1, len(indexed)):
+            name_b, rows_b = indexed[j]
+            for key in set(rows_a) & set(rows_b):
+                row_a, row_b = rows_a[key], rows_b[key]
+                shared = (set(row_a.index) & set(row_b.index)) - set(key_cols)
+                for column in sorted(shared):
+                    if _values_conflict(row_a[column], row_b[column]):
+                        conflicts.append(
+                            {
+                                "table_name": table_type,
+                                "grain_key": _format_grain_key(key_cols, key),
+                                "column_name": column,
+                                "file_a": name_a,
+                                "file_b": name_b,
+                                "value_a": str(row_a[column]),
+                                "value_b": str(row_b[column]),
+                            }
+                        )
+    return conflicts
+
+
+def _create_data_quality_table(con, db_path: Path, conflicts: list[dict]) -> None:
+    frame = pd.DataFrame(
+        conflicts,
+        columns=[
+            "table_name", "grain_key", "column_name",
+            "file_a", "file_b", "value_a", "value_b",
+        ],
     )
-    projection = ", ".join(_projected_columns(load_profile, table_type))
-    con.execute(
-        f"""
-        CREATE TABLE {_quote_identifier(table_type)} AS
-        SELECT {projection}
-        FROM read_csv_auto(?)
-        """,
-        [str(file)],
-    )
+    _create_table_from_frame(con, db_path, "data_quality", frame)
 
 
-def _load_dataframe_table(
-    con,
-    db_path: Path,
-    file: Path,
-    profile: FileProfile,
-    table_type: str,
-) -> None:
-    frame = load_table(file, sheet=profile.sheet_name)
+def _canonical_frame(con, file: Path, profile: FileProfile, table_type: str):
+    if file.suffix.lower() in EXCEL_SUFFIXES:
+        frame = load_table(file, sheet=profile.sheet_name)
+    else:
+        frame = con.execute("SELECT * FROM read_csv_auto(?)", [str(file)]).fetchdf()
+        profile = FileProfile(
+            path=file,
+            table_name=profile.table_name,
+            columns=list(frame.columns),
+            row_count=len(frame),
+            sample_rows=profile.sample_rows,
+        )
     projected = _projected_frame(frame, profile, table_type)
-    projected = _normalized_frame(projected, table_type)
-    staging_path = _write_staging_csv(db_path, table_type, projected)
+    return _normalized_frame(projected, table_type)
+
+
+def _combine_frames(frames: list, table_type: str):
+    combined = pd.concat(frames, ignore_index=True, sort=False)
+    keys = GRAIN_KEYS.get(table_type)
+    if not keys:
+        return combined
+    key_cols = [key for key in keys if key in combined.columns]
+    if not key_cols:
+        return combined
+    merged = combined.groupby(key_cols, dropna=False, as_index=False, sort=False).first()
+    ordered = [column for column in combined.columns if column in merged.columns]
+    return merged[ordered]
+
+
+def _create_table_from_frame(con, db_path: Path, table_type: str, frame) -> None:
+    staging_path = _write_staging_csv(db_path, table_type, frame)
     con.execute(
         f"""
         CREATE TABLE {_quote_identifier(table_type)} AS
@@ -89,41 +230,31 @@ def _load_dataframe_table(
         """,
         [str(staging_path)],
     )
+
+
+def _drop_refresh_objects(con) -> None:
+    for view in _DERIVED_VIEWS:
+        con.execute(f"DROP VIEW IF EXISTS {_quote_identifier(view)}")
+    for table in [*_DERIVED_TABLES, *_AUX_TABLES, *TABLE_SIGNATURES]:
+        con.execute(f"DROP TABLE IF EXISTS {_quote_identifier(table)}")
 
 
 def _projected_frame(frame, profile: FileProfile, table_type: str):
     field_mapping = guess_field_mapping(profile, table_type)
     rename_mapping = {source: target for target, source in field_mapping.items()}
     projected = frame.rename(columns=rename_mapping)
-    projected.columns = [
-        _safe_column_name(column) if column not in TABLE_SIGNATURES[table_type] else column
-        for column in projected.columns
-    ]
+    reserved = set(rename_mapping.values())
+    used: set[str] = set()
+    new_columns: list[str] = []
+    for column in projected.columns:
+        if column in reserved:
+            new_columns.append(column)
+        else:
+            safe = _unique_name(_safe_column_name(column), used | reserved)
+            used.add(safe)
+            new_columns.append(safe)
+    projected.columns = new_columns
     return projected
-
-
-def _load_csv_orders_table(con, db_path: Path, file: Path, table_type: str) -> None:
-    frame = con.execute("SELECT * FROM read_csv_auto(?)", [str(file)]).fetchdf()
-    profile = FileProfile(
-        path=file,
-        table_name=file.stem,
-        columns=list(frame.columns),
-        row_count=len(frame),
-        sample_rows=frame.head(5).astype(object).where(pd.notna(frame.head(5)), None).to_dict(
-            orient="records"
-        ),
-    )
-    projected = _projected_frame(frame, profile, table_type)
-    projected = _normalized_frame(projected, table_type)
-    staging_path = _write_staging_csv(db_path, table_type, projected)
-    con.execute(
-        f"""
-        CREATE TABLE {_quote_identifier(table_type)} AS
-        SELECT *
-        FROM read_csv_auto(?)
-        """,
-        [str(staging_path)],
-    )
 
 
 def _normalized_frame(frame, table_type: str):
@@ -149,32 +280,6 @@ def _write_staging_csv(db_path: Path, table_type: str, frame) -> Path:
     staging_path = staging_dir / f"{table_type}.normalized.csv"
     frame.to_csv(staging_path, index=False)
     return staging_path
-
-
-def _duckdb_csv_columns(con, file: Path) -> list[str]:
-    con.execute("SELECT * FROM read_csv_auto(?) LIMIT 0", [str(file)])
-    return [column[0] for column in con.description]
-
-
-def _projected_columns(profile: FileProfile, table_type: str) -> list[str]:
-    field_mapping = guess_field_mapping(profile, table_type)
-    source_to_target = {source: target for target, source in field_mapping.items()}
-    reserved_names = set(source_to_target.values())
-    used_names: set[str] = set()
-    projections: list[str] = []
-    for source_column in profile.columns:
-        if source_column in source_to_target:
-            output_name = source_to_target[source_column]
-        else:
-            output_name = _unique_name(
-                _safe_column_name(source_column),
-                used_names | reserved_names,
-            )
-        used_names.add(output_name)
-        projections.append(
-            f"{_quote_identifier(source_column)} AS {_quote_identifier(output_name)}"
-        )
-    return projections
 
 
 def _existing_tables(con) -> set[str]:

@@ -131,3 +131,10 @@ No TABLE_SIGNATURES or FIELD_ALIASES entry. Must be imported with exact English 
 | 商品数据_*.xlsx, 商品列表*.xlsx | products |
 | 聚光报表*.xlsx, 投放数据*.xlsx, 广告数据*.csv, 薯条数据*.xlsx | ad_performance_daily |
 | 评论数据*.xlsx, 评论导出*.csv | comments |
+
+---
+
+## Caliber note
+
+Refund caliber: amounts carry `_pay` (支付时间) and `_refundtime` (退款时间); **rates exist only in
+`_pay`**. 退款后GMV (`net_gmv_pay`) is platform-given, not computed.

@@ -269,6 +269,131 @@ def test_ad_metrics_calculates_null_safe_paid_rates(tmp_path: Path, fixture_dir:
         con.close()
 
 
+_NOTE_HEADER = "笔记id,发布时间,笔记标题,阅读次数,点赞数,收藏数"
+
+
+def test_disjoint_notes_files_union_not_overwrite(tmp_path):
+    (tmp_path / "notes_a.csv").write_text(
+        f"{_NOTE_HEADER}\nn1,2026-04-01,标题1,100,10,5\nn2,2026-04-02,标题2,200,20,8\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "notes_b.csv").write_text(
+        f"{_NOTE_HEADER}\nn3,2026-04-03,标题3,300,30,9\nn4,2026-04-04,标题4,400,40,7\n",
+        encoding="utf-8",
+    )
+    db = tmp_path / "d.duckdb"
+    build_database(db, [tmp_path / "notes_a.csv", tmp_path / "notes_b.csv"])
+    con = duckdb.connect(str(db))
+    assert con.execute("SELECT count(*) FROM notes").fetchone()[0] == 4  # not 2 (overwrite)
+    con.close()
+
+
+def test_same_key_column_views_coalesce(tmp_path):
+    # both files describe note n1; each carries a column the other lacks.
+    # Use never-aliased column names (扩展甲/扩展乙) so the assertion column names
+    # stay stable — a real metric like 笔记支付金额 gets renamed to its canonical
+    # column (note_gmv) once notes aliases are enriched (Task 6), which would break
+    # this test at a later task. `_safe_column_name` keeps Chinese word chars verbatim.
+    (tmp_path / "notes_a.csv").write_text(
+        f"{_NOTE_HEADER},扩展甲\nn1,2026-04-01,标题1,100,10,5,999\n", encoding="utf-8"
+    )
+    (tmp_path / "notes_b.csv").write_text(
+        f"{_NOTE_HEADER},扩展乙\nn1,2026-04-01,标题1,100,10,5,42\n", encoding="utf-8"
+    )
+    db = tmp_path / "d.duckdb"
+    build_database(db, [tmp_path / "notes_a.csv", tmp_path / "notes_b.csv"])
+    con = duckdb.connect(str(db))
+    frame = con.execute("SELECT * FROM notes").fetchdf()
+    con.close()
+    assert len(frame) == 1  # one row per note_id (coalesced, not doubled)
+    row = frame.iloc[0]
+    assert row["扩展甲"] == 999   # filled from file A
+    assert row["扩展乙"] == 42    # filled from file B
+
+
+def test_unclassified_file_becomes_needs_data_and_build_survives(tmp_path):
+    (tmp_path / "notes.csv").write_text(
+        f"{_NOTE_HEADER}\nn1,2026-04-01,标题1,100,10,5\n", encoding="utf-8"
+    )
+    (tmp_path / "6.退款原因.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+    (tmp_path / "mystery.csv").write_text("列甲,列乙\n1,2\n", encoding="utf-8")
+    db = tmp_path / "d.duckdb"
+    build_database(db, list(tmp_path.glob("*")))
+    con = duckdb.connect(str(db))
+    assert con.execute("SELECT count(*) FROM notes").fetchone()[0] == 1  # good file survives
+    needs = con.execute("SELECT file, domain FROM needs_data ORDER BY file").fetchdf()
+    con.close()
+    assert set(needs["file"]) == {"6.退款原因.png", "mystery.csv"}
+    assert "退款原因" in set(needs["domain"])
+
+
+def test_build_succeeds_on_empty_file_list(tmp_path):
+    db = tmp_path / "d.duckdb"
+    build_database(db, [])  # must not raise
+    con = duckdb.connect(str(db))
+    assert con.execute("SELECT count(*) FROM needs_data").fetchone()[0] == 0
+    con.close()
+
+
+def test_build_manifest_records_contributing_files(tmp_path):
+    # provenance (spec §A.2): the build logs which files fed each table.
+    (tmp_path / "notes_a.csv").write_text(
+        f"{_NOTE_HEADER}\nn1,2026-04-01,标题1,100,10,5\n", encoding="utf-8"
+    )
+    (tmp_path / "notes_b.csv").write_text(
+        f"{_NOTE_HEADER}\nn2,2026-04-02,标题2,200,20,8\n", encoding="utf-8"
+    )
+    db = tmp_path / "d.duckdb"
+    build_database(db, [tmp_path / "notes_a.csv", tmp_path / "notes_b.csv"])
+    con = duckdb.connect(str(db))
+    manifest = con.execute(
+        "SELECT file FROM build_manifest WHERE table_name = 'notes' ORDER BY file"
+    ).fetchdf()
+    con.close()
+    assert list(manifest["file"]) == ["notes_a.csv", "notes_b.csv"]
+
+
+def test_conflicting_grain_key_values_recorded_in_data_quality(tmp_path):
+    # spec §A.2: two files describe note n1 but disagree on 阅读次数 (reads) beyond
+    # tolerance. Coalesce keeps the first-loaded value; the conflict is logged
+    # naming BOTH files. Identical/within-tolerance values would merge silently.
+    (tmp_path / "notes_a.csv").write_text(
+        f"{_NOTE_HEADER}\nn1,2026-04-01,标题1,100,10,5\n", encoding="utf-8"
+    )
+    (tmp_path / "notes_b.csv").write_text(
+        f"{_NOTE_HEADER}\nn1,2026-04-01,标题1,500,10,5\n", encoding="utf-8"
+    )
+    db = tmp_path / "d.duckdb"
+    build_database(db, [tmp_path / "notes_a.csv", tmp_path / "notes_b.csv"])
+    con = duckdb.connect(str(db))
+    assert con.execute("SELECT count(*) FROM notes").fetchone()[0] == 1  # coalesced
+    dq = con.execute(
+        "SELECT table_name, grain_key, column_name, file_a, file_b FROM data_quality"
+    ).fetchdf()
+    con.close()
+    assert len(dq) == 1  # only 阅读次数 differs; other shared columns match
+    row = dq.iloc[0]
+    assert row["table_name"] == "notes"
+    assert "n1" in row["grain_key"]
+    assert row["column_name"] == "reads"  # 阅读次数 canonicalizes to reads
+    assert {row["file_a"], row["file_b"]} == {"notes_a.csv", "notes_b.csv"}
+
+
+def test_within_tolerance_values_merge_silently(tmp_path):
+    # 100 vs 103 reads = 3% < MERGE_CONFLICT_TOLERANCE (5%) → no data_quality row.
+    (tmp_path / "notes_a.csv").write_text(
+        f"{_NOTE_HEADER}\nn1,2026-04-01,标题1,100,10,5\n", encoding="utf-8"
+    )
+    (tmp_path / "notes_b.csv").write_text(
+        f"{_NOTE_HEADER}\nn1,2026-04-01,标题1,103,10,5\n", encoding="utf-8"
+    )
+    db = tmp_path / "d.duckdb"
+    build_database(db, [tmp_path / "notes_a.csv", tmp_path / "notes_b.csv"])
+    con = duckdb.connect(str(db))
+    assert con.execute("SELECT count(*) FROM data_quality").fetchone()[0] == 0
+    con.close()
+
+
 def test_create_note_metrics_view_allows_missing_shares(tmp_path: Path):
     con = duckdb.connect(str(tmp_path / "analytics.duckdb"))
     try:
@@ -293,3 +418,59 @@ def test_create_note_metrics_view_allows_missing_shares(tmp_path: Path):
         )
     finally:
         con.close()
+
+
+def test_overview_column_views_merge_one_row_per_date(tmp_path):
+    header = "时间,支付金额,支付订单数,支付买家数,客单价"
+    (tmp_path / "core.csv").write_text(
+        f"{header},退款后支付金额（支付时间）\n"
+        "20260401,1000,10,8,125,900\n20260402,2000,20,15,133,1800\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "deal.csv").write_text(
+        f"{header}\n20260401,1000,10,8,125\n20260402,2000,20,15,133\n", encoding="utf-8"
+    )
+    db = tmp_path / "d.duckdb"
+    build_database(db, [tmp_path / "core.csv", tmp_path / "deal.csv"])
+    con = duckdb.connect(str(db))
+    frame = con.execute(
+        "SELECT * FROM business_overview_daily ORDER BY date"
+    ).fetchdf()
+    con.close()
+    assert len(frame) == 2  # one row per date, not 4 (no GMV double-count)
+    assert frame.iloc[0]["net_gmv_pay"] == 900  # coalesced from core.csv
+
+
+def test_business_overview_monthly_rolls_up_daily(tmp_path):
+    (tmp_path / "core.csv").write_text(
+        "时间,支付金额,支付订单数,支付买家数,客单价\n"
+        "20260401,1000,10,8,100\n20260402,2000,20,15,100\n20260501,3000,30,20,100\n",
+        encoding="utf-8",
+    )
+    db = tmp_path / "d.duckdb"
+    build_database(db, [tmp_path / "core.csv"])
+    con = duckdb.connect(str(db))
+    rows = con.execute(
+        "SELECT period_month, gmv, paid_orders, aov FROM business_overview_monthly ORDER BY period_month"
+    ).fetchall()
+    con.close()
+    assert rows[0][0] == "2026-04" and rows[0][1] == 3000 and rows[0][2] == 30
+    assert rows[0][3] == 100  # aov = 3000/30
+    assert rows[1][0] == "2026-05" and rows[1][1] == 3000
+
+
+def test_note_metrics_derives_click_to_order(tmp_path):
+    (tmp_path / "notes.csv").write_text(
+        "笔记id,发布时间,笔记标题,阅读次数,点赞数,收藏数,笔记支付订单数,笔记商品点击次数,笔记支付金额\n"
+        "n1,2026-04-01,标题1,1000,10,5,4,20,800\n",
+        encoding="utf-8",
+    )
+    db = tmp_path / "d.duckdb"
+    build_database(db, [tmp_path / "notes.csv"])
+    con = duckdb.connect(str(db))
+    row = con.execute(
+        "SELECT click_to_order, gmv_per_click FROM note_metrics WHERE note_id='n1'"
+    ).fetchone()
+    con.close()
+    assert row[0] == 0.2   # 4 / 20
+    assert row[1] == 40.0  # 800 / 20

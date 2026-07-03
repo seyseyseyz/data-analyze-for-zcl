@@ -1,10 +1,51 @@
-from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
+from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding, Subsection
 from xhs_ceramics_analytics.evidence import EvidenceStrength
 from xhs_ceramics_analytics.reporting.html import (
     render_html,
     render_markdown_document_html,
 )
 from xhs_ceramics_analytics.reporting.markdown import render_markdown
+
+
+def _full_finding():
+    return Finding(
+        title="退款率偏高",
+        conclusion="鱼盘SKU退款率显著高于账号均值。",
+        evidence_strength=EvidenceStrength.MEDIUM,
+        key_numbers={"refund_rate_pay": 0.18},
+        caveats=["样本较小"],
+        recommended_action="在详情页加买前确认区。",
+        evidence_reason="仅HTML应出现的原因。",
+        confounders=["季节性退货高峰"],
+        next_test="下周只改详情页做对照。",
+        appendix="口径：退款率为支付时间口径。",
+    )
+
+
+def test_markdown_renders_seven_contract_elements_not_evidence_reason():
+    md = render_markdown([AnalysisResult(task_id="x", title="X", findings=[_full_finding()])])
+    assert "可能的混淆因素：" in md
+    assert "季节性退货高峰" in md
+    assert "下一步验证：" in md
+    assert "方法与附录：" in md
+    assert "建议动作：" in md
+    # evidence_reason stays HTML-only:
+    assert "仅HTML应出现的原因。" not in md
+
+
+def test_markdown_renders_subsections_and_named_examples():
+    result = AnalysisResult(
+        task_id="x",
+        title="X",
+        findings=[],
+        subsections=[Subsection(title="买前确认区", body="高退款SKU清单", findings=[_full_finding()])],
+        named_examples=[{"label": "鱼盘12寸", "detail": "退款率0.18"}],
+    )
+    md = render_markdown([result])
+    assert "#### 买前确认区" in md
+    assert "高退款SKU清单" in md
+    assert "命名示例：" in md
+    assert "鱼盘12寸" in md
 
 
 def test_render_markdown_uses_chinese_report_labels():
@@ -721,4 +762,30 @@ def test_section_keeps_table_when_a_chart_builder_raises(monkeypatch):
     )
     # the render still completes and the drill-down table for the section survives
     assert "封面风格效果" in html
+
+
+def test_html_renders_all_eight_contract_elements():
+    result = AnalysisResult(
+        task_id="x",
+        title="X",
+        findings=[_full_finding()],
+        subsections=[Subsection(title="买前确认区", body="高退款SKU清单", findings=[_full_finding()])],
+        named_examples=[{"label": "鱼盘12寸", "detail": "退款率0.18"}],
+    )
+    html = render_html([result])
+    assert "可信度原因：" in html          # evidence_reason (HTML-only, element 4)
+    assert "仅HTML应出现的原因。" in html
+    assert "可能的混淆因素" in html          # element 5
+    assert "下一步验证：" in html            # element 7
+    assert "方法与附录：" in html            # element 8
+    assert "买前确认区" in html              # subsection
+    assert "命名示例" in html and "鱼盘12寸" in html
+
+
+def test_html_omits_empty_contract_fields():
+    lean = Finding(title="t", conclusion="c", evidence_strength=EvidenceStrength.WEAK)
+    html = render_html([AnalysisResult(task_id="x", title="X", findings=[lean])])
+    assert "可能的混淆因素" not in html
+    assert "下一步验证：" not in html
+    assert "方法与附录：" not in html
     assert "table-details" in html
