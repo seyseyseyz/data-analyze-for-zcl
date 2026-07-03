@@ -6,6 +6,7 @@ from jinja2 import Environment, PackageLoader
 
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding, Subsection
 from xhs_ceramics_analytics.reporting.markdown import render_markdown
+from xhs_ceramics_analytics.reporting.section_order import APPENDIX_TASKS
 from xhs_ceramics_analytics.reporting.labels import (
     VALUE_LABELS as _VALUE_LABELS,
     format_number as _format_number,
@@ -172,6 +173,19 @@ _BUSINESS_HIGHLIGHT_TASKS = (
 
 _ANALYSIS_GROUPS = (
     {
+        "title": "经营诊断：生意怎么样",
+        "description": (
+            "先看整体经营结构、搜索承接效率、人群结构和退款结构，"
+            "锁定这一阶段最该动的环节，再往下看内容和商品细节。"
+        ),
+        "tasks": (
+            "core_business_diagnosis",
+            "search_efficiency_diagnosis",
+            "audience_structure_diagnosis",
+            "refund_structure_diagnosis",
+        ),
+    },
+    {
         "title": "商品：卖什么",
         "description": "先看哪些 SKU 已经有销售反馈，哪些商品还需要继续补内容或补销售数据。",
         "tasks": (
@@ -205,16 +219,21 @@ _ANALYSIS_GROUPS = (
         ),
     },
     {
-        "title": "数据可信度",
-        "description": "最后再看数据导入、账号基线、笔记漏斗和周复盘，判断哪些结论能直接用，哪些只能当实验线索。",
+        "title": "基础参考：账号与漏斗",
+        "description": "账号基线、笔记漏斗和周复盘作为背景参照，帮助判断哪些结论能直接用、哪些只能当实验线索。",
         "tasks": (
-            "data_quality_check",
             "account_baseline",
             "note_funnel",
             "weekly_business_review",
         ),
     },
 )
+
+# Data-quality sections close the report as an appendix — see reporting.section_order.
+_APPENDIX_GROUP = {
+    "title": "附录：数据质量与口径说明",
+    "description": "数据导入、口径与完整度说明，为上面所有结论标注可信度；阻断性问题在建库阶段已处置，这里只作透明留证。",
+}
 
 _TABLE_LABELS = {
     "table_row_counts": "导入数据检查",
@@ -850,6 +869,11 @@ def _analysis_groups(result_views: list[dict[str, object]]) -> list[dict[str, ob
             }
         )
 
+    appendix_views = [
+        views_by_task[task_id] for task_id in APPENDIX_TASKS if task_id in views_by_task
+    ]
+    used.update(str(view["task_id"]) for view in appendix_views)
+
     remaining = [view for view in result_views if str(view["task_id"]) not in used]
     if remaining:
         grouped.append(
@@ -857,6 +881,16 @@ def _analysis_groups(result_views: list[dict[str, object]]) -> list[dict[str, ob
                 "title": "其他分析",
                 "description": "这些模块暂时没有归入固定经营问题，但仍保留结论和明细，方便继续扩展。",
                 "results": remaining,
+            }
+        )
+
+    # Appendix always closes the report, after 其他分析.
+    if appendix_views:
+        grouped.append(
+            {
+                "title": _APPENDIX_GROUP["title"],
+                "description": _APPENDIX_GROUP["description"],
+                "results": appendix_views,
             }
         )
     return grouped

@@ -59,6 +59,11 @@ def test_run_multiple_tasks_writes_single_integrated_report(tmp_path, fixture_di
     assert "## 核心经营结构诊断" in md
     assert "## 搜索效率诊断" in md
     assert "## 人群结构诊断" in md
+    # Data quality is the appendix: it sinks below every analysis module even
+    # though it was passed first on the command line.
+    assert md.index("## 核心经营结构诊断") < md.index("## 数据质量检查")
+    assert md.index("## 搜索效率诊断") < md.index("## 数据质量检查")
+    assert md.index("## 人群结构诊断") < md.index("## 数据质量检查")
 
 
 def test_run_combined_report_honors_name_option(tmp_path, fixture_dir):

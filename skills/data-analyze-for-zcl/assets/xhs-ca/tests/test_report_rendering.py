@@ -812,3 +812,49 @@ def test_named_examples_render_consistently_across_markdown_and_html():
     for text in ("鱼盘12寸", "退款率0.18"):
         assert text in md
         assert text in html
+
+
+def _dq_and_core():
+    dq = AnalysisResult(
+        task_id="data_quality_check",
+        title="数据质量检查",
+        findings=[
+            Finding(
+                title="导入完整",
+                conclusion="标准表齐全。",
+                evidence_strength=EvidenceStrength.STRONG,
+            )
+        ],
+    )
+    core = AnalysisResult(
+        task_id="core_business_diagnosis",
+        title="核心经营结构诊断",
+        findings=[
+            Finding(
+                title="整体经营快照与趋势",
+                conclusion="GMV环比走弱。",
+                evidence_strength=EvidenceStrength.MEDIUM,
+            )
+        ],
+    )
+    return dq, core
+
+
+def test_data_quality_section_renders_last_in_markdown():
+    # Pass data-quality FIRST; the compositor must still sink it below the
+    # business diagnosis so the reader hits conclusions before the data appendix.
+    dq, core = _dq_and_core()
+    md = render_markdown([dq, core])
+    assert md.index("## 核心经营结构诊断") < md.index("## 数据质量检查")
+
+
+def test_data_quality_is_the_final_html_group_and_diagnosis_leads():
+    from xhs_ceramics_analytics.reporting.html import _analysis_groups
+
+    views = [{"task_id": "data_quality_check"}, {"task_id": "core_business_diagnosis"}]
+    groups = _analysis_groups(views)
+    titles = [str(group["title"]) for group in groups]
+    assert titles[0].startswith("经营诊断")
+    assert titles[-1].startswith("附录")
+    assert any(v["task_id"] == "core_business_diagnosis" for v in groups[0]["results"])
+    assert any(v["task_id"] == "data_quality_check" for v in groups[-1]["results"])

@@ -21,9 +21,9 @@ Use this skill when the user provides Xiaohongshu (小红书 / 千帆) exported 
 
 5. **Build** — run `scripts/xhs-ca build <files...>`. If header-mapping fails, read `assets/xhs-ca/references/xhs_glossary.md` and `assets/xhs-ca/references/data_contract/_index.md`, then negotiate unmapped columns with the user before retrying. After the build, follow the **字段映射自愈** section below to resolve any `mapping_diagnostics` rows before analysis.
 
-6. **Data quality (inspect, then fold in)** — run `xhs-ca run data_quality_check` on its own once to inspect the export and drive the **字段映射自愈** gate below; if paid-traffic data was provided, also inspect `ad_data_quality_check`. Resolve empty tables / missing columns *before* building the final report. Do NOT deliver this inspection run as a separate artifact — `data_quality_check` becomes the **first slug** of the single integrated report in step 7, so its findings ship as the report's opening section.
+6. **Data quality (inspect, then fold in)** — run `xhs-ca run data_quality_check` on its own once to inspect the export and drive the **字段映射自愈** gate below; if paid-traffic data was provided, also inspect `ad_data_quality_check`. Resolve empty tables / missing columns *before* building the final report. Do NOT deliver this inspection run as a separate artifact — `data_quality_check` is folded into the single integrated report in step 7, where the compositor renders it as the **closing appendix (附录：数据质量与口径说明)**, not a separate file.
 
-7. **Run selected task(s) — ONE integrated report, exactly TWO artifacts** — pass `data_quality_check` followed by every confirmed analysis slug to a **single** `scripts/xhs-ca run data_quality_check <slug1> <slug2> … --name <表意名称>` invocation. This composes ONE integrated report (executive summary + a data-quality section + one section per module) written as exactly two files — `<name>.md` + `<name>.html` — under `.xhs-ceramics-analytics/outputs/`. Always pass a meaningful `--name` (e.g. `--name 千帆经营诊断报告`); without it the combined default is `经营诊断报告`. Do NOT run one slug at a time — that fragments the deliverable into a file per task, which is exactly what to avoid. Before summarizing, read each module's `assets/xhs-ca/task_templates/<slug>.md` and `assets/xhs-ca/references/cheatsheet.md` for metric definitions, evidence rules, and report structure.
+7. **Run selected task(s) — ONE integrated report, exactly TWO artifacts** — pass every confirmed analysis slug plus `data_quality_check` to a **single** `scripts/xhs-ca run <slug1> <slug2> … data_quality_check --name <表意名称>` invocation. This composes ONE integrated report written as exactly two files — `<name>.md` + `<name>.html` — under `.xhs-ceramics-analytics/outputs/`. **Section order is enforced by the compositor, not by argument order:** business modules lead (executive summary → 经营诊断 → 商品/内容/用户需求/实验 → 基础参考), and `data_quality_check`/`ad_data_quality_check` always sink to the end as the **附录：数据质量与口径说明** — the reader meets conclusions first and the data caveats close the report. Always pass a meaningful `--name` (e.g. `--name 千帆经营诊断报告`); without it the combined default is `经营诊断报告`. Do NOT run one slug at a time — that fragments the deliverable into a file per task, which is exactly what to avoid. Before summarizing, read each module's `assets/xhs-ca/task_templates/<slug>.md` and `assets/xhs-ca/references/cheatsheet.md` for metric definitions, evidence rules, and report structure.
 
 8. **Custom integrated reports** — only when you need a report outside the built-in task registry (non-standard sheets a task does not cover): write the Markdown report first, then immediately run `scripts/xhs-ca render-html <report.md>` or `scripts/xhs-ca render-html <report.md> --output <report.html>`. For any combination of built-in tasks, prefer the single multi-slug `run` in step 7 over hand-authoring. Keep any Excel/CSV companion tables, but they do not replace the HTML report.
 
@@ -66,12 +66,13 @@ The build never rejects a file for a drifted Chinese header — it degrades and 
 # Run a single analysis task (writes note_funnel.md + note_funnel.html)
 <skill-dir>/scripts/xhs-ca run note_funnel
 
-# THE STANDARD DELIVERABLE — data quality folded in, exactly TWO files with an
-# expressive name (千帆经营诊断报告.md + 千帆经营诊断报告.html)
-<skill-dir>/scripts/xhs-ca run data_quality_check core_business_diagnosis search_efficiency_diagnosis audience_structure_diagnosis --name 千帆经营诊断报告
+# THE STANDARD DELIVERABLE — data quality folded in as the closing appendix,
+# exactly TWO files with an expressive name (千帆经营诊断报告.md + .html).
+# Argument order is free: the compositor always sinks data_quality_check to the end.
+<skill-dir>/scripts/xhs-ca run core_business_diagnosis search_efficiency_diagnosis audience_structure_diagnosis data_quality_check --name 千帆经营诊断报告
 
 # Combined run without --name falls back to 经营诊断报告.md + 经营诊断报告.html
-<skill-dir>/scripts/xhs-ca run data_quality_check core_business_diagnosis search_efficiency_diagnosis
+<skill-dir>/scripts/xhs-ca run core_business_diagnosis search_efficiency_diagnosis data_quality_check
 
 # Inspect data quality on its own during the 字段映射自愈 gate (not a deliverable)
 <skill-dir>/scripts/xhs-ca run data_quality_check

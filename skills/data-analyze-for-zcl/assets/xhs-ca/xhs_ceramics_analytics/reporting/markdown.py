@@ -1,4 +1,5 @@
 from xhs_ceramics_analytics.analysis.result import AnalysisResult
+from xhs_ceramics_analytics.reporting.section_order import order_results
 
 
 _TITLE_LABELS = {
@@ -29,7 +30,7 @@ _EVIDENCE_LABELS = {
 
 def render_markdown(results: list[AnalysisResult]) -> str:
     lines = ["# 小红书账号分析报告", ""]
-    for result in results:
+    for result in order_results(results):
         lines.extend([f"## {_display_title(result.title)}", ""])
         if result.limitations:
             lines.append("限制：")
