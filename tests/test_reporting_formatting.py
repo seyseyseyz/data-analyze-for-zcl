@@ -53,6 +53,12 @@ def test_format_scalar_bare_proportion_columns_are_percent():
     assert format_scalar("ci_high", 0.74) == "74%"
 
 
+def test_format_scalar_pct_suffix_is_percent():
+    # period-over-period change fractions named ``*_pct`` render as percents
+    assert format_scalar("pct", -0.274) == "-27.4%"
+    assert format_scalar("wow_last_pct", -0.17) == "-17%"
+
+
 def test_format_scalar_wilson_and_pay_conversion_are_percent():
     # Wilson CI bounds and the store-wide pay conversion are rate-scale.
     assert format_scalar("wilson_low", 0.01) == "1%"

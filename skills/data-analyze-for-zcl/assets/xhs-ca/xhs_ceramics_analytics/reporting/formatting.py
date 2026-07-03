@@ -66,11 +66,12 @@ PERCENT_FIELDS = {
 }
 
 # ``_rate`` covers refund/read/like/etc. rates; ``_share`` covers every mix/gmv/
-# visitor/order proportion; ``_rate_pay`` covers refund rates that carry the
+# visitor/order proportion; ``_pct`` covers period-over-period change fractions
+# (e.g. ``wow_last_pct``); ``_rate_pay`` covers refund rates that carry the
 # 支付时间 caliber marker (e.g. ``post_ship_refund_rate_pay``) whose trailing
 # ``_pay`` would otherwise hide the ``_rate`` from the suffix test. All denote
 # 0-1 fractions rendered as percents.
-PERCENT_SUFFIXES = ("_rate", "_share", "_rate_pay")
+PERCENT_SUFFIXES = ("_rate", "_share", "_pct", "_rate_pay")
 
 # Fields whose values denote a calendar day. Real exports carry these as integer
 # YYYYMMDD, ISO strings, or datetime — the date branch normalizes all to ISO.
