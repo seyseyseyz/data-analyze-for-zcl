@@ -940,7 +940,9 @@
               <strong>命名示例</strong>
               <ul class="note-list">
                 {% for example in result.named_examples %}
-                <li><strong>{{ example.label }}</strong>{% if example.detail %}：{{ example.detail }}{% endif %}</li>
+                {% set _label = example.label or example.name %}
+                {% set _detail = example.detail or example.note %}
+                <li><strong>{{ _label }}</strong>{% if _detail %}：{{ _detail }}{% endif %}</li>
                 {% endfor %}
               </ul>
             </div>

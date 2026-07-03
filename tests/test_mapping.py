@@ -340,9 +340,14 @@ def test_classifies_shop_page_funnel_and_source():
 
 
 def test_classifies_refund_overview_and_traffic_source():
+    # use the real export headers verbatim (incl. the （支付时间） caliber suffix on
+    # 退款人数) so the alias mapping is actually exercised — a bare 退款人数 header
+    # would silently pass classification while leaving refund_users un-canonicalized.
     refund = _profile(["统计时间", "账号类型", "账号名称", "载体", "退款金额（支付时间）",
-                       "发货前退款金额（支付时间）", "退货退款金额（支付时间）", "退款人数"])
+                       "发货前退款金额（支付时间）", "退货退款金额（支付时间）", "退款人数（支付时间）"])
     assert guess_table_type(refund) == "refund_overview"
+    # the required canonical refund_users column must map from the real header
+    assert guess_field_mapping(refund, "refund_overview")["refund_users"] == "退款人数（支付时间）"
     traffic = _profile(["小红书号", "账号名称", "渠道", "笔记类型", "支付金额",
                         "支付订单数", "支付人数", "商品点击次数", "商品点击人数"])
     assert guess_table_type(traffic) == "traffic_source"

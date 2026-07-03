@@ -22,9 +22,13 @@ def test_full_export_yields_nine_typed_tables(fixture_dir, tmp_path):
     build_database(db, files)
     con = duckdb.connect(str(db))
     tables = {row[0] for row in con.execute("SHOW TABLES").fetchall()}
+    # required canonical columns must survive to the built table, not linger as
+    # un-canonicalized Chinese slugs (e.g. refund_users from 退款人数（支付时间）)
+    refund_cols = {row[0] for row in con.execute("DESCRIBE refund_overview").fetchall()}
     con.close()
     for _, table_type in _ALL:
         assert table_type in tables
+    assert "refund_users" in refund_cols
 
 
 @pytest.mark.parametrize("count", [0, 1, 3, 9])
