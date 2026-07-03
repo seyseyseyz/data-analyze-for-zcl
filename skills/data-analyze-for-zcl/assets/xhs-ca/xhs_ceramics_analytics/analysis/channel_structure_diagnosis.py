@@ -351,7 +351,10 @@ def _refund_finding(con, limitations: list[str]) -> tuple[Finding | None, list[d
         return None, []
 
     rows = _fetch_all(con, "business_overview_daily")
-    caveats = [_OBS_CAVEAT]
+    caveats = [
+        _OBS_CAVEAT,
+        "本节为分渠道退款率口径；整体退款金额份额见退款结构诊断，订单加权发货前后率见退款根因诊断，三者非重复。",
+    ]
     note_orders = card_orders = note_refund_orders = card_refund_orders = None
     note_ci = card_ci = (None, None)
 

@@ -20,7 +20,9 @@ def _parse_date(value) -> date | None:
     if isinstance(value, date):
         return value
     text = str(value).strip()[:10]
-    for fmt in ("%Y-%m-%d", "%Y/%m/%d"):
+    # Real exports carry dates as integer YYYYMMDD (e.g. 20260401); accept that
+    # alongside ISO so day-of-week seasonality and changepoint dates do not degrade.
+    for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%Y%m%d"):
         try:
             return datetime.strptime(text, fmt).date()
         except ValueError:
@@ -81,21 +83,23 @@ def dow_seasonality(series: list[tuple[str, float]]) -> dict:
     return {"by_weekday": by_weekday, "peak_dow": peak, "trough_dow": trough}
 
 
-def changepoint(values: list[float]) -> dict:
+def changepoint(values: list[float], min_segment: int = 3) -> dict:
     """Largest mean-shift split: the index where before/after means differ most.
 
     Returns {"index", "before_mean", "after_mean", "shift"}; index is the first
-    position of the *after* segment. Fewer than 4 points → {"index": None}.
+    position of the *after* segment. Both segments must have at least
+    ``min_segment`` points, so a lone extreme endpoint cannot masquerade as a
+    structural break. Series too short to form two such segments → {"index": None}.
     Observational — flags where the level moved, not why.
     """
     n = len(values)
-    if n < 4:
-        return {"index": None, "before_mean": None, "after_mean": None, "shift": None}
+    none_result = {"index": None, "before_mean": None, "after_mean": None, "shift": None}
+    if n < 2 * min_segment:
+        return none_result
     best = {"index": None, "before_mean": None, "after_mean": None, "shift": -1.0}
-    prefix = 0.0
     total = sum(values)
-    for i in range(1, n):
-        prefix += values[i - 1]
+    prefix = sum(values[:min_segment])
+    for i in range(min_segment, n - min_segment + 1):
         before = prefix / i
         after = (total - prefix) / (n - i)
         shift = abs(after - before)
@@ -106,4 +110,5 @@ def changepoint(values: list[float]) -> dict:
                 "after_mean": after,
                 "shift": after - before,
             }
-    return best
+        prefix += values[i]
+    return best if best["index"] is not None else none_result

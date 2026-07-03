@@ -1,4 +1,9 @@
 from xhs_ceramics_analytics.analysis.result import AnalysisResult
+from xhs_ceramics_analytics.reporting.formatting import (
+    field_label,
+    format_scalar,
+    should_render_table,
+)
 from xhs_ceramics_analytics.reporting.section_order import order_results
 
 
@@ -28,8 +33,11 @@ _EVIDENCE_LABELS = {
 }
 
 
-def render_markdown(results: list[AnalysisResult]) -> str:
-    lines = ["# 小红书账号分析报告", ""]
+_DEFAULT_REPORT_TITLE = "小红书账号分析报告"
+
+
+def render_markdown(results: list[AnalysisResult], title: str | None = None) -> str:
+    lines = [f"# {title or _DEFAULT_REPORT_TITLE}", ""]
     for result in order_results(results):
         lines.extend([f"## {_display_title(result.title)}", ""])
         if result.limitations:
@@ -60,7 +68,7 @@ def _render_finding(finding, heading_level: str = "###") -> list[str]:
     if finding.key_numbers:
         lines.append("关键数字：")
         for key, value in finding.key_numbers.items():
-            lines.append(f"- `{key}`: {value}")
+            lines.append(f"- {field_label(key)}（`{key}`）：{format_scalar(key, value)}")
         lines.append("")
     if finding.caveats:
         lines.append("注意事项：")
@@ -101,23 +109,25 @@ def _render_named_examples(examples: list[dict]) -> list[str]:
 
 
 def _render_table_preview(table_name: str, rows: list[dict[str, object]]) -> list[str]:
-    lines = [f"表格 `{table_name}`：{len(rows)} 行", ""]
-    if not rows:
-        return lines
-
+    if not should_render_table(rows):
+        return []
     preview_rows = rows[:5]
     columns = list(preview_rows[0].keys())
+    # Machine column names stay in the markdown preview — it is the traceable data
+    # appendix (查数用); reader-facing labels live on the key-numbers above and in
+    # the HTML user-view. Only the *values* get reader formatting.
+    lines = [f"表格 `{table_name}`：共 {len(rows)} 行，当前展示 {len(preview_rows)} 行", ""]
     lines.append("| " + " | ".join(columns) + " |")
     lines.append("| " + " | ".join("---" for _ in columns) + " |")
     for row in preview_rows:
-        values = [_markdown_cell(row.get(column)) for column in columns]
+        values = [_markdown_cell(column, row.get(column)) for column in columns]
         lines.append("| " + " | ".join(values) + " |")
     lines.append("")
     return lines
 
 
-def _markdown_cell(value: object) -> str:
-    text = "" if value is None else str(value)
+def _markdown_cell(field_name: str, value: object) -> str:
+    text = format_scalar(field_name, value)
     return text.replace("|", "\\|").replace("\n", " ")
 
 

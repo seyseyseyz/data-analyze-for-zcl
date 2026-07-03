@@ -8,6 +8,7 @@ Design: docs/superpowers/specs/2026-07-03-core-business-diagnosis-design.md
 """
 from pathlib import Path
 
+from xhs_ceramics_analytics.analysis.funnel_scope import normalize_funnel_rows
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.analytics.confidence import (
     bounded_rate,
@@ -21,7 +22,7 @@ from xhs_ceramics_analytics.analytics.timeseries import (
     dow_seasonality,
     week_over_week,
 )
-from xhs_ceramics_analytics.analytics.trends import direction_label, mom_change
+from xhs_ceramics_analytics.analytics.trends import mom_change, trend_summary
 from xhs_ceramics_analytics.db.duck import connect
 from xhs_ceramics_analytics.evidence import EvidenceStrength, score_evidence
 
@@ -100,7 +101,7 @@ def _snapshot_finding(
     aov, aov_source = _aov(cols, rows, total_gmv, total_buyers)
     pay_conv, conv_source = _pay_conversion(cols, rows, total_buyers)
 
-    trend_rows, direction, steps, decomp = _gmv_trend(cols, rows, limitations)
+    trend_rows, direction, summary, decomp = _gmv_trend(cols, rows, limitations)
 
     for missing in ("gmv", "paid_buyers"):
         if missing not in cols:
@@ -119,6 +120,11 @@ def _snapshot_finding(
         caveats.append("缺 product_visitors 与 pay_conversion_uv，无法给出支付转化率。")
     if decomp.get("changepoint_date") or decomp.get("peak_dow"):
         caveats.append("周对比/周内节律/结构性变化点为观察性分解，仅提示何时移动，非因果。")
+    if summary and summary.get("n"):
+        caveats.append(
+            "趋势方向按逐日 GMV 的最小二乘斜率判定（非首末两点），日度数据波动较大，"
+            "逐期环比见趋势表。"
+        )
 
     snapshot_row = {
         "gmv": total_gmv,
@@ -151,7 +157,12 @@ def _snapshot_finding(
         caveats=caveats,
         evidence_reason="经营规模为聚合快照，趋势为逐期 GMV 走势，均为观察性描述。",
         confounders=_SNAPSHOT_CONFOUNDERS,
-        appendix=str(steps) if steps else None,
+        appendix=(
+            "趋势方向用最小二乘斜率判定；逐期环比（delta/pct）见 business_trend 表；"
+            "变点用最小段长守卫排除端点噪声。"
+            if summary and summary.get("n")
+            else None
+        ),
     )
     return finding, [snapshot_row], trend_rows
 
@@ -189,11 +200,18 @@ def _gmv_trend(
     trend_rows = [{"date": p, "gmv": g} for p, g in series]
     if len(series) < 2:
         limitations.append("business_overview_daily 日期行不足两期，跳过 GMV 趋势。")
-        return trend_rows, None, [], {}
+        return trend_rows, None, {}, {}
+    # Per-period deltas live in the table columns (not a stringified appendix dump).
     steps = mom_change(series)
-    direction = direction_label(series[-1][1] - series[0][1])
+    trend_rows = [
+        {"date": s["period"], "gmv": s["value"], "delta": s["delta"],
+         "pct": s["pct"], "direction": s["direction"]}
+        for s in steps
+    ]
+    # Direction from the OLS slope over all points — robust to noisy endpoints.
+    summary = trend_summary(series)
     decomp = _decompose_gmv(series, trend_rows)
-    return trend_rows, direction, steps, decomp
+    return trend_rows, summary["direction"], summary, decomp
 
 
 def _decompose_gmv(series: list[tuple[str, float]], trend_rows: list[dict]) -> dict:
@@ -403,7 +421,13 @@ def _funnel_finding(
     if "shop_visitors" not in cols or "shop_payers" not in cols:
         limitations.append("shop_page_funnel 缺 shop_visitors/shop_payers，跳过漏斗诊断。")
         return None, {}
-    rows = _fetch_all(con, "shop_page_funnel")
+    raw_rows = _fetch_all(con, "shop_page_funnel")
+    # Normalize scope before summing: drop the platform ``全部`` rollup and collapse
+    # cumulative first-purchase windows, so visitors are not double-counted and the
+    # audience test compares real segments (新客 vs 老客), never subset-vs-superset.
+    rows, _rollup, canonical_cycle = normalize_funnel_rows(
+        raw_rows, "audience_type" in cols, "first_purchase_cycle" in cols
+    )
     visitors = sum(_num(r.get("shop_visitors")) for r in rows)
     payers = sum(_num(r.get("shop_payers")) for r in rows)
     has_clicks = "product_click_users" in cols
@@ -441,6 +465,10 @@ def _funnel_finding(
     caveats = ["观察性漏斗，非因果；各阶段率为聚合快照。"]
     if fallback:
         caveats.append("缺 product_click_users，访问→点击/点击→支付用比率列均值。")
+    if canonical_cycle is not None:
+        caveats.append(
+            f"首购周期为累计窗口，固定取 {canonical_cycle} 避免 180/365 天窗口重复计数。"
+        )
     key_numbers: dict[str, object] = {
         "weakest_stage": weakest,
         "visit_click_rate": visit_click,
