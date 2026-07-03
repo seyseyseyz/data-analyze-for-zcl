@@ -267,7 +267,7 @@ FIELD_ALIASES: dict[str, dict[str, set[str]]] = {
         "post_ship_refund_rate_pay": {"发货后退款率（支付时间）"},
         "pre_ship_refund_rate_pay": {"发货前退款率（支付时间）"},
         "return_refund_rate_pay": {"退货退款率（支付时间）"},
-        "refund_users": {"退款人数"},
+        "refund_users": {"退款人数（支付时间）", "退款人数"},
     },
     "traffic_source": {
         "xhs_id": {"小红书号"},

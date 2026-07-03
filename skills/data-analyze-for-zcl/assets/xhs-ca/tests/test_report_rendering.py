@@ -762,6 +762,10 @@ def test_section_keeps_table_when_a_chart_builder_raises(monkeypatch):
     )
     # the render still completes and the drill-down table for the section survives
     assert "封面风格效果" in html
+    # assert on the actual rendered <details> element, not the bare substring
+    # "table-details" (which also appears in the template's static CSS and would be
+    # tautological); its presence proves the section's drill-down table survived.
+    assert '<details class="table-details">' in html
 
 
 def test_html_renders_all_eight_contract_elements():
@@ -788,4 +792,23 @@ def test_html_omits_empty_contract_fields():
     assert "可能的混淆因素" not in html
     assert "下一步验证：" not in html
     assert "方法与附录：" not in html
-    assert "table-details" in html
+    # a finding with no tables renders no drill-down element (the substring
+    # "table-details" alone appears in the static CSS, so assert on the element)
+    assert '<details class="table-details">' not in html
+
+
+def test_named_examples_render_consistently_across_markdown_and_html():
+    # markdown accepts label/name and detail/note synonyms; the HTML renderer must
+    # accept the same keys, otherwise name/note-authored examples silently vanish
+    # from the canonical HTML report.
+    result = AnalysisResult(
+        task_id="x",
+        title="X",
+        findings=[],
+        named_examples=[{"name": "鱼盘12寸", "note": "退款率0.18"}],
+    )
+    md = render_markdown([result])
+    html = render_html([result])
+    for text in ("鱼盘12寸", "退款率0.18"):
+        assert text in md
+        assert text in html
