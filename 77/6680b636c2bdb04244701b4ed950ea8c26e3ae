@@ -1,0 +1,21 @@
+task_templates/refund_structure_diagnosis.md
+  s_6bd2349b4ebd4d::t_aaae37f6e9648c 1-46
+skills/data-analyze-for-zcl/assets/xhs-ca/task_templates/refund_structure_diagnosis.md
+  s_6bd2349b4ebd4d::t_096f0c41409ba7 1-48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.28-trip",
+  "base_commit_sha": "776680b636c2bdb04244701b4ed950ea8c26e3ae",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
