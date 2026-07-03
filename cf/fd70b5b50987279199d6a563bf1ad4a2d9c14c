@@ -1,0 +1,27 @@
+docs/superpowers/specs/2026-07-03-refund-structure-diagnosis-design.md
+  s_6bd2349b4ebd4d::t_0b52ce2a9a8a5a 105
+  s_6bd2349b4ebd4d::t_f1a4a6cd7ab089 1-6,8-13,16-34,37-66,74-92,95-104,106-115,118-119,121-132
+  s_6bd2349b4ebd4d::t_c451871b6c76b8 14-15
+  s_6bd2349b4ebd4d::t_235998f5b407fa 116-117,120
+  s_6bd2349b4ebd4d::t_58e2f8a29e6bd7 7
+  s_6bd2349b4ebd4d::t_8cb06fdcd5bf32 67-73
+  s_6bd2349b4ebd4d::t_c559bbffab7fee 93-94
+  s_6bd2349b4ebd4d::t_fddc9afa8ac365 35-36
+  s_6bd2349b4ebd4d::t_ab57d348648556 133-135
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.28-trip",
+  "base_commit_sha": "cffd70b5b50987279199d6a563bf1ad4a2d9c14c",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
