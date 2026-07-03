@@ -48,6 +48,11 @@ def run(db_path: Path) -> AnalysisResult:
         if trend_finding is not None:
             findings.append(trend_finding)
             tables["refund_trend"] = trend_rows
+
+        note_finding, note_rows = _note_finding(con, limitations)
+        if note_finding is not None:
+            findings.append(note_finding)
+            tables["high_refund_notes"] = note_rows
     finally:
         con.close()
     return AnalysisResult(
@@ -207,6 +212,104 @@ def _trend_finding(con, limitations: list[str]) -> tuple[Finding | None, list[di
         appendix=str(steps),
     )
     return finding, trend_rows
+
+
+_NOTE_FEATURES = ("composition_type", "scene_hint", "copy_angle")
+
+
+def _note_finding(con, limitations: list[str]) -> tuple[Finding | None, list[dict]]:
+    if not _table_exists(con, "notes"):
+        limitations.append("缺少 notes 表，跳过笔记退款反思。")
+        return None, []
+    cols = _table_columns(con, "notes")
+    if "note_refund_rate_pay" not in cols:
+        limitations.append("notes 缺少 note_refund_rate_pay，跳过笔记退款反思。")
+        return None, []
+    has_features = _table_exists(con, "content_features")
+    if has_features:
+        rows = con.sql(
+            """
+            SELECT n.note_id, n.title, n.note_refund_rate_pay AS rate,
+                   n.note_paid_orders AS paid,
+                   f.composition_type, f.scene_hint, f.copy_angle
+            FROM notes n LEFT JOIN content_features f USING (note_id)
+            WHERE n.note_refund_rate_pay IS NOT NULL
+            """
+        ).fetchall()
+        columns = ["note_id", "title", "rate", "paid",
+                   "composition_type", "scene_hint", "copy_angle"]
+    else:
+        rows = con.sql(
+            """
+            SELECT note_id, title, note_refund_rate_pay AS rate, note_paid_orders AS paid
+            FROM notes WHERE note_refund_rate_pay IS NOT NULL
+            """
+        ).fetchall()
+        columns = ["note_id", "title", "rate", "paid"]
+    records = [dict(zip(columns, r)) for r in rows]
+
+    total_k = sum(_num(r["rate"]) * _num(r["paid"]) for r in records)
+    total_n = sum(_num(r["paid"]) for r in records)
+    baseline = total_k / total_n if total_n else 0.0
+
+    high: list[dict] = []
+    for r in records:
+        paid = _num(r["paid"])
+        rate = _num(r["rate"])
+        k = round(rate * paid)
+        lo, _ = wilson_interval(k, paid)
+        if min_n_guard(paid) and lo > baseline:
+            high.append(
+                {
+                    "note_id": r["note_id"],
+                    "title": r["title"],
+                    "note_refund_rate": rate,
+                    "n": paid,
+                    "composition_type": r.get("composition_type"),
+                    "scene_hint": r.get("scene_hint"),
+                    "copy_angle": r.get("copy_angle"),
+                }
+            )
+
+    top_feature = _top_feature(high, _NOTE_FEATURES) if has_features else None
+    caveats = ["观察性反思，非因果——高退款笔记的共有特征仅供假设生成。"]
+    if not has_features:
+        caveats.append("缺少 content_features，仅列高退款笔记，无法归因特征。")
+    conclusion = (
+        f"共 {len(high)} 篇笔记退款率显著高于基线（{round(baseline * 100)}%）。"
+        + (f" 高退款笔记更多集中在 {top_feature}。" if top_feature else "")
+    )
+    finding = Finding(
+        title="笔记退款反思",
+        conclusion=conclusion,
+        evidence_strength=score_evidence(
+            int(total_n), has_controls=False, confounder_count=1
+        ),
+        key_numbers={
+            "high_refund_note_count": len(high),
+            "baseline_rate": baseline,
+            "top_feature": top_feature,
+        },
+        caveats=caveats,
+        evidence_reason="以 Wilson 下界高于加权基线判定高退款笔记，避免小样本误报。",
+        confounders=["选品差异", "定价", "客群"],
+        next_test="对疑似高退款特征做重拍/A-B 验证后复测退款率。",
+    )
+    return finding, high
+
+
+def _top_feature(cohort: list[dict], feature_keys: tuple[str, ...]) -> str | None:
+    best: tuple[str, str, int] | None = None
+    for key in feature_keys:
+        counts: dict[str, int] = {}
+        for r in cohort:
+            value = r.get(key)
+            if value is not None:
+                counts[value] = counts.get(value, 0) + 1
+        for value, count in counts.items():
+            if best is None or count > best[2]:
+                best = (key, value, count)
+    return f"{best[0]}={best[1]}" if best else None
 
 
 def _layer_zh(layer: str | None) -> str:

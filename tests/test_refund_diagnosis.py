@@ -122,3 +122,75 @@ def test_trend_finding_skipped_without_business_overview(tmp_path):
     result = run_task("refund_structure_diagnosis", db_path)
     assert "退款率时间趋势" not in [f.title for f in result.findings]
     assert any("business_overview_daily" in lim for lim in result.limitations)
+
+
+def _make_notes(con, rows):
+    con.execute(
+        """
+        CREATE TABLE notes (
+          note_id VARCHAR, title VARCHAR,
+          note_refund_rate_pay DOUBLE, note_paid_orders DOUBLE
+        )
+        """
+    )
+    con.executemany("INSERT INTO notes VALUES (?, ?, ?, ?)", rows)
+
+
+def _make_content_features(con, rows):
+    con.execute(
+        """
+        CREATE TABLE content_features (
+          note_id VARCHAR, composition_type VARCHAR,
+          scene_hint VARCHAR, copy_angle VARCHAR
+        )
+        """
+    )
+    con.executemany("INSERT INTO content_features VALUES (?, ?, ?, ?)", rows)
+
+
+def _refund_overview_two(con):
+    _make_refund_overview(
+        con, [("笔记", 10000.0, 2000.0, 3000.0, 5000.0, 100.0, 0.10, 90.0),
+              ("商卡", 8000.0, 1000.0, 2000.0, 5000.0, 80.0, 0.08, 70.0)]
+    )
+
+
+def test_note_finding_flags_high_refund_and_feature(tmp_path):
+    con, db_path = _con(tmp_path)
+    _refund_overview_two(con)
+    # two clearly high-refund notes share composition 'flatlay'; low-refund notes differ
+    _make_notes(
+        con,
+        [
+            ("n1", "高退款A", 0.40, 100.0),
+            ("n2", "高退款B", 0.38, 100.0),
+            ("n3", "低退款C", 0.03, 100.0),
+            ("n4", "低退款D", 0.02, 100.0),
+        ],
+    )
+    _make_content_features(
+        con,
+        [
+            ("n1", "flatlay", "kitchen", "price"),
+            ("n2", "flatlay", "studio", "quality"),
+            ("n3", "closeup", "kitchen", "story"),
+            ("n4", "closeup", "outdoor", "story"),
+        ],
+    )
+    con.close()
+    result = run_task("refund_structure_diagnosis", db_path)
+    finding = next(f for f in result.findings if f.title == "笔记退款反思")
+    assert finding.key_numbers["high_refund_note_count"] >= 1
+    ids = {r["note_id"] for r in result.tables["high_refund_notes"]}
+    assert {"n1", "n2"} <= ids
+
+
+def test_note_finding_degrades_without_content_features(tmp_path):
+    con, db_path = _con(tmp_path)
+    _refund_overview_two(con)
+    _make_notes(con, [("n1", "高退款A", 0.40, 100.0), ("n2", "低退款B", 0.02, 100.0)])
+    con.close()
+    result = run_task("refund_structure_diagnosis", db_path)
+    finding = next(f for f in result.findings if f.title == "笔记退款反思")
+    assert finding.key_numbers["top_feature"] is None
+    assert any("特征" in c for c in finding.caveats)
