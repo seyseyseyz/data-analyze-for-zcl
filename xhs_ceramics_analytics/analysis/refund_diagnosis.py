@@ -7,7 +7,7 @@ from xhs_ceramics_analytics.analytics.confidence import (
     two_proportion,
     wilson_interval,
 )
-from xhs_ceramics_analytics.analytics.trends import direction_label, mom_change
+from xhs_ceramics_analytics.analytics.trends import mom_change, trend_summary
 from xhs_ceramics_analytics.db.duck import connect
 from xhs_ceramics_analytics.evidence import EvidenceStrength, score_evidence
 
@@ -191,19 +191,26 @@ def _trend_finding(con, limitations: list[str]) -> tuple[Finding | None, list[di
         GROUP BY 1 ORDER BY 1
         """
     )
-    trend_rows = [{"period": p, "refund_rate": rate} for p, rate in result.fetchall()]
-    if len(trend_rows) < 2:
+    base_rows = [{"period": p, "refund_rate": rate} for p, rate in result.fetchall()]
+    if len(base_rows) < 2:
         limitations.append("退款率序列不足两期，跳过趋势。")
         return None, []
-    series = [(r["period"], r["refund_rate"]) for r in trend_rows]
+    series = [(r["period"], r["refund_rate"]) for r in base_rows]
+    # Per-period deltas belong in the table columns, not a stringified appendix.
     steps = mom_change(series)
-    overall_delta = series[-1][1] - series[0][1]
-    direction = direction_label(overall_delta)
+    trend_rows = [
+        {"period": s["period"], "refund_rate": s["value"], "delta": s["delta"],
+         "pct": s["pct"], "direction": s["direction"]}
+        for s in steps
+    ]
+    # Direction from OLS slope over all periods — a noisy endpoint can't flip it.
+    summary = trend_summary(series)
+    direction = summary["direction"]
     finding = Finding(
         title="退款率时间趋势",
         conclusion=(
-            f"退款率从 {round(series[0][1] * 100)}% {direction}到 "
-            f"{round(series[-1][1] * 100)}%（{len(series)} 期）。"
+            f"退款率整体呈{direction}趋势（{len(series)} 期，"
+            f"起 {round(series[0][1] * 100)}% 止 {round(series[-1][1] * 100)}%）。"
         ),
         evidence_strength=score_evidence(len(series), has_controls=False, confounder_count=1),
         key_numbers={
@@ -211,10 +218,13 @@ def _trend_finding(con, limitations: list[str]) -> tuple[Finding | None, list[di
             "first_rate": series[0][1],
             "last_rate": series[-1][1],
         },
-        caveats=["观察性趋势，非因果；仅报告方向与幅度，未做显著性检验。"],
-        evidence_reason="逐期退款率走势，观察性描述。",
+        caveats=[
+            "观察性趋势，非因果；方向按最小二乘斜率判定（非首末两点），未做显著性检验。",
+            "日度退款率波动较大，逐期环比见退款趋势表。",
+        ],
+        evidence_reason="逐期退款率走势，方向用最小二乘斜率，观察性描述。",
         confounders=["促销周期", "季节性"],
-        appendix=str(steps),
+        appendix="趋势方向用最小二乘斜率；逐期环比（delta/pct）见 refund_trend 表。",
     )
     return finding, trend_rows
 
