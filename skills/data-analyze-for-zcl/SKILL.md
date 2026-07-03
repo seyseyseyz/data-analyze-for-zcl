@@ -21,13 +21,13 @@ Use this skill when the user provides Xiaohongshu (小红书 / 千帆) exported 
 
 5. **Build** — run `scripts/xhs-ca build <files...>`. If header-mapping fails, read `assets/xhs-ca/references/xhs_glossary.md` and `assets/xhs-ca/references/data_contract/_index.md`, then negotiate unmapped columns with the user before retrying. After the build, follow the **字段映射自愈** section below to resolve any `mapping_diagnostics` rows before analysis.
 
-6. **Data quality** — always run `xhs-ca run data_quality_check` first. If paid-traffic data was provided, also run `ad_data_quality_check`. Surface any empty tables or missing required columns before proceeding to analysis tasks.
+6. **Data quality (inspect, then fold in)** — run `xhs-ca run data_quality_check` on its own once to inspect the export and drive the **字段映射自愈** gate below; if paid-traffic data was provided, also inspect `ad_data_quality_check`. Resolve empty tables / missing columns *before* building the final report. Do NOT deliver this inspection run as a separate artifact — `data_quality_check` becomes the **first slug** of the single integrated report in step 7, so its findings ship as the report's opening section.
 
-7. **Run selected task(s)** — execute `scripts/xhs-ca run <slug>` for each confirmed task. Built-in tasks write both `<slug>.md` and `<slug>.html` under `.xhs-ceramics-analytics/outputs/`. Before summarizing each report, read the matching `assets/xhs-ca/task_templates/<slug>.md` and `assets/xhs-ca/references/cheatsheet.md` for metric definitions, evidence rules, and report structure.
+7. **Run selected task(s) — ONE integrated report, exactly TWO artifacts** — pass `data_quality_check` followed by every confirmed analysis slug to a **single** `scripts/xhs-ca run data_quality_check <slug1> <slug2> … --name <表意名称>` invocation. This composes ONE integrated report (executive summary + a data-quality section + one section per module) written as exactly two files — `<name>.md` + `<name>.html` — under `.xhs-ceramics-analytics/outputs/`. Always pass a meaningful `--name` (e.g. `--name 千帆经营诊断报告`); without it the combined default is `经营诊断报告`. Do NOT run one slug at a time — that fragments the deliverable into a file per task, which is exactly what to avoid. Before summarizing, read each module's `assets/xhs-ca/task_templates/<slug>.md` and `assets/xhs-ca/references/cheatsheet.md` for metric definitions, evidence rules, and report structure.
 
-8. **Custom integrated reports** — if you create any report outside the built-in task registry (for example a 千帆经营诊断 that combines non-standard sheets such as 经营总览、退款、搜索、店铺漏斗), write the Markdown report first, then immediately run `scripts/xhs-ca render-html <report.md>` or `scripts/xhs-ca render-html <report.md> --output <report.html>`. Keep any Excel/CSV companion tables, but they do not replace the HTML report.
+8. **Custom integrated reports** — only when you need a report outside the built-in task registry (non-standard sheets a task does not cover): write the Markdown report first, then immediately run `scripts/xhs-ca render-html <report.md>` or `scripts/xhs-ca render-html <report.md> --output <report.html>`. For any combination of built-in tasks, prefer the single multi-slug `run` in step 7 over hand-authoring. Keep any Excel/CSV companion tables, but they do not replace the HTML report.
 
-9. **Delivery verification (REQUIRED)** — before the final response, verify every delivered Markdown report has a matching single-file HTML report. For built-in tasks, check the generated `<slug>.html`; for custom integrated reports, check the `render-html` output. If HTML rendering fails, keep the Markdown report, report the error path/message, and do not imply HTML was delivered.
+9. **Delivery verification (REQUIRED)** — the user must receive exactly TWO artifacts: the integrated `<name>.md` and its matching single-file `<name>.html`. Before the final response, confirm both exist under `.xhs-ceramics-analytics/outputs/` and that no stray per-slug `data_quality_check.md`/`.html` were delivered. If HTML rendering fails, keep the Markdown report, report the error path/message, and do not imply HTML was delivered.
 
 10. **Summarize** — present findings with: evidence tier (Strong/Medium/Weak/Not-judgable), key numbers, caveats verbatim from the report, next-data-needed, recommended action, and the Markdown + HTML file paths. NEVER claim deterministic note-to-order attribution.
 
@@ -63,14 +63,21 @@ The build never rejects a file for a drifted Chinese header — it degrades and 
 # Build with comments only
 <skill-dir>/scripts/xhs-ca build comments.xlsx
 
-# Run a single analysis task
+# Run a single analysis task (writes note_funnel.md + note_funnel.html)
 <skill-dir>/scripts/xhs-ca run note_funnel
+
+# THE STANDARD DELIVERABLE — data quality folded in, exactly TWO files with an
+# expressive name (千帆经营诊断报告.md + 千帆经营诊断报告.html)
+<skill-dir>/scripts/xhs-ca run data_quality_check core_business_diagnosis search_efficiency_diagnosis audience_structure_diagnosis --name 千帆经营诊断报告
+
+# Combined run without --name falls back to 经营诊断报告.md + 经营诊断报告.html
+<skill-dir>/scripts/xhs-ca run data_quality_check core_business_diagnosis search_efficiency_diagnosis
+
+# Inspect data quality on its own during the 字段映射自愈 gate (not a deliverable)
+<skill-dir>/scripts/xhs-ca run data_quality_check
 
 # Run paid traffic analysis
 <skill-dir>/scripts/xhs-ca run paid_traffic_efficiency
-
-# Run data quality check
-<skill-dir>/scripts/xhs-ca run data_quality_check
 
 # Run full report suite (only when user requests complete review)
 <skill-dir>/scripts/xhs-ca run all

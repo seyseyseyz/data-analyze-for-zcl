@@ -85,14 +85,30 @@ def render_html_command(
 
 @app.command()
 def run(
-    task: Annotated[
-        str,
-        typer.Argument(help="Task id to run, or 'all' for the full report menu."),
-    ] = "weekly_business_review",
+    tasks: Annotated[
+        list[str] | None,
+        typer.Argument(
+            help=(
+                "One or more task ids, or 'all' for the full menu. Passing several "
+                "ids composes ONE integrated report instead of a file per task."
+            )
+        ),
+    ] = None,
     db: Annotated[Path | None, typer.Option(help="Override DuckDB file path.")] = None,
     project_root: Annotated[
         Path | None,
         typer.Option(help="Override local state/output root."),
+    ] = None,
+    name: Annotated[
+        str | None,
+        typer.Option(
+            "--name",
+            "-n",
+            help=(
+                "Output basename for the report. Defaults to the single slug, "
+                "or '经营诊断报告' when several modules are combined."
+            ),
+        ),
     ] = None,
 ) -> None:
     from xhs_ceramics_analytics.analysis.registry import TASKS, run_task
@@ -100,13 +116,21 @@ def run(
     from xhs_ceramics_analytics.reporting.markdown import render_markdown
 
     db_path = db or state_dir(project_root) / "analytics.duckdb"
-    if task == "all":
-        results = [run_task(task_id, db_path) for task_id in TASKS]
+    requested = list(tasks) if tasks else ["weekly_business_review"]
+    if requested == ["all"]:
+        task_ids = list(TASKS)
+        basename = name or "all"
     else:
-        results = [run_task(task, db_path)]
+        unknown = [task_id for task_id in requested if task_id not in TASKS]
+        if unknown:
+            raise typer.BadParameter(f"unknown task(s): {', '.join(unknown)}")
+        task_ids = requested
+        basename = name or (requested[0] if len(requested) == 1 else "经营诊断报告")
+
+    results = [run_task(task_id, db_path) for task_id in task_ids]
     output_dir = outputs_dir(project_root)
-    markdown_out = output_dir / f"{task}.md"
-    html_out = output_dir / f"{task}.html"
+    markdown_out = output_dir / f"{basename}.md"
+    html_out = output_dir / f"{basename}.html"
     errors_out = output_dir / "render_errors.txt"
     markdown_out.write_text(render_markdown(results), encoding="utf-8")
     typer.echo(f"Wrote report: {markdown_out}")
@@ -116,7 +140,7 @@ def run(
         html_out.write_text(render_html(results), encoding="utf-8")
     except Exception as exc:
         errors_out.write_text(
-            f"HTML rendering failed for task {task}: {exc}\n",
+            f"HTML rendering failed for report {basename}: {exc}\n",
             encoding="utf-8",
         )
         typer.echo(
