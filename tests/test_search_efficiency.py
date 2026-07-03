@@ -186,6 +186,31 @@ def test_search_terms_classify_opportunity_and_leak(tmp_path):
     assert finding.next_test
 
 
+def test_leak_split_click_vs_conversion(tmp_path):
+    con, db_path = _con(tmp_path)
+    _make_search_overview_min(con, _MULTI_ROWS)
+    _make_search_terms(
+        con,
+        [
+            # low click-through, healthy conversion → click leak
+            ("click_bad", 1000.0, 0.05, 0.5),
+            # healthy click-through, poor conversion → conversion leak
+            ("conv_bad", 1000.0, 0.5, 0.02),
+            # strong on both → opportunity, lifts the baseline
+            ("good", 1000.0, 0.5, 0.5),
+        ],
+    )
+    con.close()
+    result = run_task(SLUG, db_path)
+    finding = next(f for f in result.findings if f.title == "高机会/高流失搜索词")
+    rows = {r["search_term"]: r for r in result.tables["search_term_opportunities"]}
+    assert rows["click_bad"]["leak_type"] == "click_leak"
+    assert rows["conv_bad"]["leak_type"] == "conversion_leak"
+    assert finding.key_numbers["click_leak_count"] >= 1
+    assert finding.key_numbers["conversion_leak_count"] >= 1
+    assert finding.key_numbers["click_baseline"] is not None
+
+
 def test_search_terms_absent_degrades(tmp_path):
     con, db_path = _con(tmp_path)
     _make_search_overview_min(con, _MULTI_ROWS)

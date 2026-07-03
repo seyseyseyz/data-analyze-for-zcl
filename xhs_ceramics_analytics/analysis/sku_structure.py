@@ -10,6 +10,11 @@ from pathlib import Path
 
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.analytics.confidence import bounded_rate
+from xhs_ceramics_analytics.analytics.multiplicity import (
+    benjamini_hochberg,
+    expected_false_positives,
+    one_sided_binomial_p,
+)
 from xhs_ceramics_analytics.db.duck import connect
 from xhs_ceramics_analytics.evidence import EvidenceStrength, score_evidence
 
@@ -200,9 +205,13 @@ def _refund_finding(
         if rate is None or baseline is None:
             continue
         if rate > baseline and orders >= _MIN_ORDERS_GUARD:
+            refund_orders = (
+                _num(r.get("refund_orders_pay")) if has_refund_orders else rate * orders
+            )
             row = {
                 "sku_name": r.get("sku_name") if has_name else r.get("sku_id"),
                 "paid_orders": orders,
+                "refund_orders_pay": refund_orders,
                 "refund_rate_pay": rate,
             }
             if has_pre:
@@ -210,11 +219,26 @@ def _refund_finding(
             if has_post:
                 row["post_ship_refund_rate_pay"] = bounded_rate(r.get("post_ship_refund_rate_pay"))
             outliers.append(row)
+
+    # Thousands of SKUs are scanned for "rate > baseline"; without control, many
+    # clear the bar by chance. Benjamini-Hochberg over one-sided binomial p-values
+    # caps the expected false-discovery rate among the flagged SKUs.
+    pvals = [
+        one_sided_binomial_p(r["refund_orders_pay"], r["paid_orders"], baseline)
+        for r in outliers
+    ]
+    survived = benjamini_hochberg(pvals, alpha=0.05)
+    for r, p, s in zip(outliers, pvals, survived):
+        r["p_value"] = p
+        r["fdr_significant"] = bool(s)
+    fdr_survivors = sum(1 for s in survived if s)
+    exp_false_positives = expected_false_positives(len(outliers), 0.05)
     outliers.sort(key=lambda r: r["refund_rate_pay"], reverse=True)
 
     conclusion = (
         f"整体退款率基线约 {round((baseline or 0) * 100, 1)}%，"
-        f"识别出 {len(outliers)} 个高退款 SKU（退款率高于基线且支付订单数 ≥{_MIN_ORDERS_GUARD}）。"
+        f"识别出 {len(outliers)} 个高退款 SKU（退款率高于基线且支付订单数 ≥{_MIN_ORDERS_GUARD}），"
+        f"其中 {fdr_survivors} 个经 BH-FDR 5% 显著（预计假阳性约 {round(exp_false_positives, 1)} 个）。"
     )
 
     finding = Finding(
@@ -224,10 +248,18 @@ def _refund_finding(
         key_numbers={
             "baseline_refund_rate": baseline,
             "high_refund_sku_count": len(outliers),
+            "fdr_survivors": fdr_survivors,
+            "expected_false_positives": exp_false_positives,
         },
-        caveats=["观察性诊断，非因果——退款率差异可能由品类、发货时效与售后政策共同驱动。"],
+        caveats=[
+            "观察性诊断，非因果——退款率差异可能由品类、发货时效与售后政策共同驱动。",
+            "多重比较用 Benjamini-Hochberg FDR 控制假阳性；缺退款单列时退款单以率×成交单估计。",
+        ],
         recommended_action=_LEVER_REFUND,
-        evidence_reason="退款基线用真实 paid_orders 加权聚合，高退款 SKU 为观察性对比基线的筛选。",
+        evidence_reason=(
+            "退款基线用真实 paid_orders 加权聚合；高退款 SKU 先经基线筛选，"
+            "再以单侧二项 p 值 + BH-FDR 控制多重比较假阳性。"
+        ),
         confounders=list(_CONFOUNDERS),
     )
     return finding, outliers

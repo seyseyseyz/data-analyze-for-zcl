@@ -6,11 +6,15 @@ Every finding is gated on real columns via ``_table_columns`` (read_csv_auto
 builds may omit any of them) and every division is guarded.
 """
 import math
-import statistics
 from pathlib import Path
 
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
-from xhs_ceramics_analytics.analytics.confidence import bounded_rate
+from xhs_ceramics_analytics.analytics.confidence import bounded_rate, wilson_interval
+from xhs_ceramics_analytics.analytics.multiplicity import (
+    benjamini_hochberg,
+    expected_false_positives,
+    one_sided_binomial_p,
+)
 from xhs_ceramics_analytics.db.duck import connect
 from xhs_ceramics_analytics.evidence import EvidenceStrength, score_evidence
 
@@ -193,17 +197,34 @@ def _conversion_finding(con, limitations: list[str]) -> tuple[Finding | None, li
         limitations.append("notes 无有效 reads/成交数据，跳过转化效率分布。")
         return None, []
 
-    median_conv = statistics.median(r["conversion"] for r in valid)
+    # Note conversion is zero-inflated (most notes never convert), so the median
+    # is 0 and any "below median" rule is degenerate. Disclose the converting
+    # share and judge low performers against a positive, traffic-weighted baseline.
+    notes_with_reads = [r for r in records if r["reads"] > 0]
+    notes_with_orders = sum(1 for r in records if r["paid"] > 0)
+    converting_share = (
+        notes_with_orders / len(notes_with_reads) if notes_with_reads else None
+    )
+    total_reads = sum(r["reads"] for r in records)
+    total_paid = sum(r["paid"] for r in records)
+    baseline = (total_paid / total_reads) if total_reads > 0 else None
 
     quartile_n = max(1, math.ceil(len(records) * 0.25))
     top_reads_idx = sorted(
         range(len(records)), key=lambda i: records[i]["reads"], reverse=True
     )[:quartile_n]
-    high_traffic_low_conv = [
-        records[i]
-        for i in top_reads_idx
-        if records[i]["conversion"] is not None and records[i]["conversion"] < median_conv
-    ]
+    # High-traffic-low-conversion: among the top-read quartile, keep only notes
+    # whose Wilson upper bound is confidently below the baseline (guards against
+    # small-sample false alarms — a low-read note has a wide CI and won't flag).
+    high_traffic_low_conv = []
+    if baseline is not None:
+        for i in top_reads_idx:
+            r = records[i]
+            if r["reads"] <= 0:
+                continue
+            _, hi = wilson_interval(r["paid"], r["reads"])
+            if hi is not None and hi < baseline:
+                high_traffic_low_conv.append(r)
     top_converters = sorted(valid, key=lambda r: r["conversion"], reverse=True)[:10]
 
     outlier_rows: list[dict] = []
@@ -217,20 +238,32 @@ def _conversion_finding(con, limitations: list[str]) -> tuple[Finding | None, li
         outlier_rows.append({**r, "outlier_type": "top_converter"})
 
     conclusion = (
-        f"笔记转化中位数 {round(median_conv * 100, 2)}%；"
-        f"{len(high_traffic_low_conv)} 篇高曝光低转化笔记（阅读前 25% 分位但转化低于中位数）。"
+        f"仅 {round((converting_share or 0) * 100)}% 有阅读笔记产生成交"
+        f"（{notes_with_orders}/{len(notes_with_reads)}）；"
+        f"整体转化基线 {round((baseline or 0) * 100, 2)}%；"
+        f"{len(high_traffic_low_conv)} 篇高曝光低转化笔记（阅读前 25% 且转化 Wilson 上界低于基线）。"
     )
     finding = Finding(
         title="转化效率分布",
         conclusion=conclusion,
         evidence_strength=score_evidence(len(valid), has_controls=False, confounder_count=1),
         key_numbers={
-            "median_conversion": median_conv,
+            "notes_with_orders": notes_with_orders,
+            "notes_with_reads": len(notes_with_reads),
+            "converting_share": converting_share,
+            "baseline_conversion": baseline,
             "high_traffic_low_conv_count": len(high_traffic_low_conv),
         },
-        caveats=[_OBS_CAVEAT, "转化=成交/阅读（bounded_rate 归一），高曝光低转化以阅读前25%分位判定。"],
+        caveats=[
+            _OBS_CAVEAT,
+            "笔记转化零膨胀（多数笔记无成交，中位数=0），故以正基线 Σ成交/Σ阅读 为判据。",
+            "高曝光低转化=阅读前25%分位且转化率 Wilson 上界低于整体基线（守卫小样本）。",
+        ],
         recommended_action=_LEVER_CONV if high_traffic_low_conv else None,
-        evidence_reason="转化率=成交/阅读；高曝光低转化=阅读前25%分位且转化低于全量中位数。",
+        evidence_reason=(
+            "转化率=成交/阅读；基线=Σ成交/Σ阅读（加权正基线，规避零膨胀中位数）；"
+            "高曝光低转化以阅读前25%分位 + Wilson 上界<基线判定。"
+        ),
         confounders=list(_CONFOUNDERS),
     )
     return finding, outlier_rows
@@ -272,20 +305,41 @@ def _refund_finding(con, limitations: list[str]) -> tuple[Finding | None, list[d
         if rate is None:
             continue
         if paid_orders >= _MIN_PAID_ORDERS_FOR_REFUND_FLAG and rate > baseline:
+            refund_orders = (
+                _num(r.get("note_refund_orders_pay"))
+                if has_refund_orders
+                else rate * paid_orders
+            )
             high_refund_rows.append(
                 {
                     "note_id": _label(r, has_id, has_title),
                     "note_paid_orders": paid_orders,
+                    "note_refund_orders_pay": refund_orders,
                     "note_refund_rate_pay": rate,
                     "baseline_refund_rate": baseline,
                 }
             )
+
+    # Scanning many notes for "rate > baseline" inflates false positives. Control
+    # the family-wise false-discovery rate with Benjamini-Hochberg over one-sided
+    # binomial p-values; only FDR survivors are treated as genuine outliers.
+    pvals = [
+        one_sided_binomial_p(r["note_refund_orders_pay"], r["note_paid_orders"], baseline)
+        for r in high_refund_rows
+    ]
+    survived = benjamini_hochberg(pvals, alpha=0.05)
+    for r, p, s in zip(high_refund_rows, pvals, survived):
+        r["p_value"] = p
+        r["fdr_significant"] = bool(s)
+    fdr_survivors = sum(1 for s in survived if s)
+    exp_false_positives = expected_false_positives(len(high_refund_rows), 0.05)
     high_refund_rows.sort(key=lambda r: r["note_refund_rate_pay"], reverse=True)
 
     conclusion = (
         f"笔记退款基线 {round(baseline * 100, 2)}%；"
         f"{len(high_refund_rows)} 篇笔记退款率高于基线（成交 ≥ "
-        f"{_MIN_PAID_ORDERS_FOR_REFUND_FLAG} 单守卫小样本）。"
+        f"{_MIN_PAID_ORDERS_FOR_REFUND_FLAG} 单守卫小样本），"
+        f"其中 {fdr_survivors} 篇经 BH-FDR 5% 显著（预计假阳性约 {round(exp_false_positives, 1)} 个）。"
     )
     finding = Finding(
         title="笔记级退款异常",
@@ -296,15 +350,18 @@ def _refund_finding(con, limitations: list[str]) -> tuple[Finding | None, list[d
         key_numbers={
             "baseline_refund_rate": baseline,
             "high_refund_note_count": len(high_refund_rows),
+            "fdr_survivors": fdr_survivors,
+            "expected_false_positives": exp_false_positives,
         },
         caveats=[
             _OBS_CAVEAT,
             "退款率异常可能由品类/尺码/物流等因素驱动，需人工复核高退款笔记的商品与描述一致性。",
+            "多重比较用 Benjamini-Hochberg FDR 控制假阳性；缺退款单列时退款单以率×成交单估计。",
         ],
         recommended_action=_LEVER_REFUND if high_refund_rows else None,
         evidence_reason=(
             "基线退款率=Σ退款单/Σ成交单（缺退款单列时按成交单加权均值兜底）；"
-            "异常笔记以成交≥10单守卫小样本后与基线比较。"
+            "异常笔记以成交≥10单守卫小样本后与基线比较，再经 BH-FDR 控制多重比较假阳性。"
         ),
         confounders=list(_CONFOUNDERS),
     )

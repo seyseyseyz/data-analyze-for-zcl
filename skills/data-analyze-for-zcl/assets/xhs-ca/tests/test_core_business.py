@@ -180,6 +180,41 @@ def test_empty_business_overview_does_not_raise(tmp_path):
     assert result.findings[0].key_numbers.get("total_gmv") in (0.0, None)
 
 
+def _make_business_dated(con, rows):
+    """business_overview_daily with ISO date strings → exercises timeseries decomp."""
+    con.execute(
+        """
+        CREATE TABLE business_overview_daily (
+          date VARCHAR, gmv DOUBLE, paid_orders DOUBLE, paid_buyers DOUBLE, aov DOUBLE
+        )
+        """
+    )
+    con.executemany("INSERT INTO business_overview_daily VALUES (?,?,?,?,?)", rows)
+
+
+def test_gmv_trend_decomposition_reports_structure(tmp_path):
+    con, db_path = _con(tmp_path)
+    # 14 consecutive days: a clear level shift after the first week so the
+    # changepoint lands inside the second week (D3 timeseries decomposition).
+    rows = []
+    for day in range(1, 15):
+        gmv = 5000.0 if day <= 7 else 15000.0
+        rows.append((f"2026-04-{day:02d}", gmv, gmv / 50, gmv / 55, 55.0))
+    _make_business_dated(con, rows)
+    con.close()
+    result = run_task("core_business_diagnosis", db_path)
+    snap = result.findings[0]
+    kn = snap.key_numbers
+    # changepoint sits at the start of the high week (2026-04-08)
+    assert kn["changepoint_date"] == "2026-04-08"
+    assert kn["peak_dow"] is not None  # a weekday label parsed from real dates
+    assert kn["wow_last_pct"] is not None  # week-over-week bucket produced a delta
+    # trend table flags exactly the changepoint row
+    flagged = [r for r in result.tables["business_trend"] if r.get("is_changepoint")]
+    assert len(flagged) == 1 and flagged[0]["date"] == "2026-04-08"
+    assert "结构性变化" in snap.conclusion
+
+
 def test_channel_share_only_without_paid_buyers(tmp_path):
     con, db_path = _con(tmp_path)
     _make_business_full(con, _FULL_ROWS)

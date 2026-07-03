@@ -5,6 +5,7 @@ from xhs_ceramics_analytics.analysis import (
     account_baseline,
     ad_quality,
     audience_structure,
+    channel_structure_diagnosis,
     comment_demand,
     copy_effect,
     core_business,
@@ -19,6 +20,7 @@ from xhs_ceramics_analytics.analysis import (
     product_interaction,
     product_opportunity,
     refund_diagnosis,
+    refund_root_cause_diagnosis,
     response_curve,
     reshoot,
     search_efficiency,
@@ -53,6 +55,8 @@ TASKS: dict[str, Callable[[Path], AnalysisResult]] = {
     "audience_structure_diagnosis": audience_structure.run,
     "note_commercial_diagnosis": note_commercial.run,
     "sku_structure_diagnosis": sku_structure.run,
+    "channel_structure_diagnosis": channel_structure_diagnosis.run,
+    "refund_root_cause_diagnosis": refund_root_cause_diagnosis.run,
 }
 
 

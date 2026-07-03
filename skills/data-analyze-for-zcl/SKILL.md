@@ -75,7 +75,7 @@ The build never rejects a file for a drifted Chinese header — it degrades and 
 
 # Same deliverable, explicitly curated. Argument order is free: the compositor
 # always sinks data_quality_check to the end.
-<skill-dir>/scripts/xhs-ca run core_business_diagnosis search_efficiency_diagnosis audience_structure_diagnosis note_commercial_diagnosis sku_structure_diagnosis data_quality_check --name 千帆经营诊断报告
+<skill-dir>/scripts/xhs-ca run core_business_diagnosis search_efficiency_diagnosis channel_structure_diagnosis audience_structure_diagnosis refund_root_cause_diagnosis note_commercial_diagnosis sku_structure_diagnosis data_quality_check --name 千帆经营诊断报告
 
 # Combined run without --name falls back to 经营诊断报告.md + 经营诊断报告.html
 <skill-dir>/scripts/xhs-ca run core_business_diagnosis search_efficiency_diagnosis data_quality_check

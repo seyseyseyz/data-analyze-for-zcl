@@ -114,6 +114,38 @@ def test_full_sku_rows_produce_weak_findings(tmp_path):
     assert ("高退款 SKU 识别" in other_titles) or ("加购转化与客单价结构" in other_titles)
 
 
+# ---- Refund outlier FDR control (D2) ----------------------------------------
+
+
+def _sku(i, orders, rate, refund_orders):
+    return (
+        f"sku_{i}", f"name_{i}", "p", "prod", False, "杯具", "马克杯", "brand",
+        100.0, 5000.0, orders, orders, orders, 100.0,
+        rate, refund_orders, 0.0, 0.0, 4500.0,
+    )
+
+
+def test_refund_fdr_flags_only_strong_outliers(tmp_path):
+    con, db_path = _con(tmp_path)
+    rows = [_sku(i, 100.0, 0.10, 10.0) for i in range(10)]  # baseline drivers
+    rows.append(_sku(100, 200.0, 0.50, 100.0))  # genuinely high refund
+    rows.append(_sku(101, 15.0, 0.20, 3.0))     # borderline, tiny sample
+    _make_full_table(con, rows)
+    con.close()
+
+    result = run(db_path)
+    refund = next(f for f in result.findings if f.title == "高退款 SKU 识别")
+    kn = refund.key_numbers
+    assert "fdr_survivors" in kn
+    assert "expected_false_positives" in kn
+    outliers = result.tables["sku_refund_outliers"]
+    strong = next(r for r in outliers if r["sku_name"] == "name_100")
+    assert strong["fdr_significant"] is True
+    borderline = next(r for r in outliers if r["sku_name"] == "name_101")
+    assert borderline["fdr_significant"] is False
+    assert kn["fdr_survivors"] == 1
+
+
 # ---- Partial columns gate out refund/conversion findings ---------------------
 
 

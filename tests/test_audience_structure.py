@@ -145,6 +145,57 @@ def test_single_audience_group_falls_back(tmp_path):
     assert "diff" not in finding.key_numbers or finding.key_numbers.get("diff") is None
 
 
+# ---- Rollup + overlapping-window regression (A1) --------------------------
+
+
+def test_rollup_and_windows_not_double_counted(tmp_path):
+    # Mirrors real shop_page_funnel: a 全部/全部 rollup plus nested 180/365 windows.
+    con, db_path = _con(tmp_path)
+    _make_funnel_full(
+        con,
+        [
+            ("2026-06-01", "新客", "365天", 400.0, 20.0, 0.0, 0.0, 0.0, 0.0),
+            ("2026-06-01", "新客", "180天", 410.0, 21.0, 0.0, 0.0, 0.0, 0.0),
+            ("2026-06-01", "老客", "365天", 130.0, 15.0, 0.0, 0.0, 0.0, 0.0),
+            ("2026-06-01", "老客", "180天", 118.0, 14.0, 0.0, 0.0, 0.0, 0.0),
+            ("2026-06-01", "全部", "全部", 530.0, 35.0, 0.0, 0.0, 0.0, 0.0),
+        ],
+    )
+    con.close()
+    result = run_task(TASK, db_path)
+    finding = next(f for f in result.findings if f.title == "人群转化对比")
+    comp = result.tables["audience_conversion_comparison"]
+    by_type = {r["audience_type"]: r for r in comp}
+    # The 全部 rollup must not appear as a comparison group.
+    assert set(by_type) == {"新客", "老客"}
+    # Canonical window is 365天 — 新客 visitors == single window, not 400+410.
+    assert by_type["新客"]["visitors"] == 400.0
+    assert by_type["老客"]["visitors"] == 130.0
+    # Overall conversion uses the platform 全部 rollup (35/530), not a summed total.
+    assert abs(finding.key_numbers["overall_conversion"] - 35.0 / 530.0) < 1e-9
+
+
+def test_retention_metrics_present_and_directional(tmp_path):
+    con, db_path = _con(tmp_path)
+    _make_funnel_full(
+        con,
+        [
+            ("2026-06-01", "新客", "365天", 400.0, 20.0, 0.0, 0.0, 0.0, 0.0),
+            ("2026-06-01", "老客", "365天", 130.0, 15.0, 0.0, 0.0, 0.0, 0.0),
+            ("2026-06-01", "全部", "全部", 530.0, 35.0, 0.0, 0.0, 0.0, 0.0),
+        ],
+    )
+    con.close()
+    result = run_task(TASK, db_path)
+    finding = next(f for f in result.findings if f.title == "人群转化对比")
+    kn = finding.key_numbers
+    # New customers: 20 of 35 payers.
+    assert abs(kn["new_customer_dependence"] - 20.0 / 35.0) < 1e-9
+    # Old converts better (15/130 > 20/400) → premium positive.
+    assert kn["repeat_conversion_premium"] > 0
+    assert "新客贡献付费" in finding.conclusion
+
+
 # ---- Finding 2 first purchase cycle ---------------------------------------
 
 

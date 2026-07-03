@@ -91,6 +91,69 @@ def test_full_notes_produce_weak_findings(tmp_path):
     assert {"转化效率分布", "笔记级退款异常"} & other_titles
 
 
+# ---- Conversion zero-inflation regression (A2) ------------------------------
+
+
+def test_conversion_zero_inflation_uses_positive_baseline(tmp_path):
+    con, db_path = _con(tmp_path)
+    rows = []
+    # 3 star converters (10% conversion).
+    for i in range(3):
+        rows.append((f"s{i}", f"star{i}", "种草", "碗", 1000.0, 5000.0, 100.0, 100.0, 0.0, 0.0))
+    # 1 high-traffic low-conversion note (0.1% on 100k reads → confidently low).
+    rows.append(("low", "低转化", "种草", "碗", 100000.0, 2000.0, 100.0, 100.0, 0.0, 0.0))
+    # 6 zero-conversion notes that still drew reads (the zero-inflation mass).
+    for i in range(6):
+        rows.append((f"z{i}", f"zero{i}", "种草", "碗", 500.0, 0.0, 0.0, 0.0, 0.0, 0.0))
+    _make_notes_full(con, rows)
+    con.close()
+    result = run(db_path)
+
+    conv = next(f for f in result.findings if f.title == "转化效率分布")
+    kn = conv.key_numbers
+    assert kn["notes_with_orders"] == 4
+    assert kn["notes_with_reads"] == 10
+    assert abs(kn["converting_share"] - 0.4) < 1e-9
+    # Baseline is the positive traffic-weighted rate, never the zero median.
+    assert kn["baseline_conversion"] is not None and kn["baseline_conversion"] > 0
+    # The high-traffic-low-conversion rule now actually fires (was always 0).
+    assert kn["high_traffic_low_conv_count"] == 1
+    outliers = result.tables["note_conversion_outliers"]
+    assert any(
+        r["note_id"] == "low" and r["outlier_type"] == "high_traffic_low_conv"
+        for r in outliers
+    )
+    assert "仅" in conv.conclusion
+
+
+def test_refund_fdr_flags_only_strong_outliers(tmp_path):
+    con, db_path = _con(tmp_path)
+    rows = []
+    # 10 baseline notes at 10% refund.
+    for i in range(10):
+        rows.append((f"b{i}", f"base{i}", "种草", "碗", 1000.0, 5000.0, 100.0, 100.0, 0.10, 10.0))
+    # One genuinely high-refund note: 50% on 200 orders → strongly significant.
+    rows.append(("hot", "高退款", "种草", "碗", 2000.0, 8000.0, 200.0, 200.0, 0.50, 100.0))
+    # One borderline note just above baseline on a tiny sample → not significant.
+    rows.append(("bl", "临界", "种草", "碗", 200.0, 400.0, 10.0, 10.0, 0.20, 2.0))
+    _make_notes_full(con, rows)
+    con.close()
+    result = run(db_path)
+
+    refund = next(f for f in result.findings if f.title == "笔记级退款异常")
+    kn = refund.key_numbers
+    assert "fdr_survivors" in kn
+    assert "expected_false_positives" in kn
+    assert kn["fdr_survivors"] <= kn["high_refund_note_count"]
+    outliers = result.tables["note_refund_outliers"]
+    hot = next(r for r in outliers if r["note_id"] == "hot")
+    assert hot["fdr_significant"] is True
+    assert kn["fdr_survivors"] >= 1
+    # BH excludes the borderline tiny-sample note.
+    bl = next(r for r in outliers if r["note_id"] == "bl")
+    assert bl["fdr_significant"] is False
+
+
 # ---- Partial columns skip gated findings ------------------------------------
 
 

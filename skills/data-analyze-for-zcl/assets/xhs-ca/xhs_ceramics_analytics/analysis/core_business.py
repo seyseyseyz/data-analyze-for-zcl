@@ -16,6 +16,11 @@ from xhs_ceramics_analytics.analytics.confidence import (
     two_proportion,
     wilson_interval,
 )
+from xhs_ceramics_analytics.analytics.timeseries import (
+    changepoint,
+    dow_seasonality,
+    week_over_week,
+)
 from xhs_ceramics_analytics.analytics.trends import direction_label, mom_change
 from xhs_ceramics_analytics.db.duck import connect
 from xhs_ceramics_analytics.evidence import EvidenceStrength, score_evidence
@@ -95,14 +100,16 @@ def _snapshot_finding(
     aov, aov_source = _aov(cols, rows, total_gmv, total_buyers)
     pay_conv, conv_source = _pay_conversion(cols, rows, total_buyers)
 
-    trend_rows, direction, steps = _gmv_trend(cols, rows, limitations)
+    trend_rows, direction, steps, decomp = _gmv_trend(cols, rows, limitations)
 
     for missing in ("gmv", "paid_buyers"):
         if missing not in cols:
             limitations.append(f"business_overview_daily 缺少 {missing}，快照用现有列估计。")
 
     sample_size = int(total_orders or total_buyers or len(rows))
-    conclusion = _snapshot_conclusion(total_gmv, total_buyers, aov, pay_conv, direction)
+    conclusion = _snapshot_conclusion(
+        total_gmv, total_buyers, aov, pay_conv, direction, decomp
+    )
     caveats = ["观察性快照，非因果；聚合口径仅反映方向与规模。"]
     if aov_source == "column":
         caveats.append("客单价用 aov 列均值（paid_buyers 缺失或为零，无法反推）。")
@@ -110,6 +117,8 @@ def _snapshot_finding(
         caveats.append("支付转化率用 pay_conversion_uv 列均值（缺 product_visitors）。")
     elif conv_source is None:
         caveats.append("缺 product_visitors 与 pay_conversion_uv，无法给出支付转化率。")
+    if decomp.get("changepoint_date") or decomp.get("peak_dow"):
+        caveats.append("周对比/周内节律/结构性变化点为观察性分解，仅提示何时移动，非因果。")
 
     snapshot_row = {
         "gmv": total_gmv,
@@ -135,6 +144,9 @@ def _snapshot_finding(
             "aov": aov,
             "pay_conversion": pay_conv,
             "trend_direction": direction,
+            "wow_last_pct": decomp.get("wow_last_pct"),
+            "peak_dow": decomp.get("peak_dow"),
+            "changepoint_date": decomp.get("changepoint_date"),
         },
         caveats=caveats,
         evidence_reason="经营规模为聚合快照，趋势为逐期 GMV 走势，均为观察性描述。",
@@ -167,23 +179,54 @@ def _pay_conversion(cols, rows, total_buyers) -> tuple[float | None, str | None]
 
 def _gmv_trend(
     cols, rows, limitations: list[str]
-) -> tuple[list[dict], str | None, list[dict]]:
+) -> tuple[list[dict], str | None, list[dict], dict]:
     if "date" not in cols or "gmv" not in cols:
         limitations.append("business_overview_daily 缺少 date/gmv，跳过 GMV 趋势。")
-        return [], None, []
+        return [], None, [], {}
     dated = [(r.get("date"), _num(r.get("gmv"))) for r in rows if r.get("date") is not None]
     dated.sort(key=lambda t: str(t[0]))
     series = [(str(d), g) for d, g in dated]
     trend_rows = [{"date": p, "gmv": g} for p, g in series]
     if len(series) < 2:
         limitations.append("business_overview_daily 日期行不足两期，跳过 GMV 趋势。")
-        return trend_rows, None, []
+        return trend_rows, None, [], {}
     steps = mom_change(series)
     direction = direction_label(series[-1][1] - series[0][1])
-    return trend_rows, direction, steps
+    decomp = _decompose_gmv(series, trend_rows)
+    return trend_rows, direction, steps, decomp
 
 
-def _snapshot_conclusion(total_gmv, total_buyers, aov, pay_conv, direction) -> str:
+def _decompose_gmv(series: list[tuple[str, float]], trend_rows: list[dict]) -> dict:
+    """Layer week-over-week, day-of-week, and changepoint structure over the slope.
+
+    Every sub-metric degrades independently: too-short series → no WoW bucket,
+    unparseable dates → no peak weekday, <4 points → no changepoint. The
+    changepoint date is looked up from the series and mirrored onto trend_rows so
+    the exported table flags the shift row.
+    """
+    weeks = week_over_week(series)
+    wow_last_pct = next(
+        (b["pct"] for b in reversed(weeks) if b["pct"] is not None), None
+    )
+    dow = dow_seasonality(series)
+    peak_dow = dow.get("peak_dow")
+    cp = changepoint([g for _, g in series])
+    cp_idx = cp.get("index")
+    changepoint_date = (
+        series[cp_idx][0] if cp_idx is not None and 0 <= cp_idx < len(series) else None
+    )
+    if changepoint_date is not None:
+        for row in trend_rows:
+            row["is_changepoint"] = row["date"] == changepoint_date
+    return {
+        "wow_last_pct": wow_last_pct,
+        "peak_dow": peak_dow,
+        "changepoint_date": changepoint_date,
+        "changepoint_shift": cp.get("shift"),
+    }
+
+
+def _snapshot_conclusion(total_gmv, total_buyers, aov, pay_conv, direction, decomp) -> str:
     parts = [f"累计 GMV {round(total_gmv or 0)} 元"]
     if total_buyers:
         parts.append(f"支付买家 {round(total_buyers)} 人")
@@ -192,7 +235,13 @@ def _snapshot_conclusion(total_gmv, total_buyers, aov, pay_conv, direction) -> s
     if pay_conv is not None:
         parts.append(f"支付转化率 {round(pay_conv * 100, 1)}%")
     tail = f"，GMV 趋势{direction}。" if direction else "，趋势数据不足。"
-    return "、".join(parts) + tail
+    extras: list[str] = []
+    if decomp.get("changepoint_date"):
+        extras.append(f"GMV 在 {decomp['changepoint_date']} 附近出现结构性变化")
+    if decomp.get("peak_dow"):
+        extras.append(f"周内 {decomp['peak_dow']} GMV 最高")
+    extra = ("（" + "；".join(extras) + "）") if extras else ""
+    return "、".join(parts) + tail + extra
 
 
 # --------------------------------------------------------------------------- #

@@ -36,6 +36,8 @@ _LEVER_CARRIER_GAP = "向高转化载体倾斜搜索承接内容与预算。"
 _LEVER_TREND_DECLINE = "排查搜索承接页与词-货匹配，止跌优先。"
 _LEVER_OPPORTUNITY = "高机会词加投 / 做定向笔记与商详承接。"
 _LEVER_LEAK = "高流失词降权 / 修词-货匹配 / 修承接页相关性。"
+_LEVER_CLICK_LEAK = "高曝光低点击词：优化封面/标题与词-货匹配（点击漏损）。"
+_LEVER_CONV_LEAK = "高点击低转化词：优化商详/价格/信任状承接（转化漏损）。"
 
 _OBS_CAVEAT = "观察性诊断，非因果——载体/词间效率差异仅供假设生成。"
 
@@ -278,6 +280,8 @@ def _term_finding(con, limitations: list[str]) -> tuple[Finding | None, list[dic
     records: list[dict] = []
     for r in rows:
         n = _num(r.get("card_impression_users"))
+        click_rate = bounded_rate(r.get("product_click_rate")) if has_click else None
+        pay_conv = bounded_rate(r.get("pay_conversion")) if has_pay else None
         if has_buyers:
             k = _num(r.get("paid_buyers"))
         else:
@@ -293,6 +297,8 @@ def _term_finding(con, limitations: list[str]) -> tuple[Finding | None, list[dic
                 "k": round(k),
                 "gmv": _num(r.get("gmv")) if has_gmv else None,
                 "rate": (k / n) if n > 0 else None,
+                "click_rate": click_rate,
+                "pay_conv": pay_conv,
             }
         )
 
@@ -300,9 +306,30 @@ def _term_finding(con, limitations: list[str]) -> tuple[Finding | None, list[dic
     total_n = sum(r["n"] for r in records)
     baseline = total_k / total_n if total_n else 0.0
 
+    # Traffic-weighted click + conversion baselines let us split a "leak" into a
+    # click-side loss (low click-through) vs a conversion-side loss (clicks that
+    # don't convert). Only computable when the click-rate column is present.
+    click_den = sum(r["n"] for r in records if r["click_rate"] is not None)
+    click_base = (
+        sum(r["n"] * r["click_rate"] for r in records if r["click_rate"] is not None)
+        / click_den
+        if click_den
+        else None
+    )
+    conv_den = sum(
+        r["n"] * r["click_rate"] for r in records if r["click_rate"] is not None
+    )
+    conv_base = (
+        sum(r["k"] for r in records if r["click_rate"] is not None) / conv_den
+        if conv_den
+        else None
+    )
+
     term_rows: list[dict] = []
     opportunities: list[dict] = []
     leaks: list[dict] = []
+    click_leaks: list[dict] = []
+    conversion_leaks: list[dict] = []
     for r in records:
         n = r["n"]
         lo, hi = wilson_interval(r["k"], n)
@@ -314,6 +341,11 @@ def _term_finding(con, limitations: list[str]) -> tuple[Finding | None, list[dic
             term_class = "leak"
         else:
             term_class = "average"
+        leak_type = (
+            _leak_type(r["click_rate"], r["pay_conv"], click_base, conv_base)
+            if term_class == "leak"
+            else None
+        )
         row = {
             "search_term": r["search_term"],
             "n": n,
@@ -323,12 +355,17 @@ def _term_finding(con, limitations: list[str]) -> tuple[Finding | None, list[dic
             "wilson_high": hi,
             "gmv": r["gmv"],
             "term_class": term_class,
+            "leak_type": leak_type,
         }
         term_rows.append(row)
         if term_class == "opportunity":
             opportunities.append(row)
         elif term_class == "leak":
             leaks.append(row)
+            if leak_type == "click_leak":
+                click_leaks.append(row)
+            elif leak_type == "conversion_leak":
+                conversion_leaks.append(row)
 
     # Pareto: rank classifiable (n>=MIN) terms by gmv (when present) else traffic;
     # small-sample terms are listed but pushed to the end (unranked).
@@ -340,23 +377,36 @@ def _term_finding(con, limitations: list[str]) -> tuple[Finding | None, list[dic
     term_rows.sort(key=_rank_key, reverse=True)
     top_term = term_rows[0]["search_term"] if term_rows else None
 
+    # Prefer the dominant leak lever so the recommendation is actionable at the
+    # right funnel step; fall back to the generic leak lever when undecomposable.
     if opportunities:
         recommended_action = _LEVER_OPPORTUNITY
+    elif click_leaks and len(click_leaks) >= len(conversion_leaks):
+        recommended_action = _LEVER_CLICK_LEAK
+    elif conversion_leaks:
+        recommended_action = _LEVER_CONV_LEAK
     elif leaks:
         recommended_action = _LEVER_LEAK
     else:
         recommended_action = None
 
     caveats = [_OBS_CAVEAT, "分类以 Wilson 区间对比加权基线，避免小样本误报。"]
+    if click_base is not None:
+        caveats.append("高流失词按点击率/转化率基线拆分为点击漏损 vs 转化漏损，定位对应杠杆。")
     small = sum(1 for r in term_rows if r["term_class"] == "small_sample")
     if small:
         caveats.append(
             f"{small} 个搜索词样本不足 {MIN_ORDERS_FOR_RATE} 曝光，仅列出未分类。"
         )
+    leak_split = (
+        f"（点击漏损 {len(click_leaks)}、转化漏损 {len(conversion_leaks)}）"
+        if click_base is not None
+        else ""
+    )
     finding = Finding(
         title="高机会/高流失搜索词",
         conclusion=(
-            f"{len(opportunities)} 个高机会词、{len(leaks)} 个高流失词"
+            f"{len(opportunities)} 个高机会词、{len(leaks)} 个高流失词{leak_split}"
             f"（基线成交效率 {_pct(baseline)}）。"
         ),
         evidence_strength=score_evidence(
@@ -365,16 +415,38 @@ def _term_finding(con, limitations: list[str]) -> tuple[Finding | None, list[dic
         key_numbers={
             "opportunity_count": len(opportunities),
             "leak_count": len(leaks),
+            "click_leak_count": len(click_leaks),
+            "conversion_leak_count": len(conversion_leaks),
             "baseline_effectiveness": baseline,
+            "click_baseline": click_base,
+            "conversion_baseline": conv_base,
             "top_term": top_term,
         },
         caveats=caveats,
         recommended_action=recommended_action,
-        evidence_reason="以 Wilson 下界高于基线判高机会、上界低于基线判高流失；成交人数优先取真实值。",
+        evidence_reason=(
+            "以 Wilson 下界高于基线判高机会、上界低于基线判高流失；高流失再按"
+            "点击率<点击基线（点击漏损）或转化率<转化基线（转化漏损）拆分；成交人数优先取真实值。"
+        ),
         confounders=_TERM_CONFOUNDERS,
-        next_test="对高机会词做定向内容/加投后复测转化。",
+        next_test="对高机会词做定向内容/加投后复测转化；对漏损词按漏损类型分别处置后复测。",
     )
     return finding, term_rows
+
+
+def _leak_type(click_rate, pay_conv, click_base, conv_base) -> str:
+    """Attribute a leak to the click step or the conversion step.
+
+    A term whose click-through is below the click baseline is a click leak
+    (fix cover/title/term-goods match); one whose click-through is fine but
+    whose conversion trails the conversion baseline is a conversion leak (fix
+    detail page/price/trust). Undecomposable (no click data) → generic ``leak``.
+    """
+    if click_rate is not None and click_base is not None and click_rate < click_base:
+        return "click_leak"
+    if pay_conv is not None and conv_base is not None and pay_conv < conv_base:
+        return "conversion_leak"
+    return "leak"
 
 
 def _pct(value: float | None) -> str:

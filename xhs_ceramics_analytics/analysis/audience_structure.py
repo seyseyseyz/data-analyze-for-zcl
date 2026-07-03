@@ -27,6 +27,11 @@ TITLE = "人群结构诊断"
 # the z-test flags it — "显著" is gated on a reported non-trivial effect size.
 _MIN_MEANINGFUL_DIFF = 0.02
 
+# ``shop_page_funnel`` carries a platform ``全部`` rollup row (= 新客 + 老客) and
+# cumulative first-purchase windows (180天 ⊂ 365天). Naively summing every row
+# double-counts visitors. We drop the rollup and fix a single canonical window.
+_ROLLUP = "全部"
+
 _DEDUP_CAVEAT = (
     "漏斗按天记录，跨天汇总的访客/支付人数可能重复计入回访用户，份额为近似。"
 )
@@ -101,14 +106,40 @@ def _conversion_finding(con, limitations: list[str]) -> tuple[Finding, list[dict
 
     rows = _fetch_all(con, "shop_page_funnel")
     has_audience = "audience_type" in cols
-    total_n = sum(_num(r.get("shop_visitors")) for r in rows)
-    total_k = sum(_num(r.get("shop_payers")) for r in rows)
+    has_cycle = "first_purchase_cycle" in cols
+
+    # Split the platform ``全部`` rollup from the real audience segments, and fix a
+    # single canonical first-purchase window so 180天/365天 do not double-count.
+    rollup_rows = [r for r in rows if has_audience and r.get("audience_type") == _ROLLUP]
+    segment_rows = [
+        r for r in rows if not (has_audience and r.get("audience_type") == _ROLLUP)
+    ]
+    if has_cycle:
+        cycle_vals = [
+            r.get("first_purchase_cycle")
+            for r in segment_rows
+            if r.get("first_purchase_cycle") not in (None, _ROLLUP)
+        ]
+        canonical_cycle = _canonical_cycle(cycle_vals)
+        if canonical_cycle is not None:
+            segment_rows = [
+                r for r in segment_rows if r.get("first_purchase_cycle") == canonical_cycle
+            ]
+            limitations.append(
+                f"首购周期为累计窗口，人群对比固定取 {canonical_cycle} 避免 180/365 天窗口重复计数。"
+            )
+
+    # Overall conversion prefers the platform 全部 rollup (true store-wide total);
+    # falls back to the canonical-window segment sum when no rollup row exists.
+    overall_source = rollup_rows if rollup_rows else segment_rows
+    total_n = sum(_num(r.get("shop_visitors")) for r in overall_source)
+    total_k = sum(_num(r.get("shop_payers")) for r in overall_source)
     overall = total_k / total_n if total_n else None
 
     comparison_rows: list[dict] = []
     if has_audience:
         groups: dict = {}
-        for r in rows:
+        for r in segment_rows:
             key = r.get("audience_type")
             g = groups.setdefault(key, {"n": 0.0, "k": 0.0})
             g["n"] += _num(r.get("shop_visitors"))
@@ -130,6 +161,26 @@ def _conversion_finding(con, limitations: list[str]) -> tuple[Finding, list[dict
         reverse=True,
     )
 
+    # Retention lens: how dependent revenue is on new customers, and how much
+    # better repeat customers convert than first-timers.
+    by_type = {c["audience_type"]: c for c in comparison_rows}
+    new_g, old_g = by_type.get("新客"), by_type.get("老客")
+    new_customer_dependence: float | None = None
+    repeat_conversion_premium: float | None = None
+    if new_g and old_g:
+        payers_total = new_g["payers"] + old_g["payers"]
+        if payers_total > 0:
+            new_customer_dependence = new_g["payers"] / payers_total
+        new_conv, old_conv = new_g["conversion"], old_g["conversion"]
+        if new_conv and new_conv > 0 and old_conv is not None:
+            repeat_conversion_premium = old_conv / new_conv - 1
+    retention_note = ""
+    if new_customer_dependence is not None:
+        retention_note += f" 新客贡献付费 {round(new_customer_dependence * 100)}%"
+        if repeat_conversion_premium is not None:
+            retention_note += f"、老客转化为新客的 {round(repeat_conversion_premium + 1, 1)} 倍"
+        retention_note += "。"
+
     caveats = ["观察性对比，非因果——人群转化差异可能由流量结构与客群成熟度驱动。", _DEDUP_CAVEAT]
 
     if has_audience and len(valid) >= 2:
@@ -145,6 +196,7 @@ def _conversion_finding(con, limitations: list[str]) -> tuple[Finding, list[dict
             f"{b['audience_type']} {round((b['conversion'] or 0) * 100)}%，"
             f"差异 {round((diff or 0) * 100, 1)}pp（{sig_zh}）。"
             f"整体进店转化 {round((overall or 0) * 100)}%。"
+            + retention_note
         )
         key_numbers = {
             "group_count": len(valid),
@@ -156,6 +208,8 @@ def _conversion_finding(con, limitations: list[str]) -> tuple[Finding, list[dict
             "significant": significant,
             "ci_overlap": test["ci_overlap"],
             "overall_conversion": overall,
+            "new_customer_dependence": new_customer_dependence,
+            "repeat_conversion_premium": repeat_conversion_premium,
         }
         caveats.append("显著性用两样本比例 z 检验，辅以 Wilson 区间重叠与效应量门槛。")
     else:
@@ -175,6 +229,8 @@ def _conversion_finding(con, limitations: list[str]) -> tuple[Finding, list[dict
             "ci_high": hi,
             "diff": None,
             "fallback": True,
+            "new_customer_dependence": new_customer_dependence,
+            "repeat_conversion_premium": repeat_conversion_premium,
         }
         comparison_rows = [
             {
@@ -212,6 +268,8 @@ def _cycle_finding(con, limitations: list[str]) -> tuple[Finding | None, list[di
     groups: dict = {}
     for r in rows:
         key = r.get("first_purchase_cycle")
+        if key in (None, _ROLLUP):
+            continue  # drop the 全部 rollup — it is not a real cycle bucket
         g = groups.setdefault(key, {"n": 0.0, "k": 0.0})
         g["n"] += _num(r.get("shop_visitors"))
         g["k"] += _num(r.get("shop_payers"))
@@ -242,7 +300,11 @@ def _cycle_finding(con, limitations: list[str]) -> tuple[Finding | None, list[di
     convs = [r["conversion"] for r in cycle_rows if r["conversion"] is not None]
     gap = (max(convs) - min(convs)) if len(convs) >= 2 else None
 
-    caveats = ["观察性漏斗，非因果；小样本周期未做 Wilson 守卫。", _DEDUP_CAVEAT]
+    caveats = [
+        "观察性漏斗，非因果；小样本周期未做 Wilson 守卫。",
+        "首购周期为累计窗口（180天 ⊂ 365天），各窗口访客/支付存在重叠，仅作漏斗对比不可相加。",
+        _DEDUP_CAVEAT,
+    ]
     if weakest is None:
         caveats.append("各周期样本量均不足 30，转化率未做置信区间判定。")
     conclusion = (
@@ -438,6 +500,24 @@ def _composition_gap_finding(conclusion: str) -> Finding:
 # --------------------------------------------------------------------------- #
 # Shared helpers (ported from refund_diagnosis)
 # --------------------------------------------------------------------------- #
+def _canonical_cycle(cycles) -> str | None:
+    """Pick a single cumulative first-purchase window to avoid double-counting.
+
+    Numeric windows are nested (180天 ⊂ 365天); summing both counts the same
+    visitors twice, so we keep the widest window present (largest embedded
+    number). Returns ``None`` when no label carries a number — non-numeric cycle
+    labels are treated as ordinary buckets and left un-deduplicated.
+    """
+    numbered = []
+    for c in cycles:
+        digits = "".join(ch for ch in str(c) if ch.isdigit())
+        if digits:
+            numbered.append((int(digits), c))
+    if numbered:
+        return max(numbered, key=lambda t: t[0])[1]
+    return None
+
+
 def _num(value) -> float:
     return float(value) if value is not None else 0.0
 
