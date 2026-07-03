@@ -14,9 +14,10 @@ from xhs_ceramics_analytics.db.marts import (
 from xhs_ceramics_analytics.importing.mapping import (
     GRAIN_KEYS,
     TABLE_SIGNATURES,
-    guess_field_mapping,
+    map_columns,
     guess_table_type,
 )
+from xhs_ceramics_analytics.importing.overrides import load_overrides
 from xhs_ceramics_analytics.importing.profile import (
     EXCEL_SUFFIXES,
     FileProfile,
@@ -26,7 +27,7 @@ from xhs_ceramics_analytics.importing.profile import (
 
 _DERIVED_TABLES = ("daily_sku_sales", "business_overview_monthly")
 _DERIVED_VIEWS = ("note_metrics", "ad_metrics")
-_AUX_TABLES = ("needs_data", "build_manifest", "data_quality")
+_AUX_TABLES = ("needs_data", "build_manifest", "data_quality", "mapping_diagnostics")
 _TABULAR_SUFFIXES = {".csv", *EXCEL_SUFFIXES}
 _DOMAIN_HINTS = (("退款原因", "退款原因"), ("人群", "人群画像"))
 # Two files that both report a metric for the same grain key may round differently.
@@ -36,11 +37,19 @@ _DOMAIN_HINTS = (("退款原因", "退款原因"), ("人群", "人群画像"))
 MERGE_CONFLICT_TOLERANCE = 0.05
 
 
-def build_database(db_path: Path, files: list[Path]) -> None:
+def build_database(
+    db_path: Path,
+    files: list[Path],
+    *,
+    overrides_path: Path | None = None,
+) -> None:
     con = connect(db_path)
     try:
         _drop_refresh_objects(con)
-        grouped, needs_data = _group_files_by_type(con, files)
+        overrides = load_overrides(
+            overrides_path or db_path.parent / "mapping_overrides.yaml"
+        )
+        grouped, needs_data, diagnostics = _group_files_by_type(con, files, overrides)
         conflicts: list[dict] = []
         manifest: list[dict] = []
         for table_type, tagged in grouped.items():
@@ -51,6 +60,7 @@ def build_database(db_path: Path, files: list[Path]) -> None:
         _create_needs_data_table(con, db_path, needs_data)
         _create_build_manifest_table(con, db_path, manifest)
         _create_data_quality_table(con, db_path, conflicts)
+        _create_mapping_diagnostics_table(con, db_path, diagnostics)
         create_daily_sku_sales(con)
         if "business_overview_daily" in _existing_tables(con):
             create_business_overview_monthly(con)
@@ -62,12 +72,16 @@ def build_database(db_path: Path, files: list[Path]) -> None:
         con.close()
 
 
-def _group_files_by_type(con, files: list[Path]) -> tuple[dict[str, list], list[dict]]:
-    # Each value is a list of ``(file_name, canonical_frame)`` pairs. Carrying the
-    # source file name here is what lets Task 3 record provenance (build_manifest)
-    # and cross-file conflicts (data_quality) — the frame alone loses that.
+def _group_files_by_type(
+    con, files: list[Path], overrides: dict[str, dict[str, set[str]]]
+) -> tuple[dict[str, list], list[dict], list[dict]]:
+    # Each grouped value is a list of ``(file_name, canonical_frame)`` pairs (provenance
+    # for build_manifest / data_quality). ``diagnostics`` is the flat per-column record
+    # list for the mapping_diagnostics table — the file name is attached HERE, where it
+    # is known, since ColumnDiagnostic itself carries only table_type/required_column.
     grouped: dict[str, list] = defaultdict(list)
     needs_data: list[dict] = []
+    diagnostics: list[dict] = []
     for file in files:
         if file.suffix.lower() not in _TABULAR_SUFFIXES:
             needs_data.append(_needs_data_record(file, "非表格文件（如PNG截图）", "OCR 或手工录入"))
@@ -78,10 +92,21 @@ def _group_files_by_type(con, files: list[Path]) -> tuple[dict[str, list], list[
         except ValueError as exc:  # incl. AmbiguousTableTypeError
             needs_data.append(_needs_data_record(file, str(exc), "确认导出列或手工映射"))
             continue
-        grouped[table_type].append(
-            (file.name, _canonical_frame(con, file, profile, table_type))
-        )
-    return grouped, needs_data
+        frame, file_diagnostics = _canonical_frame(con, file, profile, table_type, overrides)
+        grouped[table_type].append((file.name, frame))
+        for diag in file_diagnostics:
+            diagnostics.append(
+                {
+                    "table_name": diag.table_type,
+                    "file": file.name,
+                    "required_column": diag.required_column,
+                    "status": diag.status,
+                    "candidate_sources": "; ".join(diag.candidate_sources),
+                    "reason": diag.reason,
+                    "action": diag.action,
+                }
+            )
+    return grouped, needs_data, diagnostics
 
 
 def _needs_data_record(file: Path, reason: str, action: str) -> dict:
@@ -191,7 +216,18 @@ def _create_data_quality_table(con, db_path: Path, conflicts: list[dict]) -> Non
     _create_table_from_frame(con, db_path, "data_quality", frame)
 
 
-def _canonical_frame(con, file: Path, profile: FileProfile, table_type: str):
+def _create_mapping_diagnostics_table(con, db_path: Path, diagnostics: list[dict]) -> None:
+    frame = pd.DataFrame(
+        diagnostics,
+        columns=[
+            "table_name", "file", "required_column", "status",
+            "candidate_sources", "reason", "action",
+        ],
+    )
+    _create_table_from_frame(con, db_path, "mapping_diagnostics", frame)
+
+
+def _canonical_frame(con, file: Path, profile: FileProfile, table_type: str, overrides):
     if file.suffix.lower() in EXCEL_SUFFIXES:
         frame = load_table(file, sheet=profile.sheet_name)
     else:
@@ -203,8 +239,8 @@ def _canonical_frame(con, file: Path, profile: FileProfile, table_type: str):
             row_count=len(frame),
             sample_rows=profile.sample_rows,
         )
-    projected = _projected_frame(frame, profile, table_type)
-    return _normalized_frame(projected, table_type)
+    projected, diagnostics = _projected_frame(frame, profile, table_type, overrides)
+    return _normalized_frame(projected, table_type), diagnostics
 
 
 def _combine_frames(frames: list, table_type: str):
@@ -239,9 +275,9 @@ def _drop_refresh_objects(con) -> None:
         con.execute(f"DROP TABLE IF EXISTS {_quote_identifier(table)}")
 
 
-def _projected_frame(frame, profile: FileProfile, table_type: str):
-    field_mapping = guess_field_mapping(profile, table_type)
-    rename_mapping = {source: target for target, source in field_mapping.items()}
+def _projected_frame(frame, profile: FileProfile, table_type: str, overrides):
+    result = map_columns(profile, table_type, overrides=overrides)
+    rename_mapping = {source: target for target, source in result.mapping.items()}
     projected = frame.rename(columns=rename_mapping)
     reserved = set(rename_mapping.values())
     used: set[str] = set()
@@ -254,7 +290,7 @@ def _projected_frame(frame, profile: FileProfile, table_type: str):
             used.add(safe)
             new_columns.append(safe)
     projected.columns = new_columns
-    return projected
+    return projected, result.diagnostics
 
 
 def _normalized_frame(frame, table_type: str):

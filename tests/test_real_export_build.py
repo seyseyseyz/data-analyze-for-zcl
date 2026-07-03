@@ -39,3 +39,38 @@ def test_run_all_succeeds_on_any_subset(fixture_dir, tmp_path, count):
     con = duckdb.connect(str(db))
     assert con.execute("SELECT count(*) FROM needs_data").fetchone()[0] == 0
     con.close()
+
+
+def test_missing_required_column_is_diagnosed_not_silent(tmp_path):
+    # Purpose-built business_overview_daily WITHOUT 退款后支付金额（支付时间） (net_gmv_pay).
+    # The golden fixture carries it, so we hand-build a degraded export here.
+    export = tmp_path / "business_overview_daily.csv"
+    export.write_text(
+        "时间,支付金额,支付订单数,支付买家数,客单价,支付件数,退款金额（支付时间）\n"
+        "20260401,1000,10,8,125,30,100\n",
+        encoding="utf-8",
+    )
+    db = tmp_path / "d.duckdb"
+    build_database(db, [export])  # must not raise
+    con = duckdb.connect(str(db))
+    diag_rows = con.execute(
+        "SELECT required_column, status FROM mapping_diagnostics "
+        "WHERE table_name = 'business_overview_daily'"
+    ).fetchall()
+    monthly_exists = "business_overview_monthly" in {
+        row[0] for row in con.execute("SHOW TABLES").fetchall()
+    }
+    con.close()
+    required_flagged = {row[0] for row in diag_rows}
+    assert "net_gmv_pay" in required_flagged  # explicit, not a silent slug
+    assert monthly_exists  # degrade-not-reject: the mart still builds
+
+
+def test_golden_full_export_has_empty_mapping_diagnostics(fixture_dir, tmp_path):
+    files = [fixture_dir / name for name, _ in _ALL]
+    db = tmp_path / "d.duckdb"
+    build_database(db, files)
+    con = duckdb.connect(str(db))
+    count = con.execute("SELECT count(*) FROM mapping_diagnostics").fetchone()[0]
+    con.close()
+    assert count == 0  # every Required column maps on the golden happy path
