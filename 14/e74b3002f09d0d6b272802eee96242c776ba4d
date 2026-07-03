@@ -1,0 +1,22 @@
+xhs_ceramics_analytics/analytics/confidence.py
+  s_6bd2349b4ebd4d::t_663566b6e7b8ef 27-51
+tests/test_analytics_confidence.py
+  s_6bd2349b4ebd4d::t_8d051b8ef97131 7
+  s_6bd2349b4ebd4d::t_78c50f142d82a3 32-50
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.28-trip",
+  "base_commit_sha": "14e74b3002f09d0d6b272802eee96242c776ba4d",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
