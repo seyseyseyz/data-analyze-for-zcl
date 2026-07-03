@@ -89,8 +89,9 @@ def run(
         list[str] | None,
         typer.Argument(
             help=(
-                "One or more task ids, or 'all' for the full menu. Passing several "
-                "ids composes ONE integrated report instead of a file per task."
+                "One or more task ids, 'auto' for every task the data can actually "
+                "produce, or 'all' for the full menu. Passing several ids composes "
+                "ONE integrated report instead of a file per task."
             )
         ),
     ] = None,
@@ -120,6 +121,16 @@ def run(
     if requested == ["all"]:
         task_ids = list(TASKS)
         basename = name or "all"
+    elif requested == ["auto"]:
+        from xhs_ceramics_analytics.analysis.coverage import producible_task_ids
+
+        task_ids = producible_task_ids(db_path)
+        if not task_ids:
+            raise typer.BadParameter(
+                "no task is producible on this database — run `xhs-ca coverage` to see why."
+            )
+        basename = name or "经营诊断报告"
+        typer.echo(f"auto-selected {len(task_ids)} producible task(s): {', '.join(task_ids)}")
     else:
         unknown = [task_id for task_id in requested if task_id not in TASKS]
         if unknown:
@@ -151,6 +162,37 @@ def run(
     typer.echo(f"Wrote report: {html_out}")
     if errors_out.exists():
         errors_out.unlink()
+
+
+@app.command()
+def coverage(
+    db: Annotated[Path | None, typer.Option(help="Override DuckDB file path.")] = None,
+    project_root: Annotated[
+        Path | None,
+        typer.Option(help="Override local state/output root."),
+    ] = None,
+) -> None:
+    """Report which tasks the built database can actually produce vs what is blocked."""
+    from xhs_ceramics_analytics.analysis.coverage import assess_coverage
+
+    db_path = db or state_dir(project_root) / "analytics.duckdb"
+    rows = assess_coverage(db_path)
+    producible = [row for row in rows if row.producible]
+    blocked = [row for row in rows if not row.producible]
+
+    typer.echo(f"能产出 ({len(producible)}):")
+    for row in producible:
+        strengths = ", ".join(f"{k}×{v}" for k, v in row.strengths.items())
+        typer.echo(f"  [OK] {row.task_id} ({strengths})")
+    typer.echo(f"\n被阻断 ({len(blocked)}) — 附解锁所需数据:")
+    for row in blocked:
+        reason = row.reasons[0] if row.reasons else "降级/不可诊断"
+        typer.echo(f"  [--] {row.task_id}: {reason}")
+
+    if producible:
+        slugs = " ".join(row.task_id for row in producible)
+        typer.echo(f"\n建议：xhs-ca run {slugs} --name <表意名称>")
+        typer.echo("或直接：xhs-ca run auto --name <表意名称>")
 
 
 if __name__ == "__main__":

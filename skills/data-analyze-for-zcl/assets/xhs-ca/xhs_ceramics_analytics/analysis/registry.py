@@ -12,6 +12,7 @@ from xhs_ceramics_analytics.analysis import (
     data_quality,
     experiment_matrix,
     hypothesis,
+    note_commercial,
     note_funnel,
     paid_traffic,
     portfolio,
@@ -22,6 +23,7 @@ from xhs_ceramics_analytics.analysis import (
     reshoot,
     search_efficiency,
     sku_lift,
+    sku_structure,
     weekly_review,
 )
 from xhs_ceramics_analytics.analysis.result import AnalysisResult
@@ -49,6 +51,8 @@ TASKS: dict[str, Callable[[Path], AnalysisResult]] = {
     "core_business_diagnosis": core_business.run,
     "search_efficiency_diagnosis": search_efficiency.run,
     "audience_structure_diagnosis": audience_structure.run,
+    "note_commercial_diagnosis": note_commercial.run,
+    "sku_structure_diagnosis": sku_structure.run,
 }
 
 

@@ -2,7 +2,7 @@
 
 # Task Menu
 
-Use this menu to choose the smallest task that answers the user's business question. Run `all` only when the user asks for a full operating review or the request spans most rows below.
+Use this menu to describe tasks to the user. **Do not hand-pick by guesswork** — run `xhs-ca coverage` first: it reports which tasks are producible on the built data and which are blocked (with the missing table/column). Default to running the whole producible set via `xhs-ca run auto` so the report mines the data to its full depth. Run `all` only when the user asks for a full operating review including degraded modules.
 
 | 用户意图 | task_id | 必需数据 | 可选数据 | 输出 |
 |---|---|---|---|---|
@@ -23,3 +23,9 @@ Use this menu to choose the smallest task that answers the user's business quest
 | 周复盘 / 下周动作 / 完整经营结论 | `weekly_business_review` | `notes` | `orders`, `skus`, `comments`, `content_features`, `calendar_events` | 经营导读、关键变化、下周动作 |
 | 看投放数据能不能分析 | `ad_data_quality_check` | `ad_performance_daily` | `notes`, `skus`, `products`, `daily_sku_sales` | 字段可用性、粒度、关联覆盖、补数建议 |
 | 看投放消耗和投产效率 | `paid_traffic_efficiency` | `ad_performance_daily` | `notes`, `skus`, `products`, `daily_sku_sales`, `note_sku_links` | 投放消耗、点击效率、投产、预算动作建议 |
+| 生意大盘怎么样 / 核心经营结构 | `core_business_diagnosis` | `business_overview_daily` | `business_overview_monthly` | GMV/客单/转化结构、时间趋势、观察性诊断 |
+| 搜索流量效率怎么样 | `search_efficiency_diagnosis` | `search_overview` | `search_terms` | 搜索曝光/点击/转化效率、词效结构 |
+| 进店人群结构如何 | `audience_structure_diagnosis` | `shop_page_funnel` | `shop_page_source` | 进店漏斗、来源结构、人群画像口径说明 |
+| 退款结构与高退款点 | `refund_structure_diagnosis` | `refund_overview` | `notes`, `sku_performance` | 退款分层、载体两比例检验、时间趋势、笔记/商品级反映 |
+| 笔记级商业效能（GMV 集中度/转化/退款） | `note_commercial_diagnosis` | `notes` | — | 笔记 GMV 帕累托、转化效率分布、笔记级退款异常 |
+| SKU 结构与退款诊断 | `sku_structure_diagnosis` | `sku_performance` | — | SKU GMV 帕累托与类目结构、高退款 SKU、加购转化与客单价 |

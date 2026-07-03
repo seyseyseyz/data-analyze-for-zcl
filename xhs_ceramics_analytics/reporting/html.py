@@ -187,8 +187,9 @@ _ANALYSIS_GROUPS = (
     },
     {
         "title": "商品：卖什么",
-        "description": "先看哪些 SKU 已经有销售反馈，哪些商品还需要继续补内容或补销售数据。",
+        "description": "先看 SKU 的 GMV/退款结构与销售反馈，哪些商品还需要继续补内容或补销售数据。",
         "tasks": (
+            "sku_structure_diagnosis",
             "product_opportunity_matrix",
             "sku_counterfactual_lift",
             "content_response_curve",
@@ -196,8 +197,9 @@ _ANALYSIS_GROUPS = (
     },
     {
         "title": "内容：发什么",
-        "description": "把封面、文案角度和内容组合拆开看，避免只凭单篇爆款做判断。",
+        "description": "先看笔记的商业效能（GMV/转化/引流/退款），再把封面、文案角度和内容组合拆开看，避免只凭单篇爆款做判断。",
         "tasks": (
+            "note_commercial_diagnosis",
             "cover_style_effect",
             "copy_angle_effect",
             "product_content_interaction",
