@@ -1,0 +1,23 @@
+tests/test_refund_diagnosis.py
+  s_6bd2349b4ebd4d::t_4bf95d21be85bd 59-89
+xhs_ceramics_analytics/analysis/refund_diagnosis.py
+  s_6bd2349b4ebd4d::t_062d5a8b45f96f 110-161
+  s_6bd2349b4ebd4d::t_471a1db678627a 40-44
+  s_6bd2349b4ebd4d::t_b0149c54496471 7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.28-trip",
+  "base_commit_sha": "4ee5a791ab3afca21ee03bb520b1f9e545544dbd",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
