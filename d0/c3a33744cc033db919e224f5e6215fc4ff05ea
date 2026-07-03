@@ -1,0 +1,38 @@
+docs/superpowers/specs/2026-07-03-core-business-diagnosis-design.md
+  s_6bd2349b4ebd4d::t_ba4928d2713229 1-150
+task_templates/audience_structure_diagnosis.md
+  s_6bd2349b4ebd4d::t_c7c672cf6354c2 1-13
+xhs_ceramics_analytics/analysis/core_business.py
+  s_6bd2349b4ebd4d::t_5172ae2eb89bab 1-25
+task_templates/search_efficiency_diagnosis.md
+  s_6bd2349b4ebd4d::t_5daa83fc36a523 1-13
+docs/superpowers/specs/2026-07-03-search-efficiency-diagnosis-design.md
+  s_6bd2349b4ebd4d::t_a015e4ea54e757 1-136
+xhs_ceramics_analytics/analysis/registry.py
+  s_6bd2349b4ebd4d::t_2c10c783f0c643 7,10,23
+  s_6bd2349b4ebd4d::t_2de68b3eeb61d5 49-51
+xhs_ceramics_analytics/analysis/audience_structure.py
+  s_6bd2349b4ebd4d::t_9ffdae351da032 1-25
+task_templates/core_business_diagnosis.md
+  s_6bd2349b4ebd4d::t_4db4f8bbaaadeb 1-13
+xhs_ceramics_analytics/analysis/search_efficiency.py
+  s_6bd2349b4ebd4d::t_b7a5885a7986c6 1-25
+docs/superpowers/specs/2026-07-03-audience-structure-diagnosis-design.md
+  s_6bd2349b4ebd4d::t_606b88062f656d 1-144
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.28-trip",
+  "base_commit_sha": "d0c3a33744cc033db919e224f5e6215fc4ff05ea",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
