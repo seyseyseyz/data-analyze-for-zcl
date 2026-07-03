@@ -11,8 +11,8 @@ Scope note: This is the **first sub-project** of the post-Phase-1a program (befo
 Three mechanisms in `importing/mapping.py` combine so that a Required column can vanish without any signal:
 
 1. **Aliases are exact-match on specific Chinese strings.** `FIELD_ALIASES[t][canonical]` is a `set` of literal headers (e.g. `refund_users: {"退款人数（支付时间）", "退款人数"}`). A header the set does not contain is not matched.
-2. **`_normalize_column_name` only folds ASCII whitespace/hyphens** (`mapping.py:304-306`). It does **not** normalize full-width parentheses. So `退款人数（支付时间）` (full-width `（）`) and `退款人数(支付时间)` (half-width) are *different* normalized strings — a punctuation drift misses the alias.
-3. **The fuzzy fallback compares the English canonical name vs the Chinese source** (`fuzz.WRatio("refund_users", "退款人数（支付时间）")` ≈ 0) — so there is **no CJK safety net**. The near-miss is not caught.
+2. **`_normalize_column_name` folds Unicode whitespace and ASCII hyphens only** (`mapping.py:304-306`; its `re.sub(r"[\s-]+", ...)` uses Python's Unicode-aware `\s`, so U+3000 ideographic space is already collapsed). It does **not** normalize full-width parentheses/brackets/commas/colon. So `退款人数（支付时间）` (full-width `（）`) and `退款人数(支付时间)` (half-width) are *different* normalized strings — a punctuation drift misses the alias.
+3. **The fuzzy fallback compares the English canonical name vs the Chinese source** — the real call is `fuzz.WRatio(_normalize_column_name("refund_users"), _normalize_column_name("退款人数（支付时间）"))` (both operands normalized, `mapping.py:365,372`), which is still ≈ 0 for an English target vs a CJK source — so there is **no CJK safety net**. The near-miss is not caught.
 
 When all three miss, `_projected_frame` (`db/build.py:242-257`) sends the unmapped column through `_safe_column_name` → a slug like `退款人数_支付时间`. The typed table builds; the canonical `refund_users` column is simply absent. Downstream (`db/marts.py`) reads it via `numeric_expr`, which returns the SQL literal `NULL` for an absent column, so `SUM(...)` silently yields NULL — **no error, wrong number**. This is exactly how the real bug found in Phase 1a review (`refund_users` from `退款人数（支付时间）`) slipped from plan → code → tests.
 
@@ -73,7 +73,7 @@ New module-level dict in `importing/mapping.py`. Each modeled table type lists t
 
 ```python
 REQUIRED_COLUMNS: dict[str, set[str]] = {
-    "notes": {"note_id", "publish_time", "title", "reads", "likes", "collects"},
+    "notes": {"note_id", "publish_time", "title", "reads", "impressions", "likes", "collects", "comments"},
     "products": {"product_id", "product_name", "vessel_type", "series"},
     "skus": {"sku_id", "product_id", "sku_name", "price"},
     "orders": {"order_id", "paid_time", "sku_id", "quantity", "paid_amount"},
@@ -113,14 +113,18 @@ REQUIRED_COLUMNS: dict[str, set[str]] = {
 }
 ```
 
-Rationale for the non-obvious entries: `business_overview_daily` adds `paid_units, refund_amount_pay, net_gmv_pay` because `create_business_overview_monthly` (`marts.py:78-91`) `SUM`s them via `numeric_expr` — absent → silent NULL. Every `refund_overview` structure column is required because the §7 module decomposes pre/post-ship × return/shipped-only. Grain-key columns (`account_name`, `first_purchase_cycle`, `source_page`, `note_type`, …) are required because `_combine_frames` drops absent keys from the coalesce.
+Rationale for the non-obvious entries: `business_overview_daily` adds `paid_units, refund_amount_pay, net_gmv_pay` because `create_business_overview_monthly` (`marts.py:78-91`) `SUM`s them via `numeric_expr` — absent → silent NULL. `notes` adds `impressions` and `comments` because `read_rate`/`comment_rate` divide by them (`marts.py:35,53`, `note_funnel.py:30,36`, `weekly_review.py:125,133`) and silently become NULL if the 曝光数/评论数 header drifts — the exact failure class this spec targets, and both are `notes` alias-keys so the invariant holds. Every `refund_overview` structure column is required because the §7 module decomposes pre/post-ship × return/shipped-only. Grain-key columns (`account_name`, `first_purchase_cycle`, `source_page`, `note_type`, …) are required because `_combine_frames` drops absent keys from the coalesce.
 
 **Invariants (enforced by test, §6):** for every `t` in `TABLE_SIGNATURES`:
-- `TABLE_SIGNATURES[t] ⊆ REQUIRED_COLUMNS[t]` — the discriminative signature is always required.
-- `REQUIRED_COLUMNS[t] ⊆ TABLE_SIGNATURES[t] ∪ FIELD_ALIASES[t].keys()` — no required column is un-aliasable (would be permanently unmappable).
+- `{c ∈ TABLE_SIGNATURES[t] : not c.endswith("_optional")} ⊆ REQUIRED_COLUMNS[t]` — the discriminative signature is required **except** its `_optional` columns (`orders.refund_status_optional`, `ad_performance_daily.campaign_name_optional`), which are consumed only as guarded optional dims and must NOT be required (forcing them in would raise false-positive diagnostics for legitimately-absent export columns).
+- `REQUIRED_COLUMNS[t] ⊆ TABLE_SIGNATURES[t] ∪ FIELD_ALIASES[t].keys()` — no required column is un-aliasable (would be permanently unmappable). Verified to hold for all 16 tables.
 - `GRAIN_KEYS[t] ⊆ REQUIRED_COLUMNS[t]` for every `t` in `GRAIN_KEYS`.
 
 This turns the previously-implicit "required" notion into a receipted contract that cannot drift from the signatures, aliases, or grain keys without a test failing.
+
+Two caveats the contract must respect:
+- **No-alias signature tables.** `comments`, `content_features`, and `calendar_events` have no `FIELD_ALIASES` entry, so for them invariant B reduces to `REQUIRED ⊆ signature`; their `REQUIRED_COLUMNS` must stay a subset of the signature unless an alias sub-dict is added.
+- **Signature-mandated vs consumption-driven.** A few required columns are mandated only by invariant A (they are signature columns), not by any current consumer: `business_overview_daily.aov` is derived (`SUM(gmv)/NULLIF(SUM(paid_orders),0)`, not read) and `notes.title` is a guarded display fallback. They are kept for signature consistency; their diagnostics are low-value but harmless. Separately, the seven tables with no SQL consumer yet — `sku_performance`, `refund_overview`, `search_overview`, `search_terms`, `shop_page_funnel`, `shop_page_source`, `traffic_source` — have `REQUIRED` sets that are **forward-provisioning** for the unbuilt §2/§5/§6/§7 modules, justified by grain keys plus planned needs rather than current consumption.
 
 ## §2 Normalization — `_normalize_column_name`
 
@@ -129,7 +133,9 @@ Fold full-width punctuation to half-width **before** the existing whitespace/hyp
 ```python
 _FULLWIDTH_PUNCT = str.maketrans({
     "（": "(", "）": ")", "【": "[", "】": "]",
-    "，": ",", "、": ",", "：": ":", "　": " ",   # ideographic space
+    "，": ",", "、": ",", "：": ":",
+    # NB: U+3000 ideographic space is NOT listed — the existing `\s` in
+    # _normalize_column_name is Unicode-aware and already collapses it.
 })
 
 def _normalize_column_name(column: str) -> str:
@@ -185,9 +191,9 @@ def guess_field_mapping(profile: FileProfile, table_type: str) -> dict[str, str]
 A **dedicated** aux table — distinct from `needs_data` (per-*file*: "this file could not be used at all") and `data_quality` (cross-*file* merge conflicts). A missing Required column is per-*table*-per-*column*: the file *was* ingested but a column degraded.
 
 - Schema: `table_name, file, required_column, status, candidate_sources, reason, action` (`candidate_sources` joined with `; `).
-- Added to `_AUX_TABLES` in `build.py` so it is dropped/refreshed each build.
-- `build_database` loads overrides once (see §4), threads them into `_projected_frame` → `map_columns(profile, table_type, overrides=overrides)`, collects every frame's diagnostics, and writes the table via the existing `_create_table_from_frame` path.
-- **Degrade, never reject:** producing a diagnostic never raises; the table still builds with the column absent.
+- Added to `_AUX_TABLES` in `build.py` (currently `("needs_data", "build_manifest", "data_quality")`, `build.py:29`) so `_drop_refresh_objects` drops/refreshes it each build.
+- **Threading + return channel** (verified against the real call chain — more plumbing than "thread into `_projected_frame`" implies): `build_database` loads overrides once (see §4) and passes them down the existing chain `build_database → _group_files_by_type (build.py:65) → _canonical_frame (build.py:194) → _projected_frame (build.py:242)`. `_group_files_by_type` is the intermediate that loops files and must also accept/forward `overrides`. Because diagnostics currently have **no return path** (`_projected_frame` returns a bare frame and keeps only `field_mapping`; `_canonical_frame` and `_group_files_by_type` return bare frames / `(name, frame)` tuples), each of the three functions' return types changes to bubble up `ColumnMapping.diagnostics` alongside the per-file name (`profile.path.name` / `file.name`). `_projected_frame` calls `map_columns(profile, table_type, overrides=overrides)` and returns `(frame, diagnostics)`; `build_database` accumulates all diagnostics and writes them via a thin `_create_mapping_diagnostics_table` that reuses the generic `_create_table_from_frame` helper (`build.py:223`).
+- **Degrade, never reject:** producing a diagnostic never raises; an empty diagnostics list still yields a header-only table (the established `pd.DataFrame(records, columns=[...])` aux-table pattern); the typed table still builds with the column absent.
 
 ## §4 Persistence — `mapping_overrides.yaml`
 
@@ -202,7 +208,7 @@ The durable home for learned aliases; the mechanism that makes agent judgment de
     net_gmv_pay:
       - 退款后金额
   ```
-- **Location** — resolved from the same config that locates the DB (a new optional `overrides_path: Path | None = None` parameter on `build_database`, defaulting to `<db_path>.parent / "mapping_overrides.yaml"`). It lives in the operator's data/config dir, **not** inside the package, so it is stable across the root ↔ runtime-mirror split and is user-inspectable/editable.
+- **Location** — a new keyword-only `overrides_path: Path | None = None` parameter on `build_database`, defaulting to `db_path.parent / "mapping_overrides.yaml"`. `db_path` is resolved one layer up by the CLI (`cli.py:29`, via `state_dir()`, which `mkdir`s the parent, `paths.py:20-23`); on the CLI default path `db_path.parent` **is** the state dir that also holds `analytics.duckdb`. So the overrides file lives in the operator's state dir, **not** inside the package, stable across the root ↔ runtime-mirror split (untouched by `rsync --delete`) and user-inspectable/editable. Caveat: `build_database` does not itself create `db_path.parent`; a caller passing a custom `--db` with a non-existent parent must ensure the dir exists before the agent writes overrides there (no impact on the default path or tests).
 - **Loader** — `load_overrides(path) -> dict[str, dict[str, set[str]]]`; returns `{}` when the file is absent or empty. Malformed YAML raises a clear error at build start (fail fast on a corrupt config, but an *absent* config is normal).
 - **Merge semantics** — union into the effective alias set; overrides can only *add* aliases, never remove or override a shipped one. A learned alias is normalized through `_normalize_column_name` like any other.
 
@@ -225,16 +231,16 @@ No-agent environments (pytest, CI, headless) never execute Layer 3 — they buil
 
 Unit — `tests/test_mapping.py` (+ a new `tests/test_ingestion_hardening.py`):
 - **Normalization**: `_normalize_column_name("退款人数（支付时间）") == _normalize_column_name("退款人数(支付时间)")`; and the two calibers stay distinct: `_normalize_column_name("退款人数（支付时间）") != _normalize_column_name("退款人数（退款时间）")`.
-- **REQUIRED invariants** (parametrized over table types): `signature ⊆ required ⊆ signature ∪ alias-keys`, and `grain ⊆ required`.
+- **REQUIRED invariants** (parametrized over table types): `{c ∈ signature : not c.endswith("_optional")} ⊆ required ⊆ signature ∪ alias-keys`, and `grain ⊆ required`. (The `_optional` carve-out on the lower bound is load-bearing: without it the test fails on `orders` and `ad_performance_daily`.)
 - **`map_columns` diagnostics**: a `refund_overview` profile that is fully mapped **except** `退款人数` is absent (no leftover headers) → one diagnostic, `status="missing"`, `candidate_sources == ()`; a profile whose only `refund_users`-shaped header is a genuinely-unaliased wording (so that header stays in the leftover pool) → `status="ambiguous"` with that header in `candidate_sources`. A complete profile → `diagnostics == ()`.
 - **Overrides merge**: with `overrides={"refund_overview": {"refund_users": {"退款人数合计"}}}`, a header `退款人数合计` maps to `refund_users` and produces no diagnostic.
 - **Wrapper parity**: `guess_field_mapping(p, t) == map_columns(p, t).mapping` for a representative profile; all pre-existing `test_mapping.py` assertions unchanged and green.
 - **`load_overrides`**: absent file → `{}`; well-formed YAML → nested dict of sets; malformed → raises.
 
 Integration — `tests/test_real_export_build.py` (+ additions):
-- A build whose `business_overview_daily` file lacks `net_gmv_pay` → build succeeds, `business_overview_monthly` still builds, and `mapping_diagnostics` has a `net_gmv_pay` row (proves explicit-not-silent end-to-end).
+- A build whose `business_overview_daily` file lacks `net_gmv_pay` → build succeeds, `business_overview_monthly` still builds, and `mapping_diagnostics` has a `net_gmv_pay` row (proves explicit-not-silent end-to-end). Use a **purpose-built** fixture here — the golden `business_overview_daily.csv` already carries `net_gmv_pay` (`退款后支付金额（支付时间）`).
 - `test_run_all_succeeds_on_any_subset` still passes (degrade-not-reject).
-- Golden fixtures carry every Required column so `mapping_diagnostics` is empty on the happy path (add any missing columns to the fixture CSVs as part of the work).
+- Golden fixtures must carry every Required column so `mapping_diagnostics` is empty on the happy path. **Currently three are missing** (confirmed by running the real `guess_field_mapping` against the fixtures) and must be topped up in **both** `tests/fixtures/` and `skills/data-analyze-for-zcl/assets/xhs-ca/tests/fixtures/` (byte-identical; or edit root then re-run `sync-runtime`): `business_overview_daily.csv` needs a `支付件数`-type header (→ `paid_units`) and a `退款金额（支付时间）` header (→ `refund_amount_pay`); `refund_overview.csv` needs a `发货后退款金额（支付时间）` header (→ `post_ship_refund_amount`). Confirm each new header resolves via an existing `FIELD_ALIASES` entry, adding the alias if not.
 
 Regression gate: the full root suite (currently **250 passed**) stays green; then `bash skills/data-analyze-for-zcl/scripts/sync-runtime` and confirm the mirror suite.
 
@@ -244,7 +250,7 @@ Regression gate: the full root suite (currently **250 passed**) stays green; the
 |---|---|
 | `xhs_ceramics_analytics/importing/mapping.py` | Add `REQUIRED_COLUMNS`, `_FULLWIDTH_PUNCT`, fold in `_normalize_column_name`, `ColumnDiagnostic`/`ColumnMapping` dataclasses, `map_columns`, retarget `guess_field_mapping` as wrapper |
 | `xhs_ceramics_analytics/importing/overrides.py` (new) | `load_overrides(path)` + merge helper |
-| `xhs_ceramics_analytics/db/build.py` | Load overrides; `_projected_frame`/`_canonical_frame` call `map_columns(..., overrides=...)`; collect diagnostics; add `mapping_diagnostics` to `_AUX_TABLES` + `_create_mapping_diagnostics_table`; `build_database(..., overrides_path=None)` |
+| `xhs_ceramics_analytics/db/build.py` | Load overrides; thread `overrides` through `_group_files_by_type → _canonical_frame → _projected_frame` (all three return types change to bubble up `(frame, diagnostics)` + per-file name); `_projected_frame` calls `map_columns(..., overrides=...)`; `build_database` accumulates diagnostics; add `mapping_diagnostics` to `_AUX_TABLES` + `_create_mapping_diagnostics_table` (reusing `_create_table_from_frame`); `build_database(..., *, overrides_path=None)` |
 | `skills/data-analyze-for-zcl/SKILL.md` | Add the Layer-3 diagnostics→judge→overrides→rebuild instructions |
 | `tests/test_ingestion_hardening.py` (new), `tests/test_mapping.py`, `tests/test_real_export_build.py` | Tests above; top up fixtures with Required columns |
 | runtime mirror (`skills/data-analyze-for-zcl/assets/xhs-ca/...`) | Regenerated by `sync-runtime` |
