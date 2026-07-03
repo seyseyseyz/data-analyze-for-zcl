@@ -8,6 +8,7 @@ Design: docs/superpowers/specs/2026-07-03-core-business-diagnosis-design.md
 """
 from pathlib import Path
 
+from xhs_ceramics_analytics.analysis.funnel_scope import normalize_funnel_rows
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.analytics.confidence import (
     bounded_rate,
@@ -403,7 +404,13 @@ def _funnel_finding(
     if "shop_visitors" not in cols or "shop_payers" not in cols:
         limitations.append("shop_page_funnel 缺 shop_visitors/shop_payers，跳过漏斗诊断。")
         return None, {}
-    rows = _fetch_all(con, "shop_page_funnel")
+    raw_rows = _fetch_all(con, "shop_page_funnel")
+    # Normalize scope before summing: drop the platform ``全部`` rollup and collapse
+    # cumulative first-purchase windows, so visitors are not double-counted and the
+    # audience test compares real segments (新客 vs 老客), never subset-vs-superset.
+    rows, _rollup, canonical_cycle = normalize_funnel_rows(
+        raw_rows, "audience_type" in cols, "first_purchase_cycle" in cols
+    )
     visitors = sum(_num(r.get("shop_visitors")) for r in rows)
     payers = sum(_num(r.get("shop_payers")) for r in rows)
     has_clicks = "product_click_users" in cols
@@ -441,6 +448,10 @@ def _funnel_finding(
     caveats = ["观察性漏斗，非因果；各阶段率为聚合快照。"]
     if fallback:
         caveats.append("缺 product_click_users，访问→点击/点击→支付用比率列均值。")
+    if canonical_cycle is not None:
+        caveats.append(
+            f"首购周期为累计窗口，固定取 {canonical_cycle} 避免 180/365 天窗口重复计数。"
+        )
     key_numbers: dict[str, object] = {
         "weakest_stage": weakest,
         "visit_click_rate": visit_click,
