@@ -18,35 +18,59 @@ from xhs_ceramics_analytics.reporting.labels import (
     format_percent,
 )
 
+# Proportions/rates that are 0-1 fractions but whose names don't carry the
+# ``_rate``/``_share`` suffix the predicate keys off. Kept explicit (not a
+# blanket ``conversion`` substring) so look-alike counts/text — conversion_source
+# (enum), conversion_universe/gmv_universe (SKU counts) — are never mis-scaled.
+#
+# The contract this set relies on: a column name maps to exactly one unit across
+# the whole codebase. ``ci_low``/``ci_high`` are here because every producer uses
+# them to bound a *rate* — a future CI over money/counts must be named
+# ``gmv_ci_low`` etc. so it stays money. ``delta`` is deliberately absent: it is
+# polymorphic (GMV yuan in core_business, rate-points in the refund/search
+# trends), so each trend renames its column to a unit-bearing name
+# (``gmv_delta`` = money, ``refund_rate_delta``/``avg_pay_conversion_delta`` =
+# rate-points) rather than overloading one ambiguous key.
 PERCENT_FIELDS = {
-    "avg_collect_rate",
-    "avg_comment_rate",
-    "avg_like_rate",
-    "avg_read_rate",
-    "collect_rate",
-    "comment_rate",
-    "comment_share",
+    "avg_pay_conversion",
+    "avg_pay_conversion_delta",
+    "baseline_conversion",
+    "baseline_effectiveness",
+    "card_conversion",
+    "cart_to_pay",
+    "ci_high",
+    "ci_low",
+    "click_baseline",
     "confidence_weight",
+    "conv_diff",
+    "conversion",
+    "conversion_baseline",
     "ctr_calc",
-    "like_rate",
-    "mix_share",
+    "effectiveness",
+    "effectiveness_high",
+    "effectiveness_low",
+    "new_customer_dependence",
+    "note_conversion",
+    "overall_cart_to_pay",
+    "pay_conversion",
     "pct",
+    "rate",
     "read_gap_to_max",
-    "read_rate",
+    "refund_diff",
+    "refund_rate_delta",
     "relative_lift",
+    "repeat_conversion_premium",
+    "share",
+    "wilson_high",
+    "wilson_low",
 }
 
-MONEY_FIELDS = {
-    "cost_per_order_calc",
-    "cpc_calc",
-    "cpm_calc",
-    "gmv",
-    "gmv_optional",
-    "paid_amount",
-    "price",
-    "spend",
-    "total_spend",
-}
+# ``_rate`` covers refund/read/like/etc. rates; ``_share`` covers every mix/gmv/
+# visitor/order proportion; ``_rate_pay`` covers refund rates that carry the
+# 支付时间 caliber marker (e.g. ``post_ship_refund_rate_pay``) whose trailing
+# ``_pay`` would otherwise hide the ``_rate`` from the suffix test. All denote
+# 0-1 fractions rendered as percents.
+PERCENT_SUFFIXES = ("_rate", "_share", "_rate_pay")
 
 # Fields whose values denote a calendar day. Real exports carry these as integer
 # YYYYMMDD, ISO strings, or datetime — the date branch normalizes all to ISO.
@@ -62,7 +86,7 @@ DATE_FIELDS = {
 
 
 def is_percent_field(field_name: str) -> bool:
-    return field_name in PERCENT_FIELDS or field_name.endswith("_rate")
+    return field_name in PERCENT_FIELDS or field_name.endswith(PERCENT_SUFFIXES)
 
 
 def is_date_field(field_name: str) -> bool:
@@ -114,6 +138,11 @@ def format_scalar(field_name: str, value: object) -> str:
         iso = _format_date(value)
         if iso is not None:
             return iso
+        # A date-named field carrying a bare numeric (year 2026, month 202604)
+        # must not be money-grouped into "2,026"; show the plain digits.
+        if isinstance(value, Number):
+            numeric = float(value)
+            return str(int(numeric)) if numeric.is_integer() else str(value)
     if isinstance(value, str):
         return VALUE_LABELS.get(value, value)
     if isinstance(value, Number):

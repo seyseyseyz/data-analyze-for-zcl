@@ -67,7 +67,7 @@ def test_layer_finding_identifies_dominant_ship_stage_not_return(tmp_path):
     # caveat spells out that 退货退款 is not additive with the ship-stage split
     assert any("退货退款" in c and "不" in c for c in finding.caveats)
     # cross-reference caveat naming the other refund modules' calibers
-    assert any("退款根因诊断" in c and "渠道结构诊断" in c for c in finding.caveats)
+    assert any("退款根因诊断" in c and "渠道结构与健康诊断" in c for c in finding.caveats)
     assert finding.recommended_action  # lever text present
     assert finding.evidence_strength.value == "weak"
 

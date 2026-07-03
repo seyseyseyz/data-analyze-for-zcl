@@ -35,10 +35,14 @@ def normalize_funnel_rows(
     """Split rollup rows out and collapse cumulative windows to one canonical window.
 
     Returns ``(segment_rows, rollup_rows, canonical_cycle)``:
-    - ``segment_rows``: real audience segments (rollup removed) restricted to the
-      widest first-purchase window so 180天/365天 never double-count.
+    - ``segment_rows``: real audience segments (rollup removed), each collapsed to
+      *its own* widest first-purchase window so 180天/365天 never double-count.
+      Collapsing per-segment (not to one global window) means a segment that only
+      reports a narrower window is kept, never silently dropped — otherwise the
+      audience comparison this layer exists to enable would lose a group.
     - ``rollup_rows``: the ``全部`` rows, kept separately for a true store-wide total.
-    - ``canonical_cycle``: the window kept, or ``None`` when no numeric window exists.
+    - ``canonical_cycle``: the widest window kept across segments, or ``None`` when
+      no numeric window exists (used only for the reader-facing caveat).
     """
     rollup_rows = [r for r in rows if has_audience and r.get("audience_type") == ROLLUP]
     segment_rows = [
@@ -46,14 +50,28 @@ def normalize_funnel_rows(
     ]
     canonical: str | None = None
     if has_cycle:
-        cycle_vals = [
-            r.get("first_purchase_cycle")
-            for r in segment_rows
-            if r.get("first_purchase_cycle") not in (None, ROLLUP)
-        ]
-        canonical = canonical_cycle(cycle_vals)
-        if canonical is not None:
-            segment_rows = [
-                r for r in segment_rows if r.get("first_purchase_cycle") == canonical
+        segments: dict[object, list[dict]] = {}
+        for r in segment_rows:
+            key = r.get("audience_type") if has_audience else None
+            segments.setdefault(key, []).append(r)
+
+        kept: list[dict] = []
+        kept_cycles: list[str] = []
+        for seg_rows in segments.values():
+            seg_cycles = [
+                r.get("first_purchase_cycle")
+                for r in seg_rows
+                if r.get("first_purchase_cycle") not in (None, ROLLUP)
             ]
+            seg_canonical = canonical_cycle(seg_cycles)
+            if seg_canonical is None:
+                # No numeric window for this segment — leave its rows untouched.
+                kept.extend(seg_rows)
+            else:
+                kept.extend(
+                    r for r in seg_rows if r.get("first_purchase_cycle") == seg_canonical
+                )
+                kept_cycles.append(seg_canonical)
+        segment_rows = kept
+        canonical = canonical_cycle(kept_cycles) if kept_cycles else None
     return segment_rows, rollup_rows, canonical

@@ -135,7 +135,7 @@ def _ship_stage_finding(
 
     caveats = [
         "观察性诊断，非因果——发货前后退款差异可能由品类结构、物流时效与描述一致性共同驱动。",
-        "本节为订单加权退款率口径；退款金额份额口径见退款结构诊断，分渠道退款率见渠道结构诊断，三者非重复。",
+        "本节为订单加权退款率口径；退款金额份额口径见退款结构诊断，分渠道退款率见渠道结构与健康诊断，三者非重复。",
     ]
     if dominant_stage is not None:
         dominant_zh = _SHIP_STAGE_ZH[dominant_stage]

@@ -122,7 +122,7 @@ def _layer_finding(con, limitations: list[str]) -> tuple[Finding, list[dict]]:
     )
     caveats = [
         "观察性拆解，非因果；层级份额基于聚合快照。",
-        "本节为退款金额份额口径；退款率口径见退款根因诊断，分渠道退款率见渠道结构诊断，三者非重复。",
+        "本节为退款金额份额口径；退款率口径见退款根因诊断，分渠道退款率见渠道结构与健康诊断，三者非重复。",
     ]
     return_row = next((r for r in layer_rows if r["axis"] == "return_type"), None)
     if return_row is not None:
@@ -228,7 +228,7 @@ def _trend_finding(con, limitations: list[str]) -> tuple[Finding | None, list[di
     # Per-period deltas belong in the table columns, not a stringified appendix.
     steps = mom_change(series)
     trend_rows = [
-        {"period": s["period"], "refund_rate": s["value"], "delta": s["delta"],
+        {"period": s["period"], "refund_rate": s["value"], "refund_rate_delta": s["delta"],
          "pct": s["pct"], "direction": s["direction"]}
         for s in steps
     ]

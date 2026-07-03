@@ -236,7 +236,8 @@ def _trend_finding(con, limitations: list[str]) -> tuple[Finding | None, list[di
     # Per-period deltas belong in the table columns, not a stringified appendix.
     steps = mom_change(series)
     trend_rows = [
-        {"period": s["period"], "avg_pay_conversion": s["value"], "delta": s["delta"],
+        {"period": s["period"], "avg_pay_conversion": s["value"],
+         "avg_pay_conversion_delta": s["delta"],
          "pct": s["pct"], "direction": s["direction"]}
         for s in steps
     ]

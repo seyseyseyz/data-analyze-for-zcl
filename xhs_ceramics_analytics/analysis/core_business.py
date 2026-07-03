@@ -190,7 +190,7 @@ def _pay_conversion(cols, rows, total_buyers) -> tuple[float | None, str | None]
 
 def _gmv_trend(
     cols, rows, limitations: list[str]
-) -> tuple[list[dict], str | None, list[dict], dict]:
+) -> tuple[list[dict], str | None, dict, dict]:
     if "date" not in cols or "gmv" not in cols:
         limitations.append("business_overview_daily 缺少 date/gmv，跳过 GMV 趋势。")
         return [], None, [], {}
@@ -204,7 +204,7 @@ def _gmv_trend(
     # Per-period deltas live in the table columns (not a stringified appendix dump).
     steps = mom_change(series)
     trend_rows = [
-        {"date": s["period"], "gmv": s["value"], "delta": s["delta"],
+        {"date": s["period"], "gmv": s["value"], "gmv_delta": s["delta"],
          "pct": s["pct"], "direction": s["direction"]}
         for s in steps
     ]
@@ -218,7 +218,8 @@ def _decompose_gmv(series: list[tuple[str, float]], trend_rows: list[dict]) -> d
     """Layer week-over-week, day-of-week, and changepoint structure over the slope.
 
     Every sub-metric degrades independently: too-short series → no WoW bucket,
-    unparseable dates → no peak weekday, <4 points → no changepoint. The
+    unparseable dates → no peak weekday, <6 points → no changepoint (each side of
+    the split needs min_segment=3 points, so two segments need six). The
     changepoint date is looked up from the series and mirrored onto trend_rows so
     the exported table flags the shift row.
     """

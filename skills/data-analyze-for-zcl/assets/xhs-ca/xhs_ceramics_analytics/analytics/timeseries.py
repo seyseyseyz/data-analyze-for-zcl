@@ -92,6 +92,9 @@ def changepoint(values: list[float], min_segment: int = 3) -> dict:
     structural break. Series too short to form two such segments → {"index": None}.
     Observational — flags where the level moved, not why.
     """
+    # A segment must hold at least one point; clamp so a 0/negative caller can
+    # never drive the ``prefix / i`` division below to a ZeroDivisionError.
+    min_segment = max(1, min_segment)
     n = len(values)
     none_result = {"index": None, "before_mean": None, "after_mean": None, "shift": None}
     if n < 2 * min_segment:
