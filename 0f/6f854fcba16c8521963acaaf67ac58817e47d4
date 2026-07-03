@@ -1,0 +1,119 @@
+tests/test_analytics_reconcile.py
+  s_6bd2349b4ebd4d::t_7cb9af55599285 1-22
+references/data_contract/business_overview_daily.md
+  s_6bd2349b4ebd4d::t_763951bae3da1e 1-9
+references/data_contract/traffic_source.md
+  s_6bd2349b4ebd4d::t_e36d690d8d521f 1-7
+  s_6bd2349b4ebd4d::t_0c4d06d0f13f8d 8
+tests/fixtures/search_overview.csv
+  s_6bd2349b4ebd4d::t_eaa45f1841d50e 1-3
+references/data_contract/sku_performance.md
+  s_6bd2349b4ebd4d::t_df43e94b467d87 1-8
+tests/test_duckdb_build.py
+  s_6bd2349b4ebd4d::t_989b9c03b3727b 272-313
+  s_6bd2349b4ebd4d::t_74d71ea88eb2e1 421-441
+  s_6bd2349b4ebd4d::t_255b396b58f755 314-396
+  s_6bd2349b4ebd4d::t_483e919929890a 442-459
+  s_6bd2349b4ebd4d::t_063a8569e37158 460-476
+tests/fixtures/shop_page_source.csv
+  s_6bd2349b4ebd4d::t_c4314b2a385419 1-3
+tests/fixtures/refund_overview.csv
+  s_6bd2349b4ebd4d::t_be0199fb5e64a9 1-3
+tests/fixtures/sku_performance.csv
+  s_6bd2349b4ebd4d::t_102f4ef0c72faf 1-3
+tests/fixtures/search_terms.csv
+  s_6bd2349b4ebd4d::t_516b33fe988548 1-3
+references/data_contract/notes.md
+  s_6bd2349b4ebd4d::t_cec90a590ff5ad 37-59,65-71,85-108
+xhs_ceramics_analytics/db/build.py
+  s_6bd2349b4ebd4d::t_2f794f36c5c719 2,15
+  s_6bd2349b4ebd4d::t_981a2a75108113 55-56
+  s_6bd2349b4ebd4d::t_837b37a2025c31 29-36,43-45,47-48,51-53,65,70,72-80,84,87-189,191
+  s_6bd2349b4ebd4d::t_0bc7b116716f2e 238
+  s_6bd2349b4ebd4d::t_cd22180d1931c9 9-13
+  s_6bd2349b4ebd4d::t_a0fcc96e3ff8b6 46,49-50,66-69,71,81-83,194-205,207-224,235-237,239-241,246-256
+  s_6bd2349b4ebd4d::t_0ff7f042b6b9e7 27
+tests/fixtures/traffic_source.csv
+  s_6bd2349b4ebd4d::t_0fcf91fce04217 1-3
+references/metric_definitions.md
+  s_6bd2349b4ebd4d::t_c1ed3109ba9e7b 53-55
+tests/test_real_export_build.py
+  s_6bd2349b4ebd4d::t_41f751dc5da46a 1-37
+tests/fixtures/notes_commerce.csv
+  s_6bd2349b4ebd4d::t_c7a7c43b1abc1b 1-3
+tests/test_mapping.py
+  s_6bd2349b4ebd4d::t_ba2bde46799c47 303-310
+  s_6bd2349b4ebd4d::t_43d29eb6142644 331-339
+  s_6bd2349b4ebd4d::t_bcf568a7eb552c 340-348
+  s_6bd2349b4ebd4d::t_bc55988e0fc5a8 5-9
+  s_6bd2349b4ebd4d::t_46e04cc432d08a 322-330
+  s_6bd2349b4ebd4d::t_21165ffebbc81b 262-292
+  s_6bd2349b4ebd4d::t_d16f4fa8bb8a67 293-302
+  s_6bd2349b4ebd4d::t_e9054e490a6f24 311-321
+xhs_ceramics_analytics/db/marts.py
+  s_6bd2349b4ebd4d::t_48cb211dce3178 1
+  s_6bd2349b4ebd4d::t_43110db5a1338c 45-47,60-62
+  s_6bd2349b4ebd4d::t_96119798f2c4a2 66-98
+references/data_contract/search_overview.md
+  s_6bd2349b4ebd4d::t_f37b546101f92b 1-7
+references/data_contract/shop_page_source.md
+  s_6bd2349b4ebd4d::t_aa73bb4b74cd8c 1-7
+references/data_contract/shop_page_funnel.md
+  s_6bd2349b4ebd4d::t_05fb74beecf599 1-7
+xhs_ceramics_analytics/analytics/reconcile.py
+  s_6bd2349b4ebd4d::t_7451548b5fc3a3 1-21
+references/data_contract/search_terms.md
+  s_6bd2349b4ebd4d::t_a4c6a822ede10c 1-7
+references/data_contract/audience_profile.md
+  s_6bd2349b4ebd4d::t_b567ed56cecd03 9
+  s_6bd2349b4ebd4d::t_7e44c6f35a0ea2 1-8,10-11
+references/data_contract/refund_overview.md
+  s_6bd2349b4ebd4d::t_9a66d7d480e058 1-9
+references/xhs_glossary.md
+  s_6bd2349b4ebd4d::t_dd69924a9ebed1 132-138
+tests/fixtures/shop_page_funnel.csv
+  s_6bd2349b4ebd4d::t_26ca864790656f 1-3
+tests/fixtures/business_overview_daily.csv
+  s_6bd2349b4ebd4d::t_b69c83e2f87fb0 1-3
+xhs_ceramics_analytics/importing/mapping.py
+  s_6bd2349b4ebd4d::t_a31faa77d5adb6 152-181
+  s_6bd2349b4ebd4d::t_8ba56c7792412e 40
+  s_6bd2349b4ebd4d::t_dcb783f62fbc2e 182-208
+  s_6bd2349b4ebd4d::t_07c8c4871b9f30 10-14
+  s_6bd2349b4ebd4d::t_450c473b64f249 293
+  s_6bd2349b4ebd4d::t_acc6cf97c05e46 84-107
+  s_6bd2349b4ebd4d::t_f92c799a616b24 294
+  s_6bd2349b4ebd4d::t_f5fc5e6e9cb8ab 54-55
+  s_6bd2349b4ebd4d::t_3529fcae05646a 230-250
+  s_6bd2349b4ebd4d::t_47b870217be8fe 56-62
+  s_6bd2349b4ebd4d::t_95f5bced8df628 297-298
+  s_6bd2349b4ebd4d::t_5afa086174aa09 288-292
+  s_6bd2349b4ebd4d::t_48077fb75eee22 41-53
+  s_6bd2349b4ebd4d::t_74942696ddd3f8 209-229
+  s_6bd2349b4ebd4d::t_1218dd768ce2f7 310-312,314,317-328,334-342,346-353
+  s_6bd2349b4ebd4d::t_e4cc0a6c02c721 145-147
+  s_6bd2349b4ebd4d::t_b641975004a4bd 251-284
+  s_6bd2349b4ebd4d::t_5541be2a6a05cc 299-300
+  s_6bd2349b4ebd4d::t_d2b192208c163c 39
+  s_6bd2349b4ebd4d::t_e0a28e54f39a8b 295-296
+references/data_contract/_index.md
+  s_6bd2349b4ebd4d::t_6deb8019627c40 9,21-28
+references/data_contract/refund_reasons.md
+  s_6bd2349b4ebd4d::t_a497136660518a 1-11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.28-trip",
+  "base_commit_sha": "0f6f854fcba16c8521963acaaf67ac58817e47d4",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
