@@ -6,7 +6,7 @@ All tables used by the ceramics analytics pipeline. Each file documents required
 
 | Table | File | Description |
 |-------|------|-------------|
-| `notes` | [notes.md](notes.md) | One row per Xiaohongshu note with engagement metrics |
+| `notes` | [notes.md](notes.md) | One row per Xiaohongshu note with engagement metrics (enriched with commerce attribution: `note_gmv`, `product_clicks`, `pay_conversion_pv/uv`, refund-by-note, etc. from `4.商品笔记数据`) |
 | `products` | [products.md](products.md) | One row per product (vessel type, series, category) |
 | `skus` | [skus.md](skus.md) | One row per SKU with price and optional inventory |
 | `orders` | [orders.md](orders.md) | One row per order line (order_id + sku_id grain) |
@@ -18,6 +18,14 @@ All tables used by the ceramics analytics pipeline. Each file documents required
 | `experiments` | [experiments.md](experiments.md) | Planned/completed A/B test cells |
 | `hypotheses` | [hypotheses.md](hypotheses.md) | Persistent knowledge base of tested hypotheses |
 | `ad_performance_daily` | [ad_performance_daily.md](ad_performance_daily.md) | Paid traffic performance at available grain |
+| `business_overview_daily` | [business_overview_daily.md](business_overview_daily.md) | One row per day: whole-shop GMV, orders, buyers, AOV, refund/pay-conversion splits (merged from `1.核心数据汇总` + `成交/经营概览-all`) |
+| `sku_performance` | [sku_performance.md](sku_performance.md) | One row per SKU, whole-period aggregate: commerce + add-to-cart + refund (from `2.规格明细`) |
+| `search_overview` | [search_overview.md](search_overview.md) | One row per day per search carrier (载体): impressions, click rate, pay conversion (from `7.搜索总览`) |
+| `search_terms` | [search_terms.md](search_terms.md) | One row per search term, whole-period aggregate: impressions, click rate, pay conversion (from `7.搜索词`) |
+| `shop_page_funnel` | [shop_page_funnel.md](shop_page_funnel.md) | One row per day per audience type per first-purchase cycle: shop visit → pay funnel (from `8.店铺页转化漏斗`) |
+| `shop_page_source` | [shop_page_source.md](shop_page_source.md) | One row per day per audience type per first-purchase cycle per source page: shop entry attribution (from `8.进店来源`) |
+| `refund_overview` | [refund_overview.md](refund_overview.md) | One row per stat period per account per carrier: refund structure by ship stage and refund type (from `6.退款分析概览`) |
+| `traffic_source` | [traffic_source.md](traffic_source.md) | One row per account per traffic channel per note type: acquisition-side clicks and conversion (from `3.流量来源`) |
 
 ## Join Graph
 

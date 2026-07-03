@@ -1,0 +1,8 @@
+# traffic_source
+
+- **Grain / Primary Key:** (`xhs_id`, `channel`, `note_type`) — one row per account per traffic channel (渠道) per note type (笔记类型).
+- **Source file:** `3.流量来源`.
+- **Required:** `xhs_id, channel, product_clicks, product_click_users`.
+- **Optional:** `account_name, note_type, gmv, paid_orders, paid_buyers, pay_conversion_pv, pay_conversion_uv`.
+- **Chinese aliases:** see `FIELD_ALIASES["traffic_source"]` in `importing/mapping.py`.
+- **Caliber:** acquisition-side only — no refund columns; `paid_buyers` maps 支付人数 (distinct from other tables' 支付买家数) at this account/channel/note-type grain.

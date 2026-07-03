@@ -1,3 +1,4 @@
+from xhs_ceramics_analytics.analytics.periods import period_month_expr
 from xhs_ceramics_analytics.db.sql_helpers import numeric_expr
 
 
@@ -41,6 +42,9 @@ def create_note_metrics_view(con) -> None:
         "COALESCE(CAST(comments AS DOUBLE), 0)" if "comments" in note_columns else "0"
     )
     shares = "COALESCE(CAST(shares AS DOUBLE), 0)" if "shares" in note_columns else "0"
+    product_clicks = numeric_expr(note_columns, "product_clicks")
+    note_paid_orders = numeric_expr(note_columns, "note_paid_orders")
+    note_gmv = numeric_expr(note_columns, "note_gmv")
     con.execute(
         f"""
         CREATE OR REPLACE VIEW note_metrics AS
@@ -53,7 +57,42 @@ def create_note_metrics_view(con) -> None:
           CASE
             WHEN {reads} > 0 THEN
               ({likes} + {collects} + {comments} + {shares}) * 1.0 / {reads}
-          END AS engagement_rate
+          END AS engagement_rate,
+          CASE WHEN {product_clicks} > 0 THEN {note_paid_orders} * 1.0 / {product_clicks} END AS click_to_order,
+          CASE WHEN {product_clicks} > 0 THEN {note_gmv} * 1.0 / {product_clicks} END AS gmv_per_click
         FROM notes
+        """
+    )
+
+
+def create_business_overview_monthly(con) -> None:
+    columns = {
+        row[1] for row in con.sql("PRAGMA table_info('business_overview_daily')").fetchall()
+    }
+    if "date" not in columns:
+        return
+    period = period_month_expr("date")
+    gmv = numeric_expr(columns, "gmv")
+    paid_orders = numeric_expr(columns, "paid_orders")
+    paid_buyers = numeric_expr(columns, "paid_buyers")
+    paid_units = numeric_expr(columns, "paid_units")
+    refund_amount_pay = numeric_expr(columns, "refund_amount_pay")
+    net_gmv_pay = numeric_expr(columns, "net_gmv_pay")
+    con.execute(
+        f"""
+        CREATE TABLE business_overview_monthly AS
+        SELECT
+          {period} AS period_month,
+          SUM({gmv}) AS gmv,
+          SUM({paid_orders}) AS paid_orders,
+          SUM({paid_buyers}) AS paid_buyers,
+          SUM({paid_units}) AS paid_units,
+          SUM({refund_amount_pay}) AS refund_amount_pay,
+          SUM({net_gmv_pay}) AS net_gmv_pay,
+          SUM({gmv}) / NULLIF(SUM({paid_orders}), 0) AS aov,
+          SUM({refund_amount_pay}) / NULLIF(SUM({gmv}), 0) AS refund_rate_pay
+        FROM business_overview_daily
+        GROUP BY 1
+        ORDER BY 1
         """
     )

@@ -2,7 +2,11 @@ from pathlib import Path
 
 import pytest
 
-from xhs_ceramics_analytics.importing.mapping import guess_field_mapping, guess_table_type
+from xhs_ceramics_analytics.importing.mapping import (
+    AmbiguousTableTypeError,
+    guess_field_mapping,
+    guess_table_type,
+)
 import pandas as pd
 
 from xhs_ceramics_analytics.importing import profile as profile_module
@@ -255,3 +259,90 @@ def test_guess_field_mapping_maps_paid_traffic_headers(tmp_path):
     assert mapping["clicks"] == "点击量"
     assert mapping["gmv_optional"] == "成交金额"
     assert mapping["roas_optional"] == "广告投产比"
+
+
+def _profile(columns):
+    return FileProfile(
+        path=None, table_name="t", columns=columns, row_count=1, sample_rows=[]
+    )
+
+
+def test_below_threshold_raises_plain_valueerror():
+    with pytest.raises(ValueError) as excinfo:
+        guess_table_type(_profile(["完全不相关的列名"]))
+    assert not isinstance(excinfo.value, AmbiguousTableTypeError)
+
+
+def test_tie_between_products_and_skus_is_ambiguous():
+    # "商品ID" alone hits products.product_id AND skus.product_id → 0.25 vs 0.25,
+    # SAME raw hit count (1 each) → a genuine collision, still ambiguous.
+    with pytest.raises(AmbiguousTableTypeError):
+        guess_table_type(_profile(["商品ID"]))
+
+
+def test_partial_notes_file_still_classifies_as_notes():
+    # Regression guard (pre-existing test_final_review_regressions.py depends on this):
+    # a column-sparse but valid notes export must NOT trip the ambiguity margin.
+    # notes matches 2 signature columns (note_id + publish_time) while comments
+    # matches only 1 (note_id self-matches its own target name), so on normalized
+    # coverage notes 2/6 == comments 1/3 — a 0.00 gap < MARGIN — yet notes clearly
+    # explains MORE real columns. The raw-hit tie-break must resolve this to notes,
+    # not raise AmbiguousTableTypeError (which Task 3 would divert into needs_data,
+    # leaving the notes table unbuilt and breaking account_baseline).
+    assert guess_table_type(_profile(["note_id", "publish_time"])) == "notes"
+
+
+def test_classifies_business_overview_daily():
+    profile = _profile(["时间", "支付金额", "支付订单数", "支付买家数", "客单价",
+                        "退款后支付金额（支付时间）", "退款率（支付时间）"])
+    assert guess_table_type(profile) == "business_overview_daily"
+    mapping = guess_field_mapping(profile, "business_overview_daily")
+    assert mapping["date"] == "时间"
+    assert mapping["net_gmv_pay"] == "退款后支付金额（支付时间）"
+    assert mapping["refund_rate_pay"] == "退款率（支付时间）"
+
+
+def test_classifies_sku_performance_and_catalog_still_skus():
+    perf = _profile(["规格ID", "规格名称", "商品ID", "一级品类", "加购人数",
+                     "支付金额", "客单价", "退款后支付金额（支付时间）", "退款率（支付时间）"])
+    assert guess_table_type(perf) == "sku_performance"
+    catalog = _profile(["规格ID", "商品ID", "规格名称", "销售价格"])
+    assert guess_table_type(catalog) == "skus"
+
+
+def test_notes_enriched_commerce_aliases():
+    profile = _profile(["笔记id", "发布时间", "笔记标题", "阅读次数", "点赞数", "收藏数",
+                        "笔记类型", "笔记支付金额", "笔记商品点击次数", "笔记商品点击人数"])
+    assert guess_table_type(profile) == "notes"
+    mapping = guess_field_mapping(profile, "notes")
+    assert mapping["note_type"] == "笔记类型"
+    assert mapping["note_gmv"] == "笔记支付金额"
+    assert mapping["product_clicks"] == "笔记商品点击次数"
+    assert mapping["product_click_users"] == "笔记商品点击人数"
+
+
+def test_classifies_search_overview_and_terms():
+    overview = _profile(["日期", "载体", "支付金额", "支付订单数", "支付买家数",
+                         "商卡曝光人数", "商品点击人数", "商品点击率", "支付转化率"])
+    assert guess_table_type(overview) == "search_overview"
+    terms = _profile(["搜索词", "支付金额", "支付订单数", "支付买家数",
+                      "商卡曝光人数", "商品点击人数", "商品点击率", "支付转化率"])
+    assert guess_table_type(terms) == "search_terms"
+
+
+def test_classifies_shop_page_funnel_and_source():
+    funnel = _profile(["时间", "人群类型", "首购周期", "店铺页访问人数",
+                       "商品点击人数", "店铺页支付人数", "访问点击转化率", "点击支付率", "访问支付率"])
+    assert guess_table_type(funnel) == "shop_page_funnel"
+    source = _profile(["时间", "人群类型", "首购周期", "来源页面",
+                       "店铺页支付金额", "店铺页访问人数", "进店支付转化率", "人均支付金额"])
+    assert guess_table_type(source) == "shop_page_source"
+
+
+def test_classifies_refund_overview_and_traffic_source():
+    refund = _profile(["统计时间", "账号类型", "账号名称", "载体", "退款金额（支付时间）",
+                       "发货前退款金额（支付时间）", "退货退款金额（支付时间）", "退款人数"])
+    assert guess_table_type(refund) == "refund_overview"
+    traffic = _profile(["小红书号", "账号名称", "渠道", "笔记类型", "支付金额",
+                        "支付订单数", "支付人数", "商品点击次数", "商品点击人数"])
+    assert guess_table_type(traffic) == "traffic_source"

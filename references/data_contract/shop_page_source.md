@@ -1,0 +1,7 @@
+# shop_page_source
+
+- **Grain / Primary Key:** (`date`, `audience_type`, `first_purchase_cycle`, `source_page`) — one row per day per audience type per first-purchase cycle per source page (来源页面).
+- **Source file:** `8.进店来源`.
+- **Required:** `source_page, shop_visitors, enter_pay_rate`.
+- **Optional:** `date, audience_type, first_purchase_cycle, shop_gmv, gmv_per_user`.
+- **Chinese aliases:** see `FIELD_ALIASES["shop_page_source"]` in `importing/mapping.py`.

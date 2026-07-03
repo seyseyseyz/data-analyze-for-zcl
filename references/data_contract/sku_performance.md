@@ -1,0 +1,8 @@
+# sku_performance
+
+- **Grain / Primary Key:** `sku_id` (规格ID) — whole-period per-SKU aggregate (no date column).
+- **Source file:** `2.规格明细` (26 col). §4 商品与SKU source.
+- **Required:** `sku_id`; commerce block `net_gmv_pay, refund_rate_pay, add_to_cart_users`.
+- **Optional:** `sku_name, product_id, product_name, is_channel_product, barcode, category_l1, category_l2, brand, add_to_cart_units, wishlist_users, gmv, paid_buyers, paid_orders, paid_units, aov, refund_amount_pay, refund_orders_pay, pre_ship_refund_rate_pay, post_ship_refund_rate_pay, refund_amount_refundtime, refund_rate_refundtime`.
+- **Join keys:** `sku_id` → `skus`/`products` catalog; `product_id` → `products`.
+- **Note:** 退款后GMV (`net_gmv_pay`) is platform-given — never computed.

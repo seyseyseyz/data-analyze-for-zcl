@@ -50,3 +50,6 @@ Core paid traffic metrics:
 - `cvr_calc = conversions_optional / clicks`
 - `cost_per_order_calc = spend / orders_optional`
 - `roas_calc = gmv_optional / spend`
+
+Period bucketing: `时间/日期` are int `YYYYMMDD`, `笔记创建时间` is a local (Asia/Shanghai) timestamp; both
+bucket to `YYYY-MM` with no timezone conversion (see `analytics/periods.py`).
