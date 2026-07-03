@@ -19,6 +19,7 @@ _LAYER_COLUMNS = {
     "post_ship": "post_ship_refund_amount",
     "return": "return_refund_amount",
 }
+_SHIP_STAGE_LAYERS = ("pre_ship", "post_ship")
 _LAYER_LEVERS = {
     "pre_ship": "发货前退款最高：优化下单后拦截话术、库存与发货时效、价格波动预期管理。",
     "post_ship": "发货后退款最高：排查物流破损与时效、加强客服响应与签收提醒。",
@@ -73,16 +74,35 @@ def _layer_finding(con, limitations: list[str]) -> tuple[Finding, list[dict]]:
     cols = _table_columns(con, "refund_overview")
     rows = _fetch_all(con, "refund_overview")
     present = {name: col for name, col in _LAYER_COLUMNS.items() if col in cols}
-    layer_rows: list[dict] = []
     total = sum(_num(r.get("refund_amount_pay")) for r in rows)
-    for layer, col in present.items():
-        amount = sum(_num(r.get(col)) for r in rows)
-        share = amount / total if total else None
-        layer_rows.append({"layer": layer, "refund_amount": amount, "share": share})
+    amounts = {layer: sum(_num(r.get(col)) for r in rows) for layer, col in present.items()}
+    # pre_ship + post_ship partition the ship-stage axis (they sum to 100% of
+    # refunds); 退货退款 is a *return-type* subset of post-ship, on a different
+    # axis. Sharing one denominator would make the column sum ~127% and imply
+    # additivity, so each axis gets its own denominator.
+    ship_stage_total = sum(amt for layer, amt in amounts.items() if layer in _SHIP_STAGE_LAYERS)
+    layer_rows: list[dict] = []
+    for layer in present:
+        amount = amounts[layer]
+        if layer in _SHIP_STAGE_LAYERS:
+            axis, denom = "ship_stage", ship_stage_total
+        else:
+            axis, denom = "return_type", total
+        layer_rows.append(
+            {
+                "layer": layer,
+                "axis": axis,
+                "refund_amount": amount,
+                "share": amount / denom if denom else None,
+            }
+        )
     for missing in _LAYER_COLUMNS.keys() - present.keys():
         limitations.append(f"refund_overview 缺少 {_LAYER_COLUMNS[missing]}，跳过 {missing} 层。")
 
-    dominant = max(layer_rows, key=lambda r: r["refund_amount"], default=None)
+    # Dominant layer is judged within the ship-stage partition only — 退货退款 lives
+    # on a different axis and cannot be compared share-for-share against it.
+    ship_rows = [r for r in layer_rows if r["axis"] == "ship_stage"]
+    dominant = max(ship_rows, key=lambda r: r["refund_amount"], default=None)
     # overall refund rate + Wilson CI via reverse-derived paid-order base
     k = sum(_num(r.get("refund_orders_pay")) for r in rows)
     n = sum(
@@ -95,12 +115,21 @@ def _layer_finding(con, limitations: list[str]) -> tuple[Finding, list[dict]]:
 
     dominant_layer = dominant["layer"] if dominant else None
     conclusion = (
-        f"总退款 {round(total)} 元中，占比最高的是 {_layer_zh(dominant_layer)}"
-        f"（{round((dominant['share'] or 0) * 100)}%）。"
+        f"总退款 {round(total)} 元，按发货阶段划分（发货前+发货后=100%）占比最高的是 "
+        f"{_layer_zh(dominant_layer)}（{round((dominant['share'] or 0) * 100)}%）。"
         if dominant
-        else "退款金额层级列缺失，无法拆解。"
+        else "发货阶段退款金额列缺失，无法拆解。"
     )
-    caveats = ["观察性拆解，非因果；层级份额基于聚合快照。"]
+    caveats = [
+        "观察性拆解，非因果；层级份额基于聚合快照。",
+        "本节为退款金额份额口径；退款率口径见退款根因诊断，分渠道退款率见渠道结构诊断，三者非重复。",
+    ]
+    return_row = next((r for r in layer_rows if r["axis"] == "return_type"), None)
+    if return_row is not None:
+        caveats.append(
+            f"退货退款为发货后退款的子集（占总退款额 "
+            f"{round((return_row['share'] or 0) * 100)}%），与发货前/后不在同一划分轴，份额不相加。"
+        )
     if lo is not None:
         caveats.append(f"整体退款率 {rate_band(lo, hi)}（样本 n≈{round(n)}）。")
     finding = Finding(
