@@ -301,8 +301,24 @@ GRAIN_KEYS: dict[str, tuple[str, ...]] = {
 }
 
 
+_FULLWIDTH_PUNCT = str.maketrans(
+    {
+        "（": "(",
+        "）": ")",
+        "【": "[",
+        "】": "]",
+        "，": ",",
+        "、": ",",
+        "：": ":",
+        # NB: U+3000 ideographic space is NOT listed — the existing `\s` below is
+        # Unicode-aware and already collapses it.
+    }
+)
+
+
 def _normalize_column_name(column: str) -> str:
-    normalized = re.sub(r"[\s-]+", "_", column.strip().lower())
+    folded = column.translate(_FULLWIDTH_PUNCT)
+    normalized = re.sub(r"[\s\-]+", "_", folded.strip().lower())
     return re.sub(r"_+", "_", normalized).strip("_")
 
 
