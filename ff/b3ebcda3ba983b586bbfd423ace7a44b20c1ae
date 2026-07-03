@@ -1,0 +1,21 @@
+tests/test_ingestion_hardening.py
+  s_6bd2349b4ebd4d::t_4450e0e1ea0434 1-34
+xhs_ceramics_analytics/importing/mapping.py
+  s_6bd2349b4ebd4d::t_58acf08d2fd6a7 304-318,320-321
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.28-trip",
+  "base_commit_sha": "ffb3ebcda3ba983b586bbfd423ace7a44b20c1ae",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
