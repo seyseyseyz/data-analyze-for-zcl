@@ -1,0 +1,27 @@
+docs/superpowers/specs/2026-07-03-ingestion-hardening-design.md
+  s_6bd2349b4ebd4d::t_002506757c63b4 194-196
+  s_6bd2349b4ebd4d::t_45d76f221b0dce 241,243
+  s_6bd2349b4ebd4d::t_3c0c1693237b2a 76
+  s_6bd2349b4ebd4d::t_298e9d74153853 136-138
+  s_6bd2349b4ebd4d::t_9a454fa064b5d6 234
+  s_6bd2349b4ebd4d::t_69f5cbde37a6ad 253
+  s_6bd2349b4ebd4d::t_285fca44b1025c 116,119-120,125-127
+  s_6bd2349b4ebd4d::t_b50913c1219375 14-15
+  s_6bd2349b4ebd4d::t_b3e7f65c4cf877 211
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.28-trip",
+  "base_commit_sha": "abe8344f8c6ca3caf37073cff10e58d9588a82bd",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
