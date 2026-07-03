@@ -1,0 +1,23 @@
+tests/fixtures/business_overview_daily.csv
+  s_6bd2349b4ebd4d::t_c898257b35d37e 1-3
+tests/fixtures/refund_overview.csv
+  s_6bd2349b4ebd4d::t_405e6473183d1e 1-3
+tests/fixtures/notes_commerce.csv
+  s_6bd2349b4ebd4d::t_f80997e42a9b15 1-3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.28-trip",
+  "base_commit_sha": "08e8893be4edbf378a5c1a7f5fd4aabc9fe82432",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
