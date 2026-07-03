@@ -1,4 +1,5 @@
 import re
+from dataclasses import dataclass
 
 from rapidfuzz import fuzz
 
@@ -301,8 +302,73 @@ GRAIN_KEYS: dict[str, tuple[str, ...]] = {
 }
 
 
+# Downstream hard-dependencies by canonical name: grain keys (a missing grain key
+# corrupts the coalesce in _combine_frames) plus every column a built mart/task SELECTs.
+# Made explicit — NOT derived from the classification signature (chosen for discrimination,
+# omits mart-consumed columns like net_gmv_pay) nor the `_optional` convention (the new
+# §2/§5/§6/§7 tables do not use it). Enforced by test_required_columns_invariants.
+REQUIRED_COLUMNS: dict[str, set[str]] = {
+    "notes": {
+        "note_id", "publish_time", "title", "reads",
+        "impressions", "likes", "collects", "comments",
+    },
+    "products": {"product_id", "product_name", "vessel_type", "series"},
+    "skus": {"sku_id", "product_id", "sku_name", "price"},
+    "orders": {"order_id", "paid_time", "sku_id", "quantity", "paid_amount"},
+    "comments": {"note_id", "comment_time", "comment_text"},
+    "content_features": {"note_id", "composition_type", "scene_hint", "copy_angle"},
+    "calendar_events": {"date", "event_type", "event_name", "severity"},
+    "ad_performance_daily": {"date", "spend", "impressions", "clicks"},
+    "business_overview_daily": {
+        "date", "gmv", "paid_orders", "paid_buyers", "aov",
+        "paid_units", "refund_amount_pay", "net_gmv_pay",  # mart-SUM deps, NOT in signature
+    },
+    "sku_performance": {"sku_id", "net_gmv_pay", "refund_rate_pay", "add_to_cart_users"},
+    "search_overview": {
+        "date", "carrier", "gmv", "paid_orders",
+        "card_impression_users", "product_click_rate", "pay_conversion",
+    },
+    "search_terms": {
+        "search_term", "gmv",
+        "card_impression_users", "product_click_rate", "pay_conversion",
+    },
+    "shop_page_funnel": {
+        "date", "audience_type", "first_purchase_cycle", "shop_visitors", "shop_payers",
+    },
+    "shop_page_source": {
+        "date", "audience_type", "first_purchase_cycle", "source_page",
+        "shop_visitors", "enter_pay_rate",
+    },
+    "refund_overview": {
+        "stat_period", "account_name", "carrier",
+        "refund_amount_pay", "refund_users", "refund_rate_pay",
+        "pre_ship_refund_amount", "post_ship_refund_amount", "return_refund_amount",
+    },
+    "traffic_source": {
+        "xhs_id", "channel", "note_type",
+        "gmv", "paid_orders", "product_clicks", "product_click_users",
+    },
+}
+
+
+_FULLWIDTH_PUNCT = str.maketrans(
+    {
+        "（": "(",
+        "）": ")",
+        "【": "[",
+        "】": "]",
+        "，": ",",
+        "、": ",",
+        "：": ":",
+        # NB: U+3000 ideographic space is NOT listed — the existing `\s` below is
+        # Unicode-aware and already collapses it.
+    }
+)
+
+
 def _normalize_column_name(column: str) -> str:
-    normalized = re.sub(r"[\s-]+", "_", column.strip().lower())
+    folded = column.translate(_FULLWIDTH_PUNCT)
+    normalized = re.sub(r"[\s\-]+", "_", folded.strip().lower())
     return re.sub(r"_+", "_", normalized).strip("_")
 
 
@@ -346,28 +412,66 @@ def guess_table_type(profile: FileProfile) -> str:
 def _table_scoped_hits(columns: list[str], table_type: str) -> int:
     source_columns = [(column, _normalize_column_name(column)) for column in columns]
     signature = TABLE_SIGNATURES[table_type]
+    table_aliases = FIELD_ALIASES.get(table_type, {})
     return sum(
         1
         for target in signature
-        if _alias_source_column(source_columns, table_type, target, set()) is not None
+        if _alias_source_column(
+            source_columns, target, table_aliases.get(target, set()), set()
+        )
+        is not None
     )
 
 
-def guess_field_mapping(profile: FileProfile, table_type: str) -> dict[str, str]:
-    targets = TABLE_SIGNATURES[table_type] | set(FIELD_ALIASES.get(table_type, {}).keys())
+@dataclass(frozen=True)
+class ColumnDiagnostic:
+    table_type: str
+    required_column: str
+    status: str  # "missing" | "ambiguous"
+    candidate_sources: tuple[str, ...]  # unmapped source headers (agent candidate pool)
+    reason: str  # Chinese, operator-facing
+    action: str  # Chinese, what to do
+
+
+@dataclass(frozen=True)
+class ColumnMapping:
+    mapping: dict[str, str]  # canonical -> source, exactly as guess_field_mapping returned
+    diagnostics: tuple[ColumnDiagnostic, ...]
+
+
+def _effective_aliases(
+    table_type: str,
+    overrides: dict[str, dict[str, set[str]]],
+) -> dict[str, set[str]]:
+    """Shipped FIELD_ALIASES unioned with learned overrides. Overrides only ADD."""
+    merged: dict[str, set[str]] = {
+        target: set(aliases) for target, aliases in FIELD_ALIASES.get(table_type, {}).items()
+    }
+    for target, aliases in overrides.get(table_type, {}).items():
+        merged.setdefault(target, set()).update(aliases)
+    return merged
+
+
+def _resolve_mapping(
+    profile: FileProfile,
+    table_type: str,
+    aliases: dict[str, set[str]],
+) -> dict[str, str]:
+    targets = TABLE_SIGNATURES[table_type] | set(aliases.keys())
     source_columns = [
-        (column, _normalize_column_name(column))
-        for column in profile.columns
+        (column, _normalize_column_name(column)) for column in profile.columns
     ]
     used_sources: set[str] = set()
     mapping: dict[str, str] = {}
     for target in sorted(targets):
-        normalized_target = _normalize_column_name(target)
-        alias_match = _alias_source_column(source_columns, table_type, target, used_sources)
+        alias_match = _alias_source_column(
+            source_columns, target, aliases.get(target, set()), used_sources
+        )
         if alias_match:
             mapping[target] = alias_match
             used_sources.add(alias_match)
             continue
+        normalized_target = _normalize_column_name(target)
         candidates = [
             (fuzz.WRatio(normalized_target, normalized_source), source_column)
             for source_column, normalized_source in source_columns
@@ -375,7 +479,6 @@ def guess_field_mapping(profile: FileProfile, table_type: str) -> dict[str, str]
         ]
         if not candidates:
             continue
-
         score, source_column = max(candidates, key=lambda candidate: candidate[0])
         if score >= MIN_FIELD_CONFIDENCE:
             mapping[target] = source_column
@@ -383,13 +486,47 @@ def guess_field_mapping(profile: FileProfile, table_type: str) -> dict[str, str]
     return mapping
 
 
+def map_columns(
+    profile: FileProfile,
+    table_type: str,
+    *,
+    overrides: dict[str, dict[str, set[str]]] | None = None,
+) -> ColumnMapping:
+    aliases = _effective_aliases(table_type, overrides or {})
+    mapping = _resolve_mapping(profile, table_type, aliases)
+    mapped_sources = set(mapping.values())
+    leftover = tuple(column for column in profile.columns if column not in mapped_sources)
+    diagnostics: list[ColumnDiagnostic] = []
+    for column in sorted(REQUIRED_COLUMNS.get(table_type, set())):
+        if column in mapping:
+            continue
+        # Status is computed purely from the leftover pool — no semantic guess here.
+        # Non-empty pool: some header is present but unmatched (a drift the agent can
+        # adjudicate). Empty pool: the column is genuinely absent, nothing to adjudicate.
+        status = "ambiguous" if leftover else "missing"
+        diagnostics.append(
+            ColumnDiagnostic(
+                table_type=table_type,
+                required_column=column,
+                status=status,
+                candidate_sources=leftover,
+                reason=f"必填列 {column} 未匹配到任何表头",
+                action="确认口径后在 mapping_overrides.yaml 补别名",
+            )
+        )
+    return ColumnMapping(mapping=mapping, diagnostics=tuple(diagnostics))
+
+
+def guess_field_mapping(profile: FileProfile, table_type: str) -> dict[str, str]:
+    return map_columns(profile, table_type).mapping
+
+
 def _alias_source_column(
     source_columns: list[tuple[str, str]],
-    table_type: str,
     target: str,
+    aliases: set[str],
     used_sources: set[str],
 ) -> str | None:
-    aliases = FIELD_ALIASES.get(table_type, {}).get(target, set())
     normalized_aliases = {_normalize_column_name(alias) for alias in aliases}
     normalized_aliases.add(_normalize_column_name(target))
     for source_column, normalized_source in source_columns:
