@@ -64,3 +64,62 @@ def test_required_columns_invariants(table_type):
     # Invariant C: grain keys are required (a missing grain key corrupts the coalesce).
     if table_type in GRAIN_KEYS:
         assert set(GRAIN_KEYS[table_type]) <= required
+
+
+from xhs_ceramics_analytics.importing.mapping import (  # noqa: E402
+    ColumnDiagnostic,
+    ColumnMapping,
+    guess_field_mapping,
+    map_columns,
+)
+
+# A refund_overview header set that maps every Required column via shipped aliases.
+_REFUND_FULL = [
+    "统计时间", "账号名称", "载体",
+    "退款金额（支付时间）", "退款人数（支付时间）", "退款率（支付时间）",
+    "发货前退款金额（支付时间）", "发货后退款金额（支付时间）", "退货退款金额（支付时间）",
+]
+
+
+def test_map_columns_complete_profile_has_no_diagnostics():
+    result = map_columns(_profile(_REFUND_FULL), "refund_overview")
+    assert isinstance(result, ColumnMapping)
+    assert result.diagnostics == ()
+    assert result.mapping["refund_users"] == "退款人数（支付时间）"
+
+
+def test_map_columns_missing_required_no_leftover_is_missing():
+    # Drop the refund_users header; every other header still maps → empty leftover pool.
+    columns = [c for c in _REFUND_FULL if c != "退款人数（支付时间）"]
+    result = map_columns(_profile(columns), "refund_overview")
+    diags = [d for d in result.diagnostics if d.required_column == "refund_users"]
+    assert len(diags) == 1
+    assert diags[0].status == "missing"
+    assert diags[0].candidate_sources == ()
+    assert isinstance(diags[0], ColumnDiagnostic)
+
+
+def test_map_columns_unaliased_wording_is_ambiguous():
+    # Replace the refund_users header with a genuinely-unaliased wording: it stays in
+    # the leftover pool, so the diagnostic is "ambiguous" and names that header.
+    columns = [c for c in _REFUND_FULL if c != "退款人数（支付时间）"] + ["退款人数合计"]
+    result = map_columns(_profile(columns), "refund_overview")
+    diags = [d for d in result.diagnostics if d.required_column == "refund_users"]
+    assert len(diags) == 1
+    assert diags[0].status == "ambiguous"
+    assert "退款人数合计" in diags[0].candidate_sources
+
+
+def test_map_columns_overrides_resolve_missing_column():
+    columns = [c for c in _REFUND_FULL if c != "退款人数（支付时间）"] + ["退款人数合计"]
+    overrides = {"refund_overview": {"refund_users": {"退款人数合计"}}}
+    result = map_columns(_profile(columns), "refund_overview", overrides=overrides)
+    assert result.mapping["refund_users"] == "退款人数合计"
+    assert all(d.required_column != "refund_users" for d in result.diagnostics)
+
+
+def test_guess_field_mapping_is_wrapper_over_map_columns():
+    profile = _profile(_REFUND_FULL)
+    assert guess_field_mapping(profile, "refund_overview") == map_columns(
+        profile, "refund_overview"
+    ).mapping
