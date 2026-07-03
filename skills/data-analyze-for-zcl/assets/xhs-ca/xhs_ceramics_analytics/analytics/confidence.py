@@ -11,6 +11,10 @@ MIN_ORDERS_FOR_RATE = 30
 def wilson_interval(k: float, n: float, z: float = 1.96) -> tuple[float, float]:
     if n <= 0:
         return (0.0, 0.0)
+    # Defensive clamp: k and n may come from different source columns or from
+    # reverse-derivation, so k>n (p>1 → sqrt of negative) is reachable. Clamp
+    # k into [0, n] so p stays a valid probability — never raise on dirty data.
+    k = min(max(k, 0.0), n)
     p = k / n
     denom = 1 + z**2 / n
     center = (p + z**2 / (2 * n)) / denom
@@ -26,6 +30,26 @@ def rate_band(lo: float, hi: float) -> str:
     return f"约 {round(lo * 100)}%–{round(hi * 100)}%"
 
 
+def bounded_rate(r: float | None) -> float | None:
+    """Normalise a stored rate to a fraction in [0, 1], or None if uninterpretable.
+
+    Exports mix conventions: some rate columns are fractions (0.12), others are
+    percentages (12.0). Treat values in (1, 100] as percentages and divide by
+    100; reject negatives and anything still above 1 (e.g. 150) as dirty. A bare
+    1.0 is read as 100% (fraction convention), matching the rest of the pipeline.
+    """
+    if r is None:
+        return None
+    r = float(r)
+    if r < 0:
+        return None
+    if r > 1:
+        r = r / 100
+    if r > 1:
+        return None
+    return r
+
+
 def two_proportion(k1: float, n1: float, k2: float, n2: float) -> dict:
     """Two-proportion z-test (alpha=0.05) plus a Wilson-CI overlap flag.
 
@@ -36,6 +60,10 @@ def two_proportion(k1: float, n1: float, k2: float, n2: float) -> dict:
     """
     if n1 <= 0 or n2 <= 0:
         return {"diff": None, "z": None, "significant": False, "ci_overlap": True}
+    # Clamp each numerator into [0, n] so pooled proportion stays in [0, 1];
+    # mixed-source k/n must never crash the report (sqrt-of-negative guard).
+    k1 = min(max(k1, 0.0), n1)
+    k2 = min(max(k2, 0.0), n2)
     p1, p2 = k1 / n1, k2 / n2
     pooled = (k1 + k2) / (n1 + n2)
     se = math.sqrt(pooled * (1 - pooled) * (1 / n1 + 1 / n2))
