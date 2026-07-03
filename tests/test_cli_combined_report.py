@@ -85,6 +85,13 @@ def test_run_combined_report_honors_name_option(tmp_path, fixture_dir):
     assert (outputs / "qianfan_diagnosis.md").exists()
     assert (outputs / "qianfan_diagnosis.html").exists()
     assert not (outputs / "report.md").exists()
+    # --name also drives the document title, not just the filename.
+    md = (outputs / "qianfan_diagnosis.md").read_text(encoding="utf-8")
+    assert md.startswith("# qianfan_diagnosis\n")
+    assert "# 小红书账号分析报告" not in md
+    html = (outputs / "qianfan_diagnosis.html").read_text(encoding="utf-8")
+    assert "<title>qianfan_diagnosis</title>" in html
+    assert "<h1>qianfan_diagnosis</h1>" in html
 
 
 def test_run_single_task_keeps_slug_named_output(tmp_path, fixture_dir):

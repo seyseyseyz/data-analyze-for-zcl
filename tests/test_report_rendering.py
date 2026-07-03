@@ -48,6 +48,24 @@ def test_markdown_renders_subsections_and_named_examples():
     assert "鱼盘12寸" in md
 
 
+def test_render_markdown_uses_custom_title_when_provided():
+    result = AnalysisResult(task_id="x", title="X", findings=[_full_finding()])
+    default = render_markdown([result])
+    named = render_markdown([result], title="千帆经营诊断报告")
+    assert default.startswith("# 小红书账号分析报告\n")
+    assert named.startswith("# 千帆经营诊断报告\n")
+    assert "# 小红书账号分析报告" not in named
+
+
+def test_render_html_uses_custom_title_when_provided():
+    result = AnalysisResult(task_id="x", title="X", findings=[_full_finding()])
+    default = render_html([result])
+    named = render_html([result], title="千帆经营诊断报告")
+    assert "<title>小红书账号分析报告</title>" in default
+    assert "<title>千帆经营诊断报告</title>" in named
+    assert "<h1>千帆经营诊断报告</h1>" in named
+
+
 def test_render_markdown_uses_chinese_report_labels():
     report = render_markdown(
         [
@@ -104,7 +122,7 @@ def test_cli_keeps_markdown_when_html_rendering_fails(tmp_path, monkeypatch):
     from xhs_ceramics_analytics.cli import app
     import xhs_ceramics_analytics.reporting.html as html_module
 
-    def fail_html(_results):
+    def fail_html(_results, title=None):
         raise RuntimeError("chart dependency exploded")
 
     monkeypatch.setattr(html_module, "render_html", fail_html)

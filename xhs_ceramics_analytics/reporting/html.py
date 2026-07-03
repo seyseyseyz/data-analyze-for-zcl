@@ -257,7 +257,11 @@ _USER_TABLE_COLUMNS = {
 
 
 
-def render_html(results: list[AnalysisResult]) -> str:
+_DEFAULT_REPORT_TITLE = "小红书账号分析报告"
+
+
+def render_html(results: list[AnalysisResult], title: str | None = None) -> str:
+    report_title = title or _DEFAULT_REPORT_TITLE
     env = Environment(
         loader=PackageLoader("xhs_ceramics_analytics.reporting", "templates"),
         autoescape=True,
@@ -269,9 +273,10 @@ def render_html(results: list[AnalysisResult]) -> str:
     env.filters["display_cell"] = _display_cell_filter
     template = env.get_template("report.html.j2")
     return template.render(
-        markdown_report=render_markdown(results),
+        markdown_report=render_markdown(results, title=report_title),
         report=_build_report_context(results),
         results=results,
+        report_title=report_title,
     )
 
 

@@ -33,8 +33,11 @@ _EVIDENCE_LABELS = {
 }
 
 
-def render_markdown(results: list[AnalysisResult]) -> str:
-    lines = ["# 小红书账号分析报告", ""]
+_DEFAULT_REPORT_TITLE = "小红书账号分析报告"
+
+
+def render_markdown(results: list[AnalysisResult], title: str | None = None) -> str:
+    lines = [f"# {title or _DEFAULT_REPORT_TITLE}", ""]
     for result in order_results(results):
         lines.extend([f"## {_display_title(result.title)}", ""])
         if result.limitations:
