@@ -1,0 +1,96 @@
+tests/test_sku_structure.py
+  s_6bd2349b4ebd4d::t_159f521d39cebb 117-148
+xhs_ceramics_analytics/analysis/channel_structure_diagnosis.py
+  s_6bd2349b4ebd4d::t_76c5f9b59c994c 1-544
+tests/test_core_business.py
+  s_6bd2349b4ebd4d::t_c9a58a4344a6a2 183-217
+xhs_ceramics_analytics/reporting/html.py
+  s_6bd2349b4ebd4d::t_d2efd7d2844410 161-226
+  s_6bd2349b4ebd4d::t_9e082e7a353598 250,253
+  s_6bd2349b4ebd4d::t_c179666a533ab0 326-356
+tests/test_channel_structure.py
+  s_6bd2349b4ebd4d::t_89a11dd61c5bd6 1-221
+xhs_ceramics_analytics/analysis/search_efficiency.py
+  s_6bd2349b4ebd4d::t_cc38e067b2cf13 380-381,384-387,394-395,401-405,409,418-419,421-422,427-430,432
+  s_6bd2349b4ebd4d::t_9ae1c4699e9129 437-451
+  s_6bd2349b4ebd4d::t_acc20fd98a2e79 39-40
+  s_6bd2349b4ebd4d::t_d0d3035957ba33 283-284,300-301,309-326
+  s_6bd2349b4ebd4d::t_a2953a2eaf601f 331-332,344-348,358,365-368
+tests/test_search_efficiency.py
+  s_6bd2349b4ebd4d::t_265e2fe9cbf803 189-213
+docs/superpowers/specs/2026-07-03-analytics-depth-overhaul-design.md
+  s_6bd2349b4ebd4d::t_4a195b139b7052 1-175
+skills/data-analyze-for-zcl/assets/xhs-ca/task_templates/channel_structure_diagnosis.md
+  s_6bd2349b4ebd4d::t_4679b137751aba 1-135
+xhs_ceramics_analytics/analysis/core_business.py
+  s_6bd2349b4ebd4d::t_85f9e5d3fe9b4f 103,110-112
+  s_6bd2349b4ebd4d::t_6c3074fc183914 120-121
+  s_6bd2349b4ebd4d::t_afe77f62f7aa24 147-149
+  s_6bd2349b4ebd4d::t_4a64fd96e27676 182,185,192,195-226,229,238-244
+  s_6bd2349b4ebd4d::t_90c5cc4c0f85ff 19-23
+references/task_menu.md
+  s_6bd2349b4ebd4d::t_71ea36e40029e7 30-31
+skills/data-analyze-for-zcl/assets/xhs-ca/references/task_menu.md
+  s_6bd2349b4ebd4d::t_4679b137751aba 32-33
+tests/test_analytics_multiplicity.py
+  s_6bd2349b4ebd4d::t_c56a3032530603 1-59
+tests/test_refund_root_cause.py
+  s_6bd2349b4ebd4d::t_3486d0b6ca694c 1-255,260,262-263
+  s_6bd2349b4ebd4d::t_8b01f0bebf7d17 256-259,261
+task_templates/refund_root_cause_diagnosis.md
+  s_6bd2349b4ebd4d::t_928580ecfeb631 1-122
+xhs_ceramics_analytics/analysis/sku_structure.py
+  s_6bd2349b4ebd4d::t_a7219a9cd51aeb 208-210,214,222-235,240-241,251-252,254-257,259-262
+  s_6bd2349b4ebd4d::t_d7e66d27f0e362 13-17
+xhs_ceramics_analytics/analytics/multiplicity.py
+  s_6bd2349b4ebd4d::t_ccbc29ce8736cf 1-71
+xhs_ceramics_analytics/analysis/refund_root_cause_diagnosis.py
+  s_6bd2349b4ebd4d::t_1633df9ddc8684 1-436
+xhs_ceramics_analytics/analysis/audience_structure.py
+  s_6bd2349b4ebd4d::t_117ca4a9d762f3 503-505,510-512,514-517,519-520
+  s_6bd2349b4ebd4d::t_fb8189bf92f878 109-136,142,164-182
+  s_6bd2349b4ebd4d::t_847076a61bd41b 199,211-212
+  s_6bd2349b4ebd4d::t_1fb395aae71a0a 271-272
+  s_6bd2349b4ebd4d::t_f70c1d4b283bc4 30-34
+  s_6bd2349b4ebd4d::t_4677c6c9f52436 232-233
+  s_6bd2349b4ebd4d::t_1071ea02885f9e 506-509,513,518
+  s_6bd2349b4ebd4d::t_adc9e212699605 303-307
+xhs_ceramics_analytics/analytics/timeseries.py
+  s_6bd2349b4ebd4d::t_0e7ccf13f085dc 1-109
+xhs_ceramics_analytics/analysis/note_commercial.py
+  s_6bd2349b4ebd4d::t_568afcb00fd793 200-210,216-227,241-244,251-254,257-261,263-266
+  s_6bd2349b4ebd4d::t_8959d75533672f 308-312,317,322-335,341-342,353-354,359,364
+  s_6bd2349b4ebd4d::t_19274875dfc9a8 12-17
+tests/test_note_commercial.py
+  s_6bd2349b4ebd4d::t_26fd2c99aab7cd 94-156
+tests/test_audience_structure.py
+  s_6bd2349b4ebd4d::t_2b8b9f53877a8e 148-198
+skills/data-analyze-for-zcl/SKILL.md
+  s_6bd2349b4ebd4d::t_7aaf475af473aa 78
+skills/data-analyze-for-zcl/assets/xhs-ca/task_templates/refund_root_cause_diagnosis.md
+  s_6bd2349b4ebd4d::t_4679b137751aba 1-124
+tests/test_analytics_timeseries.py
+  s_6bd2349b4ebd4d::t_0067b2d7f38412 1-55
+xhs_ceramics_analytics/analysis/registry.py
+  s_6bd2349b4ebd4d::t_f88693e8f76534 58-59
+  s_6bd2349b4ebd4d::t_be32c27590ae8b 8
+  s_6bd2349b4ebd4d::t_b715e566de871a 23
+task_templates/channel_structure_diagnosis.md
+  s_6bd2349b4ebd4d::t_20a6ee3dcdf9a2 1-133
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.28-trip",
+  "base_commit_sha": "fe7554a0efbef738228bd4e217fad3663cab1b45",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
