@@ -1,3 +1,59 @@
+{% macro finding_card(finding) %}
+<article class="finding-card">
+  <span class="tag {{ finding.evidence_class }}">可信度 {{ finding.evidence }}</span>
+  <h3>{{ finding.title }}</h3>
+  <p>{{ finding.body }}</p>
+
+  {% if finding.evidence_reason %}
+  <p><strong>可信度原因：</strong>{{ finding.evidence_reason }}</p>
+  {% endif %}
+
+  {% if finding.key_numbers %}
+  <div class="numbers">
+    {% for item in finding.key_numbers %}
+    <div class="number-row">
+      <span class="field-name">
+        <strong>{{ item.label }}</strong>
+        <span class="field-help">{{ item.help }}</span>
+      </span>
+      <strong>{{ item.value }}</strong>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if finding.caveats %}
+  <ul class="note-list">
+    {% for caveat in finding.caveats %}
+    <li>{{ caveat }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  {% if finding.confounders %}
+  <div class="notice">
+    <strong>可能的混淆因素</strong>
+    <ul class="note-list">
+      {% for confounder in finding.confounders %}
+      <li>{{ confounder }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {% if finding.recommended_action %}
+  <p><strong>建议：</strong>{{ finding.recommended_action }}</p>
+  {% endif %}
+
+  {% if finding.next_test %}
+  <p><strong>下一步验证：</strong>{{ finding.next_test }}</p>
+  {% endif %}
+
+  {% if finding.appendix %}
+  <p><strong>方法与附录：</strong>{{ finding.appendix }}</p>
+  {% endif %}
+</article>
+{% endmacro %}
 <!doctype html>
 <html lang="zh-CN">
 <head>
@@ -860,42 +916,33 @@
             {% if result.findings %}
             <div class="finding-grid">
               {% for finding in result.findings %}
-              <article class="finding-card">
-                <span class="tag {{ finding.evidence_class }}">可信度 {{ finding.evidence }}</span>
-                <h3>{{ finding.title }}</h3>
-                <p>{{ finding.body }}</p>
-
-                {% if finding.evidence_reason %}
-                <p><strong>可信度原因：</strong>{{ finding.evidence_reason }}</p>
-                {% endif %}
-
-                {% if finding.key_numbers %}
-                <div class="numbers">
-                  {% for item in finding.key_numbers %}
-                  <div class="number-row">
-                    <span class="field-name">
-                      <strong>{{ item.label }}</strong>
-                      <span class="field-help">{{ item.help }}</span>
-                    </span>
-                    <strong>{{ item.value }}</strong>
-                  </div>
-                  {% endfor %}
-                </div>
-                {% endif %}
-
-                {% if finding.caveats %}
-                <ul class="note-list">
-                  {% for caveat in finding.caveats %}
-                  <li>{{ caveat }}</li>
-                  {% endfor %}
-                </ul>
-                {% endif %}
-
-                {% if finding.recommended_action %}
-                <p><strong>建议：</strong>{{ finding.recommended_action }}</p>
-                {% endif %}
-              </article>
+              {{ finding_card(finding) }}
               {% endfor %}
+            </div>
+            {% endif %}
+
+            {% for subsection in result.subsections %}
+            <div class="subsection">
+              <h4>{{ subsection.title }}</h4>
+              {% if subsection.body %}<p>{{ subsection.body }}</p>{% endif %}
+              {% if subsection.findings %}
+              <div class="finding-grid">
+                {% for finding in subsection.findings %}
+                {{ finding_card(finding) }}
+                {% endfor %}
+              </div>
+              {% endif %}
+            </div>
+            {% endfor %}
+
+            {% if result.named_examples %}
+            <div class="notice">
+              <strong>命名示例</strong>
+              <ul class="note-list">
+                {% for example in result.named_examples %}
+                <li><strong>{{ example.label }}</strong>{% if example.detail %}：{{ example.detail }}{% endif %}</li>
+                {% endfor %}
+              </ul>
             </div>
             {% endif %}
 
