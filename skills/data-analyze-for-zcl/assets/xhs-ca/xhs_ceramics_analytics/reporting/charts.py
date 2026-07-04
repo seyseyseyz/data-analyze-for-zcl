@@ -40,10 +40,12 @@ def _num(value: float) -> str:
     return f"{value:.2f}".rstrip("0").rstrip(".")
 
 
-def _frame(body: str, width: int, height: int) -> str:
+def _frame(body: str, width: int, height: int, label: str = "数据图表，详见下方表格") -> str:
+    # role="img" + aria-label gives screen readers a single accessible name; the
+    # detailed numbers stay reachable in the accompanying data table below.
     return (
         f'<svg viewBox="0 0 {width} {height}" class="chart-svg" role="img" '
-        f'preserveAspectRatio="xMidYMid meet">{_HATCH}{body}</svg>'
+        f'aria-label="{_esc(label)}" preserveAspectRatio="xMidYMid meet">{_HATCH}{body}</svg>'
     )
 
 
@@ -132,10 +134,12 @@ def _hbar(
     return _frame("".join(parts), width, height)
 
 
+# Weak reads neutral-grey (not warning-yellow) to match the report's tag palette:
+# an observational finding is "directional", not "broken".
 _EVIDENCE_TONE = {
     "strong": "var(--green-bg)",
     "medium": "var(--green-bg)",
-    "weak": "var(--yellow-bg)",
+    "weak": "var(--neutral-bg)",
     "not_judgable": "var(--red-bg)",
 }
 
@@ -183,7 +187,7 @@ def evidence_distribution(evidence_counts: Sequence[dict]) -> Markup:
             f'<text x="{_num(lx + 20)}" y="91" class="ca-num">{_esc(caption)}</text>'
         )
         lx += 14 + 6 + _legend_text_w(caption) + 24
-    return Markup(_frame("".join(parts), width, height))
+    return Markup(_frame("".join(parts), width, height, label="结论可信度分布图"))
 
 
 _MEASURE_TITLE = {"avg_reads": "平均阅读数", "avg_collects": "平均收藏数"}
