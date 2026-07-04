@@ -705,14 +705,33 @@ def _bridge_rows(bridge: dict) -> list[dict]:
     return out
 
 
+# 三因子英文键 → 读者面中文名,抵消句里点名反向拖累的因子时复用。
+_FACTOR_ZH = {"traffic": "流量", "conversion": "转化", "aov": "客单价"}
+
+# 口径句:GMV 桥比较的是窗口前后两段之间的变化,不是单点绝对值——读者过去看不懂
+# "前段/后段"从哪来,这里在结论开头一句话交代清楚。
+_BRIDGE_CALIBER = "把统计窗口分成前半程和后半程两段对比，下面是两段之间的变化："
+
+
+def _offsetting_factors_zh(bridge: dict, delta: float) -> str:
+    """点名与净变化反向的因子(它们把主因子的推动抵消掉了),按中文名拼接。"""
+    names = []
+    for factor, zh in _FACTOR_ZH.items():
+        contrib = bridge.get(f"contrib_{factor}")
+        if contrib is not None and contrib != 0 and (contrib > 0) != (delta > 0):
+            names.append(zh)
+    return "、".join(names)
+
+
 def _bridge_conclusion(bridge: dict, p0: dict, p1: dict) -> str:
     delta = bridge.get("delta_gmv")
     if delta is None:
-        return "增长归因数据不足，无法分解 ΔGMV。"
+        return _BRIDGE_CALIBER + "增长归因数据不足，无法分解 ΔGMV。"
     move = "增长" if delta > 0 else ("下滑" if delta < 0 else "持平")
     head = (
-        f"GMV 从 {money(p0['gmv'])} 元{move}至 {money(p1['gmv'])} 元"
-        f"（Δ {money(delta)} 元）"
+        _BRIDGE_CALIBER
+        + f"GMV 从 {money(p0['gmv'])} 元{move}至 {money(p1['gmv'])} 元"
+        + f"（Δ {money(delta)} 元）"
     )
     zh = bridge.get("dominant_factor_zh")
     if zh is None:
@@ -725,6 +744,16 @@ def _bridge_conclusion(bridge: dict, p0: dict, p1: dict) -> str:
             f"，其中{zh}变动最大（贡献 {money(contrib)} 元，方向与净变化相反，"
             "被其他因子抵消）。"
         )
+    # Same direction as the net change, but its magnitude dwarfs the net move: the
+    # push was real yet largely eaten by opposing factors — spell out which ones,
+    # so a small net delta doesn't read as "traffic barely moved".
+    if contrib is not None and delta != 0 and abs(contrib) > abs(delta):
+        draggers = _offsetting_factors_zh(bridge, delta)
+        if draggers:
+            return head + (
+                f"，{zh}在{move}（贡献 {money(contrib)} 元），"
+                f"但大部分被{draggers}的反向变化抵消，所以整体只{move} {money(delta)} 元。"
+            )
     return head + f"，主要由{zh}拉动（贡献 {money(contrib)} 元）。"
 
 
