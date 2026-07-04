@@ -154,6 +154,70 @@ def test_refund_fdr_flags_only_strong_outliers(tmp_path):
     assert bl["fdr_significant"] is False
 
 
+# ---- Off-note referral attribution (shop-page / live-room) ------------------
+
+
+def _make_notes_with_referral(con, rows):
+    con.execute(
+        """
+        CREATE TABLE notes (
+          note_id VARCHAR,
+          title VARCHAR,
+          reads DOUBLE,
+          note_gmv DOUBLE,
+          note_paid_orders DOUBLE,
+          引流店铺主页次数 DOUBLE,
+          引流店铺主页支付金额 DOUBLE,
+          引流直播间次数 DOUBLE,
+          引流直播间支付金额 DOUBLE
+        )
+        """
+    )
+    con.executemany(
+        "INSERT INTO notes VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", rows
+    )
+
+
+def test_referral_finding_surfaces_off_note_gmv(tmp_path):
+    con, db_path = _con(tmp_path)
+    rows = [
+        # note_id, title, reads, note_gmv, note_paid_orders,
+        # 店铺主页次数, 店铺主页支付金额, 直播间次数, 直播间支付金额
+        ("n1", "引流强笔记", 5000.0, 10000.0, 40.0, 1200.0, 6000.0, 0.0, 0.0),
+        ("n2", "引流中笔记", 4000.0, 8000.0, 30.0, 800.0, 4000.0, 0.0, 0.0),
+        ("n3", "无引流笔记", 3000.0, 2000.0, 10.0, 0.0, 0.0, 0.0, 0.0),
+    ]
+    _make_notes_with_referral(con, rows)
+    con.close()
+    result = run(db_path)
+
+    referral = next(f for f in result.findings if f.title == "笔记站外引流成交")
+    kn = referral.key_numbers
+    assert abs(kn["direct_note_gmv"] - 20000.0) < 1e-9
+    assert abs(kn["shop_referral_gmv"] - 10000.0) < 1e-9
+    # 10000 / 20000 = 0.5 of the direct caliber, surfaced as a separate lens.
+    assert abs(kn["shop_referral_share"] - 0.5) < 1e-9
+    assert kn["live_referral_gmv"] == 0.0
+    # Table ranks notes by shop-page-referral GMV; the zero-referral note is excluded.
+    table = result.tables["note_referral_attribution"]
+    assert [r["note_id"] for r in table] == ["n1", "n2"]
+    # Caliber caveat must warn against summing the two lenses.
+    assert any("不" in c and ("相加" in c or "重复" in c) for c in referral.caveats)
+
+
+def test_referral_finding_skipped_when_columns_absent(tmp_path):
+    con, db_path = _con(tmp_path)
+    # _make_notes_full has no referral columns → finding degrades away silently.
+    _make_notes_full(
+        con,
+        [("n1", "t1", "种草", "碗", 1000.0, 5000.0, 40.0, 40.0, 0.05, 2.0)],
+    )
+    con.close()
+    result = run(db_path)
+    assert "笔记站外引流成交" not in {f.title for f in result.findings}
+    assert "note_referral_attribution" not in result.tables
+
+
 # ---- Partial columns skip gated findings ------------------------------------
 
 

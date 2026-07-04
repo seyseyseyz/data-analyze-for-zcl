@@ -14,6 +14,7 @@ from numbers import Number
 from xhs_ceramics_analytics.reporting.field_labels import FIELD_LABELS
 from xhs_ceramics_analytics.reporting.labels import (
     VALUE_LABELS,
+    format_cn_date,
     format_number,
     format_percent,
 )
@@ -72,6 +73,7 @@ PERCENT_FIELDS = {
     "second_conversion",
     "share",
     "top_conversion",
+    "wishlist_to_cart_ratio",
     "wilson_high",
     "wilson_low",
 }
@@ -122,14 +124,9 @@ def field_help(field_name: str) -> str:
 def _format_date(value: object) -> str | None:
     """Best-effort ISO date; returns None when ``value`` is not a date so the
     caller can fall back to normal formatting (a date-named field may still carry
-    a label like 上新日)."""
-    text = str(value).strip()
-    if "-" in text or "/" in text:
-        return text[:10].replace("/", "-")
-    digits = text.split(".", maxsplit=1)[0]  # 20260401.0 -> 20260401
-    if len(digits) == 8 and digits.isdigit():
-        return f"{digits[:4]}-{digits[4:6]}-{digits[6:8]}"
-    return None
+    a label like 上新日). Delegates to the shared normalizer so the table path and
+    the prose path (analysis.prose.cn_date) hyphenate dates identically."""
+    return format_cn_date(value)
 
 
 def format_scalar(field_name: str, value: object) -> str:

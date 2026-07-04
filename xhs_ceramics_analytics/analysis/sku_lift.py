@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from xhs_ceramics_analytics.analysis.prose import qty
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.db.duck import connect
 from xhs_ceramics_analytics.evidence import EvidenceStrength, score_evidence
@@ -75,7 +76,7 @@ def run(db_path: Path) -> AnalysisResult:
             title="笔记锚定的 SKU 销量响应窗口",
             conclusion=(
                 f"已基于笔记发布时间，为 "
-                f"{len({(row['note_id'], row['sku_id']) for row in rows})} 组 note-SKU 关联"
+                f"{qty(len({(row['note_id'], row['sku_id']) for row in rows}))} 组 note-SKU 关联"
                 "生成发布前后的销量观察窗口。"
             ),
             evidence_strength=evidence_strength,

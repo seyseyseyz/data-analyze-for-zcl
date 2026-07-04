@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from xhs_ceramics_analytics.analysis.prose import qty
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.db.duck import connect
 from xhs_ceramics_analytics.evidence import score_evidence
@@ -25,7 +26,7 @@ def run(db_path: Path) -> AnalysisResult:
             Finding(
                 title="高收藏笔记重拍候选已排序",
                 conclusion=(
-                    f"已按收藏率并结合低阅读补偿，对 {len(rows)} 篇笔记排序。"
+                    f"已按收藏率并结合低阅读补偿，对 {qty(len(rows))} 篇笔记排序。"
                 ),
                 evidence_strength=score_evidence(
                     len(metrics), has_controls=False, confounder_count=1

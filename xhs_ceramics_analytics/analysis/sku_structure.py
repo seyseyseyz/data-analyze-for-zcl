@@ -8,6 +8,7 @@ attribution (SKU-level GMV/退款/转化 mix reflects品类、价格带与流量
 import math
 from pathlib import Path
 
+from xhs_ceramics_analytics.analysis.prose import money, qty
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.analytics.confidence import bounded_rate
 from xhs_ceramics_analytics.analytics.multiplicity import (
@@ -58,6 +59,11 @@ def run(db_path: Path) -> AnalysisResult:
         if conv_finding is not None:
             findings.append(conv_finding)
             tables["sku_conversion_and_aov"] = conv_rows
+
+        l2_finding, l2_rows = _category_l2_finding(rows, cols, limitations)
+        if l2_finding is not None:
+            findings.append(l2_finding)
+            tables["sku_category_l2_mix"] = l2_rows
     finally:
         con.close()
     return AnalysisResult(
@@ -148,9 +154,9 @@ def _pareto_finding(
         key_numbers["top_category"] = top_category
 
     conclusion = (
-        f"共 {sku_count} 个有效 SKU，GMV 合计 {round(total_gmv)}。"
+        f"共 {qty(sku_count)} 个有效 SKU，GMV 合计 {money(total_gmv)}。"
         f"头部 10% SKU 贡献 {round((top_decile_gmv_share or 0) * 100)}% GMV，"
-        f"累计 80% GMV 需 {skus_for_80pct or 0} 个 SKU。"
+        f"累计 80% GMV 需 {qty(skus_for_80pct)} 个 SKU。"
         + (f" 主力类目为 {top_category}。" if top_category else "")
     )
 
@@ -237,8 +243,8 @@ def _refund_finding(
 
     conclusion = (
         f"整体退款率基线约 {round((baseline or 0) * 100, 1)}%，"
-        f"识别出 {len(outliers)} 个高退款 SKU（退款率高于基线且支付订单数 ≥{_MIN_ORDERS_GUARD}），"
-        f"其中 {fdr_survivors} 个经 BH-FDR 5% 显著（预计假阳性约 {round(exp_false_positives, 1)} 个）。"
+        f"识别出 {qty(len(outliers))} 个高退款 SKU（退款率高于基线且支付订单数 ≥{_MIN_ORDERS_GUARD}），"
+        f"其中 {qty(fdr_survivors)} 个经 BH-FDR 5% 显著（预计假阳性约 {round(exp_false_positives, 1)} 个）。"
     )
 
     finding = Finding(
@@ -325,7 +331,7 @@ def _conversion_finding(
 
     conclusion = (
         f"整体加购转化率约 {round((overall_cart_to_pay or 0) * 100, 1)}%。"
-        + (f" 客单价中位数约 {round(median_aov)}。" if median_aov else "")
+        + (f" 客单价中位数约 {money(median_aov)}。" if median_aov else "")
     )
 
     finding = Finding(
@@ -352,11 +358,129 @@ def _conversion_caveats(conversion_universe: int, gmv_universe: int | None) -> l
     ]
     if gmv_universe is not None:
         caveats.append(
-            f"本节口径为「加购人数>0」的 SKU 全集（{conversion_universe} 个），"
-            f"与 GMV 集中度的「GMV>0」有效 SKU 全集（{gmv_universe} 个）不同："
+            f"本节口径为「加购人数>0」的 SKU 全集（{qty(conversion_universe)} 个），"
+            f"与 GMV 集中度的「GMV>0」有效 SKU 全集（{qty(gmv_universe)} 个）不同："
             f"有加购但未成交/无 GMV 的 SKU 计入本节、不计入 GMV 集中度，故两处 SKU 数不一致。"
         )
     return caveats
+
+
+# --------------------------------------------------------------------------- #
+# Finding 4 — 二级品类结构（营收 vs 退款） (degrade-gated)
+# --------------------------------------------------------------------------- #
+_LEVER_L2 = (
+    "高营收 L2 保供选品、稳流量；高退款 L2 单独复核尺寸/描述/发货，"
+    "把营收贡献与退款风险分开管理，避免一刀切。"
+)
+
+
+def _category_l2_finding(
+    rows: list[dict], cols: set[str], limitations: list[str]
+) -> tuple[Finding | None, list[dict]]:
+    if "category_l2" not in cols or "gmv" not in cols:
+        limitations.append("sku_performance 缺少 category_l2/gmv 列，跳过二级品类结构下钻。")
+        return None, []
+
+    valid = [r for r in rows if _num(r.get("gmv")) > 0]
+    if not valid:
+        limitations.append("sku_performance 无有效 GMV 数据，跳过二级品类结构下钻。")
+        return None, []
+
+    has_refund = {"refund_rate_pay", "paid_orders"} <= cols
+    has_refund_orders = "refund_orders_pay" in cols
+
+    # Aggregate GMV + refund per L2. Refund rate uses真实退款单/成交单 when present,
+    # otherwise falls back to成交单加权的 refund_rate_pay（口径一致，避免小样本失真）。
+    groups: dict = {}
+    for r in valid:
+        key = r.get("category_l2")
+        g = groups.setdefault(key, {"gmv": 0.0, "orders": 0.0, "refund_orders": 0.0})
+        g["gmv"] += _num(r.get("gmv"))
+        if has_refund:
+            orders = _num(r.get("paid_orders"))
+            g["orders"] += orders
+            if has_refund_orders:
+                g["refund_orders"] += _num(r.get("refund_orders_pay"))
+            else:
+                rate = bounded_rate(r.get("refund_rate_pay")) or 0.0
+                g["refund_orders"] += rate * orders
+
+    total_gmv = sum(g["gmv"] for g in groups.values())
+
+    l2_rows: list[dict] = []
+    for key, g in groups.items():
+        refund_rate = None
+        if has_refund and g["orders"] >= _MIN_ORDERS_GUARD:
+            refund_rate = bounded_rate(g["refund_orders"] / g["orders"]) if g["orders"] else None
+        l2_rows.append(
+            {
+                "category_l2": key,
+                "gmv": g["gmv"],
+                "gmv_share": (g["gmv"] / total_gmv) if total_gmv else None,
+                "paid_orders": g["orders"] if has_refund else None,
+                "refund_rate": refund_rate,
+            }
+        )
+    l2_rows.sort(key=lambda r: r["gmv"], reverse=True)
+
+    top_gmv = l2_rows[0] if l2_rows else None
+    top_gmv_category = top_gmv["category_l2"] if top_gmv else None
+    top_gmv_share = top_gmv["gmv_share"] if top_gmv else None
+
+    # Refund hotspot is ranked independently of GMV — the whole point is that the
+    # revenue leader and the refund leak are often different二级品类。
+    refund_ranked = [r for r in l2_rows if r["refund_rate"] is not None]
+    refund_ranked.sort(key=lambda r: r["refund_rate"], reverse=True)
+    top_refund = refund_ranked[0] if refund_ranked else None
+
+    key_numbers: dict[str, object] = {
+        "category_l2_count": len(l2_rows),
+        "top_gmv_category_l2": top_gmv_category,
+        "top_gmv_category_l2_share": top_gmv_share,
+    }
+    if top_refund is not None:
+        key_numbers["top_refund_category_l2"] = top_refund["category_l2"]
+        key_numbers["top_refund_category_l2_rate"] = top_refund["refund_rate"]
+
+    conclusion = (
+        f"共 {qty(len(l2_rows))} 个二级品类，营收头部为 {top_gmv_category}"
+        f"（占 GMV {round((top_gmv_share or 0) * 100)}%）。"
+    )
+    if top_refund is not None and top_refund["category_l2"] != top_gmv_category:
+        conclusion += (
+            f" 退款集中在 {top_refund['category_l2']}"
+            f"（退款率约 {round((top_refund['refund_rate'] or 0) * 100, 1)}%），"
+            f"与营收头部并非同一品类，应分开管理。"
+        )
+    elif top_refund is not None:
+        conclusion += (
+            f" 营收头部 {top_gmv_category} 同时也是退款率最高品类"
+            f"（约 {round((top_refund['refund_rate'] or 0) * 100, 1)}%），需重点复核。"
+        )
+
+    caveats = [
+        "观察性诊断，非因果——二级品类的营收与退款差异可能由价格带、发货时效与流量结构共同驱动。"
+    ]
+    if not has_refund:
+        caveats.append("缺少 refund_rate_pay/paid_orders 列，本节仅呈现营收结构，退款率留空。")
+    else:
+        caveats.append(
+            f"退款率仅对成交单数 ≥{_MIN_ORDERS_GUARD} 的二级品类计算，样本不足的品类退款率留空以免失真。"
+        )
+
+    finding = Finding(
+        title="二级品类结构（营收 vs 退款）",
+        conclusion=conclusion,
+        evidence_strength=score_evidence(len(valid), has_controls=False, confounder_count=1),
+        key_numbers=key_numbers,
+        caveats=caveats,
+        recommended_action=_LEVER_L2,
+        evidence_reason=(
+            "按 category_l2 聚合真实 gmv 与成交/退款单，营收与退款独立排序；观察性描述，非因果。"
+        ),
+        confounders=list(_CONFOUNDERS),
+    )
+    return finding, l2_rows
 
 
 # --------------------------------------------------------------------------- #

@@ -9,6 +9,7 @@ Design: docs/superpowers/specs/2026-07-03-core-business-diagnosis-design.md
 from pathlib import Path
 
 from xhs_ceramics_analytics.analysis.funnel_scope import normalize_funnel_rows
+from xhs_ceramics_analytics.analysis.prose import cn_date, money, pp, qty
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.analytics.confidence import (
     bounded_rate,
@@ -246,17 +247,17 @@ def _decompose_gmv(series: list[tuple[str, float]], trend_rows: list[dict]) -> d
 
 
 def _snapshot_conclusion(total_gmv, total_buyers, aov, pay_conv, direction, decomp) -> str:
-    parts = [f"累计 GMV {round(total_gmv or 0)} 元"]
+    parts = [f"累计 GMV {money(total_gmv)} 元"]
     if total_buyers:
-        parts.append(f"支付买家 {round(total_buyers)} 人")
+        parts.append(f"支付买家 {qty(total_buyers)} 人")
     if aov is not None:
-        parts.append(f"客单价 {round(aov)} 元")
+        parts.append(f"客单价 {money(aov)} 元")
     if pay_conv is not None:
         parts.append(f"支付转化率 {round(pay_conv * 100, 1)}%")
     tail = f"，GMV 趋势{direction}。" if direction else "，趋势数据不足。"
     extras: list[str] = []
     if decomp.get("changepoint_date"):
-        extras.append(f"GMV 在 {decomp['changepoint_date']} 附近出现结构性变化")
+        extras.append(f"GMV 在 {cn_date(decomp['changepoint_date'])} 附近出现结构性变化")
     if decomp.get("peak_dow"):
         extras.append(f"周内 {decomp['peak_dow']} GMV 最高")
     extra = ("（" + "；".join(extras) + "）") if extras else ""
@@ -310,10 +311,9 @@ def _structure_finding(
             sample_size = max(sample_size, n)
             verdict = _verdict(channel_test, diff)
             parts.append(
-                f"{a['channel']} 与 {b['channel']} 支付转化差异{verdict}"
-                f"（diff={round((diff or 0) * 100, 1)}pct）"
+                f"{a['channel']} 与 {b['channel']} 支付转化率相差 {pp(diff)}（{verdict}）"
             )
-            caveats.append("渠道显著性用两样本比例检验，并结合效应量（diff）判断。")
+            caveats.append("渠道显著性用两样本比例检验，并结合效应量（差值）判断。")
         else:
             key_numbers["channel_diff"] = None
             caveats.append("traffic_source 缺 paid_buyers 或渠道不足两组，仅报点击份额。")

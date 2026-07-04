@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from xhs_ceramics_analytics.analysis.prose import money, qty
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.analytics.confidence import (
     min_n_guard,
@@ -115,7 +116,7 @@ def _layer_finding(con, limitations: list[str]) -> tuple[Finding, list[dict]]:
 
     dominant_layer = dominant["layer"] if dominant else None
     conclusion = (
-        f"总退款 {round(total)} 元，按发货阶段划分（发货前+发货后=100%）占比最高的是 "
+        f"总退款 {money(total)} 元，按发货阶段划分（发货前+发货后=100%）占比最高的是 "
         f"{_layer_zh(dominant_layer)}（{round((dominant['share'] or 0) * 100)}%）。"
         if dominant
         else "发货阶段退款金额列缺失，无法拆解。"
@@ -131,7 +132,7 @@ def _layer_finding(con, limitations: list[str]) -> tuple[Finding, list[dict]]:
             f"{round((return_row['share'] or 0) * 100)}%），与发货前/后不在同一划分轴，份额不相加。"
         )
     if lo is not None:
-        caveats.append(f"整体退款率 {rate_band(lo, hi)}（样本 n≈{round(n)}）。")
+        caveats.append(f"整体退款率 {rate_band(lo, hi)}（样本 n≈{qty(n)}）。")
     finding = Finding(
         title="退款主漏点层级",
         conclusion=conclusion,
@@ -238,7 +239,7 @@ def _trend_finding(con, limitations: list[str]) -> tuple[Finding | None, list[di
     finding = Finding(
         title="退款率时间趋势",
         conclusion=(
-            f"退款率整体呈{direction}趋势（{len(series)} 期，"
+            f"退款率整体呈{direction}趋势（{qty(len(series))} 期，"
             f"起 {round(series[0][1] * 100)}% 止 {round(series[-1][1] * 100)}%）。"
         ),
         evidence_strength=score_evidence(len(series), has_controls=False, confounder_count=1),
@@ -320,7 +321,7 @@ def _note_finding(con, limitations: list[str]) -> tuple[Finding | None, list[dic
     if not has_features:
         caveats.append("缺少 content_features，仅列高退款笔记，无法归因特征。")
     conclusion = (
-        f"共 {len(high)} 篇笔记退款率显著高于基线（{round(baseline * 100)}%）。"
+        f"共 {qty(len(high))} 篇笔记退款率显著高于基线（{round(baseline * 100)}%）。"
         + (f" 高退款笔记更多集中在 {top_feature}。" if top_feature else "")
     )
     finding = Finding(
@@ -441,7 +442,7 @@ def _product_finding(con, limitations: list[str]) -> tuple[Finding | None, list[
     if not has_orders:
         caveats.append("缺少 refund_orders_pay，产品退款率未做订单量 Wilson 守卫。")
     conclusion = (
-        f"高退款产品 {len(high)} 个，退款金额前三占 {round(top_share * 100)}%。"
+        f"高退款产品 {qty(len(high))} 个，退款金额前三占 {round(top_share * 100)}%。"
         + (f" 高退款集中在 {top_feature}。" if top_feature else "")
     )
     finding = Finding(

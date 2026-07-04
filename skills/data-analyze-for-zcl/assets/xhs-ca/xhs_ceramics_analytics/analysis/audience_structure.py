@@ -13,6 +13,7 @@ from xhs_ceramics_analytics.analysis.funnel_scope import (
     ROLLUP as _ROLLUP,
     normalize_funnel_rows,
 )
+from xhs_ceramics_analytics.analysis.prose import pp
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.analytics.confidence import (
     bounded_rate,
@@ -184,7 +185,7 @@ def _conversion_finding(con, limitations: list[str]) -> tuple[Finding, list[dict
         conclusion = (
             f"{a['audience_type']} 转化 {round((a['conversion'] or 0) * 100)}% vs "
             f"{b['audience_type']} {round((b['conversion'] or 0) * 100)}%，"
-            f"差异 {round((diff or 0) * 100, 1)}pp（{sig_zh}）。"
+            f"差异 {pp(diff)}（{sig_zh}）。"
             f"整体进店转化 {round((overall or 0) * 100)}%。"
             + retention_note
         )
@@ -309,7 +310,7 @@ def _cycle_finding(con, limitations: list[str]) -> tuple[Finding | None, list[di
     conclusion = (
         f"共 {len(cycle_rows)} 个首购周期。"
         + cycle_note
-        + (f" 周期间转化差 {round(gap * 100, 1)}pp。" if gap is not None else "")
+        + (f" 周期间转化差 {pp(gap)}。" if gap is not None else "")
     )
     total_n = sum(r["visitors"] for r in cycle_rows)
     finding = Finding(

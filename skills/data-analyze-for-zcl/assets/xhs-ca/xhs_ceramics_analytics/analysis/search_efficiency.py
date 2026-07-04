@@ -9,6 +9,7 @@ caveat, and every denominator is guarded.
 """
 from pathlib import Path
 
+from xhs_ceramics_analytics.analysis.prose import qty
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.analytics.confidence import (
     MIN_ORDERS_FOR_RATE,
@@ -248,7 +249,7 @@ def _trend_finding(con, limitations: list[str]) -> tuple[Finding | None, list[di
     finding = Finding(
         title="搜索转化时间趋势",
         conclusion=(
-            f"搜索成交转化率整体呈{direction}趋势（{len(series)} 期，"
+            f"搜索成交转化率整体呈{direction}趋势（{qty(len(series))} 期，"
             f"起 {_pct(series[0][1])} 止 {_pct(series[-1][1])}）。"
         ),
         evidence_strength=score_evidence(
@@ -409,14 +410,14 @@ def _term_finding(con, limitations: list[str]) -> tuple[Finding | None, list[dic
             f"{small} 个搜索词样本不足 {MIN_ORDERS_FOR_RATE} 曝光，仅列出未分类。"
         )
     leak_split = (
-        f"（点击漏损 {len(click_leaks)}、转化漏损 {len(conversion_leaks)}）"
+        f"（点击漏损 {qty(len(click_leaks))}、转化漏损 {qty(len(conversion_leaks))}）"
         if click_base is not None
         else ""
     )
     finding = Finding(
         title="高机会/高流失搜索词",
         conclusion=(
-            f"{len(opportunities)} 个高机会词、{len(leaks)} 个高流失词{leak_split}"
+            f"{qty(len(opportunities))} 个高机会词、{qty(len(leaks))} 个高流失词{leak_split}"
             f"（基线成交效率 {_pct(baseline)}）。"
         ),
         evidence_strength=score_evidence(

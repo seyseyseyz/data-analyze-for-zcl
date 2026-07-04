@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from xhs_ceramics_analytics.analysis.prose import qty
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.db.duck import connect
 from xhs_ceramics_analytics.evidence import EvidenceStrength, score_evidence
@@ -30,7 +31,7 @@ def run(db_path: Path) -> AnalysisResult:
             Finding(
                 title="投放导出已完成结构检查",
                 conclusion=(
-                    f"当前投放表有 {sample_size} 行，识别为 {row.get('detected_grain', 'unknown')} 粒度。"
+                    f"当前投放表有 {qty(sample_size)} 行，识别为 {row.get('detected_grain', 'unknown')} 粒度。"
                 ),
                 evidence_strength=evidence_strength,
                 evidence_reason=(

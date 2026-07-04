@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from xhs_ceramics_analytics.analysis.prose import qty
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.db.duck import connect
 from xhs_ceramics_analytics.evidence import score_evidence
@@ -28,7 +29,7 @@ def run(db_path: Path) -> AnalysisResult:
             Finding(
                 title="文案角度组合已统计",
                 conclusion=(
-                    f"已统计 {sample_size} 篇笔记，覆盖 {len(rows)} 类文案角度。"
+                    f"已统计 {qty(sample_size)} 篇笔记，覆盖 {len(rows)} 类文案角度。"
                 ),
                 evidence_strength=score_evidence(
                     sample_size, has_controls=False, confounder_count=1

@@ -135,3 +135,19 @@ def format_number(value: float) -> str:
     if value.is_integer():
         return f"{int(value):,}"
     return f"{value:,.2f}".rstrip("0").rstrip(".")
+
+
+def format_cn_date(value: object) -> str | None:
+    """Normalize a date-ish value to ISO ``YYYY-MM-DD``; ``None`` when not a date.
+
+    Real exports carry dates as integer ``YYYYMMDD``, ISO strings, or datetime.
+    Kept dependency-free here so both the table path (reporting.formatting) and
+    the prose path (analysis.prose) can share one date normalizer.
+    """
+    text = str(value).strip()
+    if "-" in text or "/" in text:
+        return text[:10].replace("/", "-")
+    digits = text.split(".", maxsplit=1)[0]  # 20260401.0 -> 20260401
+    if len(digits) == 8 and digits.isdigit():
+        return f"{digits[:4]}-{digits[4:6]}-{digits[6:8]}"
+    return None

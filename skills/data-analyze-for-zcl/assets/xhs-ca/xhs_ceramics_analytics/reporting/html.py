@@ -31,6 +31,18 @@ _EVIDENCE_HELP = {
 
 _MAX_TABLE_ROWS = 20
 
+# Tables with fewer than this many rows open by default — short enough to read at
+# a glance, so the collapsed shell just adds a needless click. Distinct from
+# _MAX_TABLE_ROWS (the row-truncation cap): a table can be fully shown yet still
+# stay collapsed if it is long.
+_MAX_OPEN_TABLE_ROWS = 10
+
+# Neutral default for the follow-up-questions section. The original hardcoded a
+# specific assistant brand into reader-facing copy; the name is now a single
+# configurable value (CLI --assistant) so the deliverable never ships a vendor
+# name the reader didn't choose.
+_DEFAULT_ASSISTANT_NAME = "分析助手"
+
 _BUSINESS_HIGHLIGHT_TASKS = (
     "product_opportunity_matrix",
     "copy_angle_effect",
@@ -49,6 +61,7 @@ _ANALYSIS_GROUPS = (
         ),
         "tasks": (
             "core_business_diagnosis",
+            "demand_funnel_diagnosis",
             "search_efficiency_diagnosis",
             "channel_structure_diagnosis",
             "audience_structure_diagnosis",
@@ -129,6 +142,8 @@ _TABLE_LABELS = {
     # --- 经营/搜索/人群/退款/渠道 深度诊断模块 ---
     "business_snapshot": "整体经营快照",
     "business_trend": "GMV 趋势与结构性变化",
+    "demand_funnel_trend": "加购→成交漏斗趋势",
+    "wishlist_demand_trend": "心愿单需求趋势",
     "carrier_structure": "载体 GMV 结构",
     "traffic_channel_structure": "流量渠道结构",
     "carrier_search_efficiency": "载体搜索效率",
@@ -140,11 +155,13 @@ _TABLE_LABELS = {
     "first_purchase_cycle_funnel": "首购周期漏斗",
     "sku_gmv_pareto": "SKU GMV 帕累托",
     "sku_category_mix": "SKU 类目结构",
+    "sku_category_l2_mix": "二级品类营收与退款",
     "sku_refund_outliers": "高退款 SKU",
     "sku_conversion_and_aov": "SKU 加购转化与客单价",
     "note_gmv_pareto": "笔记 GMV 帕累托",
     "note_conversion_outliers": "高流量低转化笔记",
     "note_refund_outliers": "高退款笔记",
+    "note_referral_attribution": "笔记站外引流成交",
     "high_refund_notes": "高退款笔记",
     "refund_layer_breakdown": "退款分层拆解",
     "refund_trend": "退款趋势",
@@ -253,6 +270,28 @@ _USER_TABLE_COLUMNS = {
         "roas_calc",
         "budget_action",
     ),
+    "note_referral_attribution": (
+        "note_id",
+        "referral_orders",
+        "referral_gmv",
+        "note_gmv",
+    ),
+    "sku_category_l2_mix": (
+        "category_l2",
+        "gmv",
+        "gmv_share",
+        "refund_rate",
+    ),
+    "demand_funnel_trend": (
+        "date",
+        "add_to_cart_users",
+        "paid_buyers",
+        "cart_to_pay",
+    ),
+    "wishlist_demand_trend": (
+        "date",
+        "new_wishlist_users",
+    ),
 }
 
 
@@ -260,7 +299,11 @@ _USER_TABLE_COLUMNS = {
 _DEFAULT_REPORT_TITLE = "小红书账号分析报告"
 
 
-def render_html(results: list[AnalysisResult], title: str | None = None) -> str:
+def render_html(
+    results: list[AnalysisResult],
+    title: str | None = None,
+    assistant: str | None = None,
+) -> str:
     report_title = title or _DEFAULT_REPORT_TITLE
     env = Environment(
         loader=PackageLoader("xhs_ceramics_analytics.reporting", "templates"),
@@ -274,7 +317,7 @@ def render_html(results: list[AnalysisResult], title: str | None = None) -> str:
     template = env.get_template("report.html.j2")
     return template.render(
         markdown_report=render_markdown(results, title=report_title),
-        report=_build_report_context(results),
+        report=_build_report_context(results, assistant=assistant),
         results=results,
         report_title=report_title,
     )
@@ -608,7 +651,9 @@ def _inline_markdown(text: str) -> str:
     return "".join(rendered)
 
 
-def _build_report_context(results: list[AnalysisResult]) -> dict[str, object]:
+def _build_report_context(
+    results: list[AnalysisResult], assistant: str | None = None
+) -> dict[str, object]:
     findings = [finding for result in results for finding in result.findings]
     total_table_rows = sum(len(rows) for result in results for rows in result.tables.values())
     result_views = [_result_view(result) for result in results]
@@ -617,12 +662,13 @@ def _build_report_context(results: list[AnalysisResult]) -> dict[str, object]:
         "finding_count": len(findings),
         "table_count": sum(len(result.tables) for result in results),
         "total_table_rows": total_table_rows,
+        "assistant_name": (assistant or _DEFAULT_ASSISTANT_NAME).strip() or _DEFAULT_ASSISTANT_NAME,
         "highlights": _business_highlights(results),
         "actions": _business_actions(results, findings),
         "analysis_groups": _analysis_groups(result_views),
         "evidence_counts": _evidence_counts(findings),
         "evidence_chart_svg": charts.evidence_distribution(_evidence_counts(findings)),
-        "codex_questions": _codex_questions(results),
+        "assistant_questions": _codex_questions(results),
         "glossary": [
             {
                 "term": "可信度",
@@ -639,6 +685,18 @@ def _build_report_context(results: list[AnalysisResult]) -> dict[str, object]:
             {
                 "term": "SKU",
                 "definition": "具体商品规格，例如单只杯子、礼盒装、不同颜色或容量。",
+            },
+            {
+                "term": "个百分点",
+                "definition": "两个百分比之间的差，例如从 5% 到 7% 是涨了 2 个百分点，而不是涨了 2%。",
+            },
+            {
+                "term": "多重比较校正 (BH-FDR)",
+                "definition": "同时检查很多项时，光靠运气也会冒出几个「异常」。这个方法把这类假警报控制在很低的比例，留下的更可能是真的。",
+            },
+            {
+                "term": "置信区间 (Wilson)",
+                "definition": "样本少时，单看一个比率不稳。用一个区间表示真实值大概落在哪个范围，样本越少区间越宽。",
             },
         ],
     }
@@ -709,6 +767,10 @@ def _table_view(table_name: str, rows: list[dict[str, object]]) -> dict[str, obj
         "label": _TABLE_LABELS.get(table_name, table_name.replace("_", " ")),
         "row_count": len(rows),
         "showing_count": showing_count,
+        # Short tables (< 10 rows) open by default — readable at a glance, so the
+        # collapsed shell just adds a needless click. Longer tables stay collapsed
+        # to keep the page scannable.
+        "open": len(rows) < _MAX_OPEN_TABLE_ROWS,
         "display_text": display_text,
         "user_columns": [_column_view(column) for column in user_columns],
         "technical_columns": [_column_view(column) for column in all_columns],

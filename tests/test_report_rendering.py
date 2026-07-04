@@ -122,7 +122,7 @@ def test_cli_keeps_markdown_when_html_rendering_fails(tmp_path, monkeypatch):
     from xhs_ceramics_analytics.cli import app
     import xhs_ceramics_analytics.reporting.html as html_module
 
-    def fail_html(_results, title=None):
+    def fail_html(_results, title=None, assistant=None):
         raise RuntimeError("chart dependency exploded")
 
     monkeypatch.setattr(html_module, "render_html", fail_html)
@@ -293,7 +293,7 @@ def test_render_html_builds_reader_friendly_editorial_report():
     assert "下周行动计划" in html
     assert "详细分析" in html
     assert "数据附录" in html
-    assert "可以问 Codex 的问题" in html
+    assert "可以问分析助手的问题" in html
     assert "<details" in html
     assert "<pre>" not in html
     assert (
@@ -583,6 +583,39 @@ def test_render_html_formats_numbers_for_business_readers():
     assert "0.333333333" not in html
 
 
+def test_render_html_assistant_name_defaults_neutral_and_is_overridable():
+    result = AnalysisResult(task_id="x", title="X", findings=[])
+    # default: no vendor brand leaks into reader-facing copy
+    default_html = render_html([result])
+    assert "可以问分析助手的问题" in default_html
+    assert "Codex" not in default_html
+    # override flows into every reader-facing spot (nav + heading + lede)
+    named_html = render_html([result], assistant="小助手")
+    assert "可以问小助手的问题" in named_html
+    assert "小助手 追问" in named_html
+    assert "分析助手" not in named_html
+
+
+def test_render_html_opens_short_tables_and_collapses_longer_ones():
+    short = AnalysisResult(
+        task_id="x",
+        title="X",
+        findings=[],
+        tables={"t": [{"a": i} for i in range(9)]},  # < 10 rows → open
+    )
+    # exactly 10 rows is the boundary: readable but no longer auto-opened
+    boundary = AnalysisResult(
+        task_id="y",
+        title="Y",
+        findings=[],
+        tables={"t": [{"a": i} for i in range(10)]},
+    )
+    assert '<details class="table-details" open>' in render_html([short])
+    boundary_html = render_html([boundary])
+    assert '<details class="table-details" open>' not in boundary_html
+    assert '<details class="table-details">' in boundary_html
+
+
 def test_render_html_dynamic_codex_questions_use_report_content():
     html = render_html(
         [
@@ -783,7 +816,8 @@ def test_section_keeps_table_when_a_chart_builder_raises(monkeypatch):
     # assert on the actual rendered <details> element, not the bare substring
     # "table-details" (which also appears in the template's static CSS and would be
     # tautological); its presence proves the section's drill-down table survived.
-    assert '<details class="table-details">' in html
+    # Match the opening tag prefix — small tables render it with an ``open`` attribute.
+    assert '<details class="table-details"' in html
 
 
 def test_html_renders_all_eight_contract_elements():
@@ -812,7 +846,7 @@ def test_html_omits_empty_contract_fields():
     assert "方法与附录：" not in html
     # a finding with no tables renders no drill-down element (the substring
     # "table-details" alone appears in the static CSS, so assert on the element)
-    assert '<details class="table-details">' not in html
+    assert '<details class="table-details"' not in html
 
 
 def test_named_examples_render_consistently_across_markdown_and_html():
