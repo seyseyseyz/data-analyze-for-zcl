@@ -434,6 +434,7 @@
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 16px;
+      align-items: start;
     }
 
     .chart {
@@ -767,7 +768,7 @@
         <a href="#actions">行动计划</a>
         <a href="#analysis">详细分析</a>
         <a href="#appendix">数据附录</a>
-        <a href="#codex">Codex 追问</a>
+        <a href="#assistant">{{ report.assistant_name }} 追问</a>
       </nav>
     </header>
 
@@ -956,7 +957,7 @@
             {% endif %}
 
             {% for table in result.table_views %}
-            <details class="table-details">
+            <details class="table-details"{% if table.open %} open{% endif %}>
               <summary>
                 <span>
                   {{ table.label }}
@@ -995,7 +996,7 @@
               <details class="technical-details">
                 <summary>技术追溯信息</summary>
                 <p class="table-caption">
-                  这里保留完整字段名，方便复查数据来源或继续让 Codex 做二次分析。
+                  这里保留完整字段名，方便复查数据来源或继续让{{ report.assistant_name }}做二次分析。
                 </p>
                 <div class="table-wrap">
                   <table>
@@ -1066,16 +1067,16 @@
       </div>
     </section>
 
-    <section id="codex" class="reveal" style="--index: 5">
+    <section id="assistant" class="reveal" style="--index: 5">
       <div class="section-heading">
         <p class="section-kicker">Assistant Questions</p>
-        <h2>可以问 Codex 的问题</h2>
+        <h2>可以问{{ report.assistant_name }}的问题</h2>
         <p class="section-lede">
-          报告本身负责稳定交付；Codex 更适合解释细节、改写成执行清单，或根据你的约束重新排优先级。
+          报告本身负责稳定交付；{{ report.assistant_name }}更适合解释细节、改写成执行清单，或根据你的约束重新排优先级。
         </p>
       </div>
       <ul class="codex-list">
-        {% for question in report.codex_questions %}
+        {% for question in report.assistant_questions %}
         <li>{{ question }}</li>
         {% endfor %}
       </ul>

@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from xhs_ceramics_analytics.analysis.prose import qty
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.db.duck import connect
 from xhs_ceramics_analytics.evidence import EvidenceStrength, score_evidence
@@ -65,7 +66,7 @@ def run(db_path: Path) -> AnalysisResult:
             Finding(
                 title="笔记锚定的描述性响应窗口",
                 conclusion=(
-                    f"已为 {len(rows)} 行 note-SKU 数据生成笔记锚定响应窗口，"
+                    f"已为 {qty(len(rows))} 行 note-SKU 数据生成笔记锚定响应窗口，"
                     "使用发布时间窗口而不是固定日历锚点。"
                 ),
                 evidence_strength=score_evidence(

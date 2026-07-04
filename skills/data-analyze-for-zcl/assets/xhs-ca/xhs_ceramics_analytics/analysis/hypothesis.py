@@ -1,6 +1,7 @@
 import hashlib
 from pathlib import Path
 
+from xhs_ceramics_analytics.analysis.prose import qty
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.db.duck import connect
 from xhs_ceramics_analytics.evidence import score_evidence
@@ -178,7 +179,7 @@ def _demand_seed(con) -> dict[str, object]:
         "label": group,
         "evidence_count": count,
         "metric": count,
-        "evidence_summary": f"{count} 条评论被归入 {group} 需求。",
+        "evidence_summary": f"{qty(count)} 条评论被归入 {group} 需求。",
     }
 
 

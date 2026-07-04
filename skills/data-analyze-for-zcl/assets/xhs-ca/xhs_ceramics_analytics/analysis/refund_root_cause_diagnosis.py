@@ -10,6 +10,7 @@ the false-discovery rate across many simultaneous "above baseline" checks.
 import statistics
 from pathlib import Path
 
+from xhs_ceramics_analytics.analysis.prose import qty
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.analytics.confidence import (
     bounded_rate,
@@ -253,7 +254,7 @@ def _category_finding(
     if top is not None and top["refund_rate"] is not None:
         conclusion = (
             f"最高退款品类为 {top['category_l1']}（退款率 {round(top['refund_rate'] * 100, 1)}%）；"
-            f"{fdr_count} 个品类显著高于大盘（BH-FDR 5%，预计假阳性约 {round(exp_fp, 1)} 个）。"
+            f"{qty(fdr_count)} 个品类显著高于大盘（BH-FDR 5%，预计假阳性约 {round(exp_fp, 1)} 个）。"
         )
     else:
         conclusion = "sku_performance 品类数据不足，无法判断最高退款品类。"

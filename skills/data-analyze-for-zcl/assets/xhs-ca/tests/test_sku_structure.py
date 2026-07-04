@@ -200,3 +200,63 @@ def test_partial_columns_skip_gated_findings(tmp_path):
     assert result.limitations
     finding1 = next(f for f in result.findings if "集中度" in f.title)
     assert finding1.evidence_strength.value == "weak"
+
+
+# ---- L2 category drill-down (revenue vs refund) -----------------------------
+
+
+def _sku_l2(sku_id, l2, gmv, orders, refund_orders, rate):
+    return (
+        sku_id, f"name_{sku_id}", "p", "prod", False, "陶瓷", l2, "brand",
+        100.0, gmv, orders, orders, orders, 100.0,
+        rate, refund_orders, 0.0, 0.0, gmv * 0.9,
+    )
+
+
+def test_l2_drilldown_separates_high_revenue_from_high_refund(tmp_path):
+    con, db_path = _con(tmp_path)
+    # 餐具: 800k GMV @ 5% refund (high revenue, healthy).
+    # 陶瓶: 200k GMV @ 20% refund (low revenue, refund hotspot).
+    rows = [
+        _sku_l2("a1", "餐具", 400000.0, 1000.0, 50.0, 0.05),
+        _sku_l2("a2", "餐具", 300000.0, 800.0, 40.0, 0.05),
+        _sku_l2("a3", "餐具", 100000.0, 200.0, 10.0, 0.05),
+        _sku_l2("b1", "陶瓶", 100000.0, 500.0, 100.0, 0.20),
+        _sku_l2("b2", "陶瓶", 60000.0, 300.0, 60.0, 0.20),
+        _sku_l2("b3", "陶瓶", 40000.0, 200.0, 40.0, 0.20),
+    ]
+    _make_full_table(con, rows)
+    con.close()
+
+    result = run(db_path)
+
+    l2 = next(f for f in result.findings if f.title == "二级品类结构（营收 vs 退款）")
+    kn = l2.key_numbers
+    assert kn["top_gmv_category_l2"] == "餐具"
+    assert abs(kn["top_gmv_category_l2_share"] - 0.8) < 1e-9
+    # The refund hotspot is a DIFFERENT L2 than the revenue leader — the whole point.
+    assert kn["top_refund_category_l2"] == "陶瓶"
+    assert abs(kn["top_refund_category_l2_rate"] - 0.20) < 1e-9
+    assert kn["category_l2_count"] == 2
+
+    table = result.tables["sku_category_l2_mix"]
+    assert [r["category_l2"] for r in table] == ["餐具", "陶瓶"]
+    top = table[0]
+    assert abs(top["gmv"] - 800000.0) < 1e-9
+    assert abs(top["gmv_share"] - 0.8) < 1e-9
+    assert abs(top["refund_rate"] - 0.05) < 1e-9
+
+
+def test_l2_drilldown_degrades_when_column_absent(tmp_path):
+    con, db_path = _con(tmp_path)
+    # Table with gmv but NO category_l2 column → L2 finding degrades away silently.
+    con.execute("CREATE TABLE sku_performance (sku_name VARCHAR, gmv DOUBLE)")
+    con.executemany(
+        "INSERT INTO sku_performance VALUES (?, ?)",
+        [(f"sku_{i}", 1000.0 * (i + 1)) for i in range(5)],
+    )
+    con.close()
+
+    result = run(db_path)
+    assert "二级品类结构（营收 vs 退款）" not in {f.title for f in result.findings}
+    assert "sku_category_l2_mix" not in result.tables

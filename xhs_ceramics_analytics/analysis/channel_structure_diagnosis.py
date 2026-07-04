@@ -11,6 +11,7 @@ Real counts available for 笔记/商卡: the daily table carries genuine per-car
 """
 from pathlib import Path
 
+from xhs_ceramics_analytics.analysis.prose import money, pp
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.analytics.confidence import (
     bounded_rate,
@@ -248,7 +249,7 @@ def _conversion_finding(con, limitations: list[str]) -> tuple[Finding | None, li
             test["significant"] and diff is not None and abs(diff) >= _MIN_MEANINGFUL_DIFF
         )
         conv_diff = diff
-        caveats.append("显著性用两样本比例 z 检验，辅以效应量门槛（≥1pp）。")
+        caveats.append("显著性用两样本比例 z 检验，辅以效应量门槛（≥1 个百分点）。")
 
     better_carrier = None
     if note_conversion is not None and card_conversion is not None:
@@ -318,13 +319,13 @@ def _conversion_conclusion(
     sig_part = ""
     if conv_significant is not None:
         sig_part = f"（{'显著' if conv_significant else '不显著'}）"
-    diff_part = f"，差异 {round(conv_diff * 100, 1)}pp{sig_part}" if conv_diff is not None else ""
+    diff_part = f"，差异 {pp(conv_diff)}{sig_part}" if conv_diff is not None else ""
     conclusion = (
         f"笔记转化 {round(note_conversion * 100, 1)}% vs 商品卡转化 {round(card_conversion * 100, 1)}%"
         f"{diff_part}。"
     )
     if note_aov is not None and card_aov is not None:
-        conclusion += f" 客单价：笔记 {round(note_aov, 1)} 元，商品卡 {round(card_aov, 1)} 元。"
+        conclusion += f" 客单价：笔记 {money(note_aov)} 元，商品卡 {money(card_aov)} 元。"
     if better_carrier is not None:
         conclusion += f"{_CARRIER_ZH[better_carrier]}转化更好。"
     return conclusion
@@ -398,7 +399,7 @@ def _refund_finding(con, limitations: list[str]) -> tuple[Finding | None, list[d
             test["significant"] and diff is not None and abs(diff) >= _MIN_MEANINGFUL_DIFF
         )
         refund_diff = diff
-        caveats.append("显著性用两样本比例 z 检验，辅以效应量门槛（≥1pp）。")
+        caveats.append("显著性用两样本比例 z 检验，辅以效应量门槛（≥1 个百分点）。")
 
     higher_refund_carrier = None
     higher_stage = None

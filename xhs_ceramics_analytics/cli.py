@@ -111,6 +111,16 @@ def run(
             ),
         ),
     ] = None,
+    assistant: Annotated[
+        str | None,
+        typer.Option(
+            "--assistant",
+            help=(
+                "Name shown in the '追问' section for follow-up analysis. "
+                "Defaults to a neutral '分析助手'."
+            ),
+        ),
+    ] = None,
 ) -> None:
     from xhs_ceramics_analytics.analysis.registry import TASKS, run_task
     from xhs_ceramics_analytics.reporting.html import render_html
@@ -153,7 +163,9 @@ def run(
     if html_out.exists():
         html_out.unlink()
     try:
-        html_out.write_text(render_html(results, title=report_title), encoding="utf-8")
+        html_out.write_text(
+            render_html(results, title=report_title, assistant=assistant), encoding="utf-8"
+        )
     except Exception as exc:
         errors_out.write_text(
             f"HTML rendering failed for report {basename}: {exc}\n",

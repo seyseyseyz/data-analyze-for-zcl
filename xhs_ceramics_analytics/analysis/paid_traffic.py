@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from xhs_ceramics_analytics.analysis.prose import money, qty
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.db.duck import connect
 from xhs_ceramics_analytics.db.sql_helpers import numeric_expr
@@ -75,8 +76,8 @@ def run(db_path: Path) -> AnalysisResult:
             Finding(
                 title="投放消耗和投产效率已汇总",
                 conclusion=(
-                    f"已汇总 {len(rows)} 个投放对象，总消耗 {round(total_spend, 2)}，"
-                    f"可见成交金额 {round(total_gmv, 2)}。"
+                    f"已汇总 {qty(len(rows))} 个投放对象，总消耗 {money(total_spend)}，"
+                    f"可见成交金额 {money(total_gmv)}。"
                 ),
                 evidence_strength=evidence_strength,
                 evidence_reason=_evidence_reason(has_return),

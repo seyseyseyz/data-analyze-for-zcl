@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from xhs_ceramics_analytics.analysis.prose import qty
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.db.duck import connect
 from xhs_ceramics_analytics.evidence import EvidenceStrength
@@ -41,8 +42,8 @@ def run(db_path: Path) -> AnalysisResult:
             Finding(
                 title="发布基线",
                 conclusion=(
-                    f"当前数据包含 {sample_size} 篇笔记，覆盖 "
-                    f"{len(daily_posts)} 个有发布记录的日期。"
+                    f"当前数据包含 {qty(sample_size)} 篇笔记，覆盖 "
+                    f"{qty(len(daily_posts))} 个有发布记录的日期。"
                 ),
                 evidence_strength=score_evidence(
                     sample_size, has_controls=False, confounder_count=1
