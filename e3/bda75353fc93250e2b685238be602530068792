@@ -1,0 +1,107 @@
+xhs_ceramics_analytics/analytics/distribution.py
+  s_6bd2349b4ebd4d::t_ddbd17fd16f3e1 42
+  s_6bd2349b4ebd4d::t_6a5d759c2fd6a3 111
+  s_6bd2349b4ebd4d::t_9e27a1293b2732 10-16,20
+  s_6bd2349b4ebd4d::t_c1e1dedc5d9812 72
+  s_6bd2349b4ebd4d::t_5bc625cceb3ac7 158
+xhs_ceramics_analytics/analysis/paid_traffic.py
+  s_6bd2349b4ebd4d::t_517e0c02368845 277-309
+tests/test_analytics_trends.py
+  s_6bd2349b4ebd4d::t_d3cf86486d9d4b 134-150
+xhs_ceramics_analytics/analysis/search_efficiency.py
+  s_6bd2349b4ebd4d::t_c4f63f4ab84c2d 476
+  s_6bd2349b4ebd4d::t_7fab5ad9750e9d 12
+tests/test_analytics_numeric.py
+  s_6bd2349b4ebd4d::t_73ba50c0cd9149 1-54
+xhs_ceramics_analytics/analysis/demand_funnel.py
+  s_6bd2349b4ebd4d::t_7fab5ad9750e9d 14
+  s_6bd2349b4ebd4d::t_c4f63f4ab84c2d 261
+xhs_ceramics_analytics/analytics/confidence.py
+  s_6bd2349b4ebd4d::t_b10e7caa82393a 43
+  s_6bd2349b4ebd4d::t_1e06cc5236c20c 106-116
+  s_6bd2349b4ebd4d::t_c23c4b3451487b 8-9
+xhs_ceramics_analytics/analytics/decomposition.py
+  s_6bd2349b4ebd4d::t_bd9568e3e73415 70-73
+  s_6bd2349b4ebd4d::t_05611dd0d3ab4a 11-12,21-22,26,29-34,37
+xhs_ceramics_analytics/analysis/refund_root_cause_diagnosis.py
+  s_6bd2349b4ebd4d::t_7fab5ad9750e9d 12
+  s_6bd2349b4ebd4d::t_cd87b309a8172c 256-257
+  s_6bd2349b4ebd4d::t_c4f63f4ab84c2d 405
+  s_6bd2349b4ebd4d::t_8a9d9ade6c6c82 281-282
+xhs_ceramics_analytics/analysis/refund_diagnosis.py
+  s_6bd2349b4ebd4d::t_c4f63f4ab84c2d 486
+  s_6bd2349b4ebd4d::t_7fab5ad9750e9d 3
+xhs_ceramics_analytics/reporting/markdown.py
+  s_6bd2349b4ebd4d::t_e068a7ef1ba11f 93
+tests/test_analytics_concentration.py
+  s_6bd2349b4ebd4d::t_d3cf86486d9d4b 62-71
+xhs_ceramics_analytics/analytics/elasticity.py
+  s_6bd2349b4ebd4d::t_3cbdf2e7aa2fcf 33-39
+  s_6bd2349b4ebd4d::t_2ca9d26f064509 16
+xhs_ceramics_analytics/reporting/priority.py
+  s_6bd2349b4ebd4d::t_2dd6e7d648ef18 171
+  s_6bd2349b4ebd4d::t_d0239385fd196e 86-99
+xhs_ceramics_analytics/analysis/audience_structure.py
+  s_6bd2349b4ebd4d::t_9923ae1fc6aa00 629-630
+  s_6bd2349b4ebd4d::t_65d9aba9589067 28-33
+  s_6bd2349b4ebd4d::t_7fab5ad9750e9d 12
+  s_6bd2349b4ebd4d::t_d36dd64d0c72c1 51-54
+  s_6bd2349b4ebd4d::t_c4f63f4ab84c2d 658
+xhs_ceramics_analytics/analytics/benchmark.py
+  s_6bd2349b4ebd4d::t_65f79cec6c6f58 10
+xhs_ceramics_analytics/analytics/concentration.py
+  s_6bd2349b4ebd4d::t_08443f532ca4ea 6,8-13,22
+  s_6bd2349b4ebd4d::t_3626a8af1ce2e4 49
+  s_6bd2349b4ebd4d::t_1e0ac172d94049 38
+tests/test_analytics_distribution.py
+  s_6bd2349b4ebd4d::t_d3cf86486d9d4b 123-129
+xhs_ceramics_analytics/analysis/channel_structure_diagnosis.py
+  s_6bd2349b4ebd4d::t_7fab5ad9750e9d 14
+  s_6bd2349b4ebd4d::t_c4f63f4ab84c2d 519
+xhs_ceramics_analytics/analytics/trends.py
+  s_6bd2349b4ebd4d::t_5c87d4817bc7f1 49-50
+  s_6bd2349b4ebd4d::t_5e101660f0ccb2 68-71,77
+  s_6bd2349b4ebd4d::t_ba2247c06682c9 137-143
+xhs_ceramics_analytics/analysis/core_business.py
+  s_6bd2349b4ebd4d::t_c4f63f4ab84c2d 1095
+  s_6bd2349b4ebd4d::t_7fab5ad9750e9d 11
+xhs_ceramics_analytics/analytics/numeric.py
+  s_6bd2349b4ebd4d::t_c6c74636fc3d12 1-49
+tests/test_analytics_confidence.py
+  s_6bd2349b4ebd4d::t_716fd85a822512 164-165
+  s_6bd2349b4ebd4d::t_528b76466cad35 1-2
+  s_6bd2349b4ebd4d::t_d3cf86486d9d4b 148-163
+xhs_ceramics_analytics/analytics/cadence.py
+  s_6bd2349b4ebd4d::t_5430d2e2253d57 9
+xhs_ceramics_analytics/analysis/note_commercial.py
+  s_6bd2349b4ebd4d::t_7fab5ad9750e9d 11
+  s_6bd2349b4ebd4d::t_c4f63f4ab84c2d 529
+xhs_ceramics_analytics/analysis/account_baseline.py
+  s_6bd2349b4ebd4d::t_2b1a3a0e2eaa90 41-62
+tests/test_analytics_elasticity.py
+  s_6bd2349b4ebd4d::t_d3cf86486d9d4b 77-93
+xhs_ceramics_analytics/analysis/sku_structure.py
+  s_6bd2349b4ebd4d::t_c03d5c34c6621d 218-219
+  s_6bd2349b4ebd4d::t_c4f63f4ab84c2d 758
+  s_6bd2349b4ebd4d::t_7fab5ad9750e9d 11
+tests/test_analytics_decomposition.py
+  s_6bd2349b4ebd4d::t_d3cf86486d9d4b 81-106
+xhs_ceramics_analytics/reporting/html.py
+  s_6bd2349b4ebd4d::t_9a4a5a388dfc68 941-945,958-959
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.28-trip",
+  "base_commit_sha": "e3bda75353fc93250e2b685238be602530068792",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
