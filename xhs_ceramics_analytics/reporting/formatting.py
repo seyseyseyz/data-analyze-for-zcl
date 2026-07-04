@@ -107,6 +107,19 @@ def is_date_field(field_name: str) -> bool:
     return field_name in DATE_FIELDS or field_name.endswith("_date")
 
 
+def is_timeseries_table(table_name: str, columns: list[str]) -> bool:
+    """Whether a table is a per-period time series best shown as a chart, not a grid.
+
+    A wide trend table read row-by-row is noise — the reader wants the line, not the
+    numbers. Two cheap signals: a ``_trend`` table name, or a leading date column
+    (reusing :func:`is_date_field`). Callers force such tables collapsed regardless of
+    row count so the chart leads. Pure and never-raise.
+    """
+    if table_name.endswith("_trend"):
+        return True
+    return bool(columns) and is_date_field(columns[0])
+
+
 def field_label(field_name: str) -> str:
     label = FIELD_LABELS.get(field_name)
     if label is not None:

@@ -20,6 +20,7 @@ from xhs_ceramics_analytics.reporting.formatting import (
     field_help as _field_help,
     field_label as _field_label,
     format_scalar as _format_scalar,
+    is_timeseries_table as _is_timeseries_table,
     should_render_table as _should_render_table,
 )
 from xhs_ceramics_analytics.reporting import charts
@@ -789,8 +790,11 @@ def _table_view(table_name: str, rows: list[dict[str, object]]) -> dict[str, obj
         "showing_count": showing_count,
         # Short tables (< 10 rows) open by default — readable at a glance, so the
         # collapsed shell just adds a needless click. Longer tables stay collapsed
-        # to keep the page scannable.
-        "open": len(rows) < _MAX_OPEN_TABLE_ROWS,
+        # to keep the page scannable. Time-series trend tables (#17) are the one
+        # exception: their chart carries the story, so the raw per-period grid stays
+        # folded regardless of length instead of pushing the chart below the fold.
+        "open": len(rows) < _MAX_OPEN_TABLE_ROWS
+        and not _is_timeseries_table(table_name, all_columns),
         "display_text": display_text,
         # 只保留用户视图；原始机器列名在 markdown 表格预览(附录)里留证，HTML 不再
         # 叠一层「技术追溯」制造工程噪音(#12)。

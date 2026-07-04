@@ -1,6 +1,7 @@
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding, Subsection
 from xhs_ceramics_analytics.evidence import DescriptiveReliability, EvidenceStrength
 from xhs_ceramics_analytics.reporting.html import (
+    _table_view,
     render_html,
     render_markdown_document_html,
 )
@@ -813,6 +814,20 @@ def test_render_html_drops_reshoot_repost_highlight_card():
         ]
     )
     assert "重拍机会：先复用「" not in html
+
+
+def test_timeseries_table_forced_collapsed_even_when_short():
+    # #17: 时序趋势表(表名 _trend 结尾,或首列是日期)读者要看的是折线图,不是逐行数字。
+    # 即便行数 <10,也强制折叠,让图表先行,不再默认展开一张长条趋势表。
+    trend_rows = [{"stage": "读", "rate": 0.5}, {"stage": "赞", "rate": 0.3}]
+    assert _table_view("refund_rate_trend", trend_rows)["open"] is False
+
+    dated_rows = [{"date": "2026-04-01", "gmv": 100.0}, {"date": "2026-04-02", "gmv": 120.0}]
+    assert _table_view("business_daily", dated_rows)["open"] is False
+
+    # 对照:普通短表照旧默认展开。
+    plain_rows = [{"carrier": "note", "gmv": 100.0}]
+    assert _table_view("carrier_structure", plain_rows)["open"] is True
 
 
 def test_render_html_user_table_view_omits_technical_columns_entirely():
