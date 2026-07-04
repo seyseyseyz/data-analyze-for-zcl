@@ -89,7 +89,9 @@ def test_format_scalar_conversion_counts_and_source_are_not_percent():
     # look-alike fields that are NOT rates must stay counts / text
     assert format_scalar("conversion_universe", 3991) == "3,991"
     assert format_scalar("gmv_universe", 3405) == "3,405"
-    assert format_scalar("conversion_source", "count") == "count"
+    # the caliber-source enum is text (never a percent); it is localized via
+    # VALUE_LABELS so a business reader sees 中文 rather than the raw token.
+    assert format_scalar("conversion_source", "count") == "真实计数"
 
 
 def test_format_scalar_money_fields_never_become_percent():
@@ -144,6 +146,48 @@ def test_format_scalar_date_field_numeric_non_date_is_not_comma_mangled():
     # not be grouped like money ("2,026"); render the bare digits instead.
     assert format_scalar("date", 2026) == "2026"
     assert format_scalar("period", 202604) == "202604"
+
+
+def test_format_scalar_rate_diff_and_conversion_bounds_are_percent():
+    # ``diff`` is a conversion/effectiveness gap in every producer, and the
+    # audience conversion bounds are 0-1 fractions — all render as percents.
+    assert format_scalar("diff", 0.02) == "2%"
+    # channel/audience conversion gaps are two_proportion fractions → percent
+    assert format_scalar("channel_diff", -0.0077) == "-0.77%"
+    assert format_scalar("audience_diff", -0.0177) == "-1.77%"
+    assert format_scalar("overall_conversion", 0.11) == "11%"
+    assert format_scalar("top_conversion", 0.14) == "14%"
+    assert format_scalar("second_conversion", 0.09) == "9%"
+    assert format_scalar("conversion_gap", 0.05) == "5%"
+    assert format_scalar("ci_band", 0.03) == "3%"
+    # ``paid`` is an order count, not a rate — it must stay a grouped number.
+    assert format_scalar("paid", 1234) == "1,234"
+
+
+def test_format_scalar_localizes_enum_tokens():
+    # carrier / funnel-stage / caliber / classification tokens must render in
+    # Chinese, not as raw machine tokens, in both renderers.
+    assert format_scalar("carrier", "card") == "商品卡"
+    assert format_scalar("carrier", "note") == "笔记"
+    assert format_scalar("weakest_stage", "click_pay") == "点击→支付"
+    assert format_scalar("dominant_stage", "pre_ship") == "发货前"
+    assert format_scalar("pay_conversion_source", "real") == "真实计数"
+    assert format_scalar("aov_source", "derived") == "由率推算"
+    assert format_scalar("term_class", "opportunity") == "高机会词"
+    assert format_scalar("outlier_type", "high_traffic_low_conv") == "高流量低转化"
+    assert format_scalar("leak_type", "click_leak") == "点击漏损"
+
+
+def test_field_label_covers_previously_unlabeled_fields():
+    # fields that used to fall back to an English column name now carry a
+    # Chinese label + meaningful help.
+    assert field_label("total_gmv") == "总销售额"
+    assert field_label("pay_conversion") == "支付转化率"
+    assert field_label("weakest_stage") == "最弱环节"
+    assert field_label("wilson_low") == "Wilson 下界"
+    assert field_label("overall_refund_rate") == "整体退款率"
+    # the generic追溯 fallback must no longer fire for these
+    assert "追溯" not in field_help("total_gmv")
 
 
 def test_field_label_known_and_unknown():

@@ -76,6 +76,47 @@ VALUE_LABELS = {
     "unit": "单元粒度",
     "weekly_business_review": "每周经营复盘",
     "weekly_experiment_matrix": "每周实验矩阵",
+    # --- 载体 / 漏斗环节 / 口径来源枚举 ---
+    "card": "商品卡",
+    "note": "笔记",
+    "visit_click": "访问→点击",
+    "visit_pay": "访问→支付",
+    "click_pay": "点击→支付",
+    "pre_ship": "发货前",
+    "post_ship": "发货后",
+    "real": "真实计数",
+    "count": "真实计数",
+    "derived": "由率推算",
+    # --- 搜索词分类 / 漏损类型 / 异常类型 ---
+    "opportunity": "高机会词",
+    "leak": "高流失词",
+    "average": "中等词",
+    "small_sample": "小样本词",
+    "click_leak": "点击漏损",
+    "conversion_leak": "转化漏损",
+    "high_traffic_low_conv": "高流量低转化",
+    "top_converter": "高转化标杆",
+    # --- 退款结构口径轴与层级 ---
+    "ship_stage": "发货阶段",
+    "return_type": "退款类型",
+    "return": "退货",
+    # --- 可信度枚举（与 _EVIDENCE_LABELS 对齐）---
+    "not_judgable": "不可判断",
+    # --- 数据源 / 数据表名（数据质量与复盘来源列）---
+    "posts": "发布笔记数",
+    "note_funnel": "笔记漏斗",
+    "build_manifest": "构建清单",
+    "mapping_diagnostics": "字段映射诊断",
+    "business_overview": "经营数据总览",
+    "business_overview_daily": "经营数据总览（按天）",
+    "business_overview_monthly": "经营数据总览（按月）",
+    "refund_overview": "退款总览",
+    "search_overview": "搜索总览",
+    "search_terms": "搜索词表",
+    "shop_page_funnel": "店铺页漏斗",
+    "shop_page_source": "店铺页来源",
+    "sku_performance": "商品表现表",
+    "traffic_source": "流量来源表",
 }
 
 

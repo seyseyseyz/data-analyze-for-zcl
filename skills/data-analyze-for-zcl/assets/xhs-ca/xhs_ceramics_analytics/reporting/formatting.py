@@ -26,18 +26,24 @@ from xhs_ceramics_analytics.reporting.labels import (
 # The contract this set relies on: a column name maps to exactly one unit across
 # the whole codebase. ``ci_low``/``ci_high`` are here because every producer uses
 # them to bound a *rate* — a future CI over money/counts must be named
-# ``gmv_ci_low`` etc. so it stays money. ``delta`` is deliberately absent: it is
-# polymorphic (GMV yuan in core_business, rate-points in the refund/search
-# trends), so each trend renames its column to a unit-bearing name
-# (``gmv_delta`` = money, ``refund_rate_delta``/``avg_pay_conversion_delta`` =
-# rate-points) rather than overloading one ambiguous key.
+# ``gmv_ci_low`` etc. so it stays money. ``diff`` earns its place the same way:
+# both producers (audience_structure, search_efficiency) use it for a
+# conversion/effectiveness gap, so it is a rate everywhere. ``delta`` is
+# deliberately absent: it is polymorphic (GMV yuan in core_business, rate-points
+# in the refund/search trends), so each trend renames its column to a
+# unit-bearing name (``gmv_delta`` = money,
+# ``refund_rate_delta``/``avg_pay_conversion_delta`` = rate-points) rather than
+# overloading one ambiguous key.
 PERCENT_FIELDS = {
+    "audience_diff",
     "avg_pay_conversion",
     "avg_pay_conversion_delta",
     "baseline_conversion",
     "baseline_effectiveness",
     "card_conversion",
+    "channel_diff",
     "cart_to_pay",
+    "ci_band",
     "ci_high",
     "ci_low",
     "click_baseline",
@@ -45,13 +51,16 @@ PERCENT_FIELDS = {
     "conv_diff",
     "conversion",
     "conversion_baseline",
+    "conversion_gap",
     "ctr_calc",
+    "diff",
     "effectiveness",
     "effectiveness_high",
     "effectiveness_low",
     "new_customer_dependence",
     "note_conversion",
     "overall_cart_to_pay",
+    "overall_conversion",
     "pay_conversion",
     "pct",
     "rate",
@@ -60,7 +69,9 @@ PERCENT_FIELDS = {
     "refund_rate_delta",
     "relative_lift",
     "repeat_conversion_premium",
+    "second_conversion",
     "share",
+    "top_conversion",
     "wilson_high",
     "wilson_low",
 }

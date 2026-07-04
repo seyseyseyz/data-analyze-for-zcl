@@ -816,6 +816,9 @@
           <span class="tag info">How to read</span>
           <h3>这份报告怎么读</h3>
           <p>可信度说明这条结论适合怎么用：直接决策、短期观察、转成实验，或先补数据。</p>
+          <p class="meta-label">
+            后台导出多为「观察性」聚合数据，没有对照组，因此多数结论会落在「低」。这里的「低」不代表结论是错的，而是提示它属于<strong>方向性线索</strong>——先按建议下小实验验证，再放大投入；只有拿到足够样本与对照才会升到「中 / 高」。
+          </p>
           {% if report.evidence_chart_svg %}
           <div class="chart">{{ report.evidence_chart_svg }}</div>
           {% endif %}

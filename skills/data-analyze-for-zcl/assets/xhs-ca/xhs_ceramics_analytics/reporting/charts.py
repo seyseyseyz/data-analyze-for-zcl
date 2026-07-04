@@ -140,30 +140,49 @@ _EVIDENCE_TONE = {
 }
 
 
+def _legend_text_w(text: str) -> float:
+    """Rough advance width of a legend caption: CJK glyphs are ~15px wide, ASCII
+    (digits/spaces) ~8px at the report's font size. Used to lay legend items out
+    without overlap; exact metrics are unnecessary since the SVG scales to fit."""
+    return sum(15.0 if ord(ch) > 0x2E80 else 8.0 for ch in text)
+
+
 def evidence_distribution(evidence_counts: Sequence[dict]) -> Markup:
     rows = [dict(item) for item in evidence_counts]
     total = sum(int(item["count"]) for item in rows)
     if total <= 0:
         return Markup("")
     present = [item for item in rows if int(item["count"]) > 0]
-    width, height = _VIEW_W, 96
+    width, height = _VIEW_W, 112
     track = width
     parts: list[str] = [_title("结论可信度分布")]
+    # Proportional bar carries the visual share only — a segment for a rare tier
+    # (e.g. 高 2 of 31) is far too narrow to hold its caption, so the count lives
+    # in the legend below instead of overflowing into the neighbouring segment.
     x = 0.0
     gap = 2.0  # 2px surface gap between adjacent segments (marks-and-anatomy)
     for item in present:
         count = int(item["count"])
         seg_w = max(0.0, (count / total) * track - gap)
         tone = _EVIDENCE_TONE.get(str(item["value"]), "var(--surface-soft)")
-        label = f'{item["label"]} {count}'
         parts.append(
-            f'<rect x="{_num(x)}" y="34" width="{_num(seg_w)}" height="30" rx="4" '
-            f'fill="{tone}"><title>{_esc(label)}</title></rect>'
-        )
-        parts.append(
-            f'<text x="{_num(x + 8)}" y="54" class="ca-num">{_esc(label)}</text>'
+            f'<rect x="{_num(x)}" y="34" width="{_num(seg_w)}" height="22" rx="4" '
+            f'fill="{tone}"><title>{_esc(item["label"])} {count}</title></rect>'
         )
         x += seg_w + gap
+    # Legend row: a swatch + "<tier> <count>" per present tier, always legible.
+    lx = 0.0
+    for item in present:
+        count = int(item["count"])
+        tone = _EVIDENCE_TONE.get(str(item["value"]), "var(--surface-soft)")
+        caption = f'{item["label"]} {count}'
+        parts.append(
+            f'<rect x="{_num(lx)}" y="79" width="14" height="14" rx="3" fill="{tone}"/>'
+        )
+        parts.append(
+            f'<text x="{_num(lx + 20)}" y="91" class="ca-num">{_esc(caption)}</text>'
+        )
+        lx += 14 + 6 + _legend_text_w(caption) + 24
     return Markup(_frame("".join(parts), width, height))
 
 

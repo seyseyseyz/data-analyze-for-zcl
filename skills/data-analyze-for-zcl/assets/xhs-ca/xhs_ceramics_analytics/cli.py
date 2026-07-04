@@ -143,7 +143,11 @@ def run(
     markdown_out = output_dir / f"{basename}.md"
     html_out = output_dir / f"{basename}.html"
     errors_out = output_dir / "render_errors.txt"
-    report_title = name or None
+    # ``name`` doubles as the file basename (kept filesystem-friendly with
+    # underscores) and the on-page report title. Underscores read as broken in a
+    # Chinese headline, so present them as spaces in the display title while the
+    # file on disk still uses the raw ``name``.
+    report_title = name.replace("_", " ").strip() if name else None
     markdown_out.write_text(render_markdown(results, title=report_title), encoding="utf-8")
     typer.echo(f"Wrote report: {markdown_out}")
     if html_out.exists():
