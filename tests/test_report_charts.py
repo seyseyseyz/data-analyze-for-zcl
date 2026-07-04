@@ -1,3 +1,5 @@
+import re
+
 from markupsafe import Markup
 
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
@@ -522,6 +524,60 @@ def test_audience_structure_falls_back_to_composition():
 def test_audience_structure_empty_when_absent():
     result = _result("audience_structure_diagnosis", EvidenceStrength.MEDIUM, {})
     assert charts.for_result(result) == ""
+
+
+def test_short_date_trims_iso_and_passes_through_non_iso():
+    # Dates arrive already normalized to ISO from the analysis modules; _short_date
+    # only strips the year and never re-derives a compact YYYYMMDD form.
+    assert charts._short_date("2026-06-30") == "06-30"   # ISO → MM-DD
+    assert charts._short_date("20260630") == "20260630"  # non-ISO left untouched
+    assert charts._short_date("第 12 周") == "第 12 周"    # anything else untouched
+
+
+def test_truncate_clips_long_label_with_ellipsis():
+    assert charts._truncate("盖碗", 200) == "盖碗"          # fits -> unchanged
+    out = charts._truncate("超长二级品类名称示例文本内容", 90)
+    assert out.endswith("…")
+    assert charts._legend_text_w(out) <= 90
+
+
+def _num_label_right_edges(html):
+    """Right edge (x + estimated width) of every left-anchored ca-num label."""
+    edges = []
+    for m in re.finditer(r'<text x="([-\d.]+)"(?![^>]*text-anchor)[^>]*class="ca-num"[^>]*>([^<]*)</text>',
+                          html):
+        x = float(m.group(1))
+        edges.append(x + charts._legend_text_w(m.group(2)))
+    return edges
+
+
+def test_hbar_value_label_stays_within_bounds_for_large_numbers():
+    # a full-length bar with a wide 千分位 number used to run off the right edge
+    result = _result(
+        "channel_structure_diagnosis",
+        EvidenceStrength.MEDIUM,
+        {"channel_scale": [
+            {"carrier": "note", "carrier_zh": "笔记", "gmv": 839335.64},
+            {"carrier": "card", "carrier_zh": "商品卡", "gmv": 12000.0},
+        ]},
+    )
+    html = charts.for_result(result)
+    assert "839,335.64" in html
+    assert _num_label_right_edges(html), "expected value labels to be present"
+    assert max(_num_label_right_edges(html)) <= 640 + 1   # within the 640-wide viewBox
+
+
+def test_hbar_long_category_label_is_truncated_but_full_in_title():
+    result = _result(
+        "sku_structure_diagnosis",
+        EvidenceStrength.MEDIUM,
+        {"sku_category_l2_mix": [
+            {"category_l2": "非常长的二级品类名称用于测试截断行为", "gmv": 9000.0},
+        ]},
+    )
+    html = charts.for_result(result)
+    assert "…" in html                                    # visible label clipped
+    assert "非常长的二级品类名称用于测试截断行为" in html    # full name kept in <title>
 
 
 def test_builder_escapes_injected_text():

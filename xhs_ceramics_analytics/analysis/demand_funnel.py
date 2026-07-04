@@ -11,7 +11,7 @@ confounders + observational caveats. Observational only — 报方向与规模�
 """
 from pathlib import Path
 
-from xhs_ceramics_analytics.analysis.prose import qty
+from xhs_ceramics_analytics.analysis.prose import cn_date, qty
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.analytics.confidence import min_n_guard, rate_band, wilson_interval
 from xhs_ceramics_analytics.analytics.trends import trend_summary
@@ -111,19 +111,23 @@ def _funnel_finding(
         dated = [r for r in rows if r.get("date") is not None]
         dated.sort(key=lambda r: str(r.get("date")))
         for r in dated:
+            # Normalize raw table dates (int YYYYMMDD or ISO) to canonical ISO once,
+            # so table rows and chart series share one date form (same source as
+            # core_business._gmv_trend).
+            iso_date = cn_date(r.get("date"))
             cart = _num(r.get("add_to_cart_users"))
             buyers = _num(r.get("paid_buyers"))
             rate = (buyers / cart) if cart else None
             funnel_rows.append(
                 {
-                    "date": str(r.get("date")),
+                    "date": iso_date,
                     "add_to_cart_users": cart,
                     "paid_buyers": buyers,
                     "cart_to_pay": rate,
                 }
             )
             if rate is not None:
-                series.append((str(r.get("date")), rate))
+                series.append((iso_date, rate))
 
     trend_direction = None
     if len(series) >= 2:
@@ -199,11 +203,12 @@ def _wishlist_finding(
         dated = [r for r in rows if r.get("date") is not None]
         dated.sort(key=lambda r: str(r.get("date")))
         for r in dated:
+            iso_date = cn_date(r.get("date"))
             users = _num(r.get(_WISHLIST_COL))
             wishlist_rows.append(
-                {"date": str(r.get("date")), "new_wishlist_users": users}
+                {"date": iso_date, "new_wishlist_users": users}
             )
-            series.append((str(r.get("date")), users))
+            series.append((iso_date, users))
 
     trend_direction = None
     if len(series) >= 2:

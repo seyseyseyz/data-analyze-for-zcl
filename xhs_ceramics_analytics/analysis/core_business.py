@@ -198,7 +198,11 @@ def _gmv_trend(
         return [], None, [], {}
     dated = [(r.get("date"), _num(r.get("gmv"))) for r in rows if r.get("date") is not None]
     dated.sort(key=lambda t: str(t[0]))
-    series = [(str(d), g) for d, g in dated]
+    # Normalize raw table dates (int YYYYMMDD or ISO) to canonical ISO once, at the
+    # boundary where daily rows become the trend series. Every downstream consumer —
+    # trend_rows, mom_change periods, changepoint matching, prose — inherits ISO from
+    # this single point; _parse_date still accepts both forms for the math helpers.
+    series = [(cn_date(d), g) for d, g in dated]
     trend_rows = [{"date": p, "gmv": g} for p, g in series]
     if len(series) < 2:
         limitations.append("business_overview_daily 日期行不足两期，跳过 GMV 趋势。")

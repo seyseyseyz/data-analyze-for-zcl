@@ -110,8 +110,15 @@ def _hbar(
     rows: (label, value, value_text, tone). value_max normalizes bar length.
     """
     width, height = _VIEW_W, 26 + 34 * len(rows)
-    pad_l, pad_r = 132, 64
-    track = width - pad_l - pad_r
+    pad_l, gap = 132, 8
+    # Size the right gutter to the widest value label so a full-length bar's
+    # number never runs off the right edge (fit the layout to the content, don't
+    # clip). Left labels wider than the gutter are truncated with an ellipsis;
+    # the full text stays reachable in each bar's <title>.
+    max_val_w = max((_legend_text_w(vt) for _, _, vt, _ in rows), default=0.0)
+    pad_r = max(56.0, gap + max_val_w + 8.0)
+    track = max(40.0, width - pad_l - pad_r)
+    label_gutter = pad_l - 14
     vmax = value_max or 1.0
     parts: list[str] = []
     for i, (label, value, value_text, tone) in enumerate(rows):
@@ -121,7 +128,7 @@ def _hbar(
         opacity = "0.55" if de_emphasize else "1"
         parts.append(
             f'<text x="{pad_l - 10}" y="{y + 15}" text-anchor="end" class="ca-cat">'
-            f'{_esc(label)}</text>'
+            f'{_esc(_truncate(str(label), label_gutter))}<title>{_esc(label)}</title></text>'
         )
         parts.append(
             f'<rect x="{pad_l}" y="{y}" width="{_num(bar_w)}" height="20" rx="4" '
@@ -129,7 +136,7 @@ def _hbar(
             f'<title>{_esc(label)}：{_esc(value_text)}</title></rect>'
         )
         parts.append(
-            f'<text x="{_num(pad_l + bar_w + 8)}" y="{y + 15}" class="ca-num">'
+            f'<text x="{_num(pad_l + bar_w + gap)}" y="{y + 15}" class="ca-num">'
             f'{_esc(value_text)}</text>'
         )
     parts.append(
@@ -153,6 +160,24 @@ def _legend_text_w(text: str) -> float:
     (digits/spaces) ~8px at the report's font size. Used to lay legend items out
     without overlap; exact metrics are unnecessary since the SVG scales to fit."""
     return sum(15.0 if ord(ch) > 0x2E80 else 8.0 for ch in text)
+
+
+def _truncate(text: str, max_w: float) -> str:
+    """Clip text to an advance-width budget, appending an ellipsis. Keeps a chart
+    label inside its gutter instead of overrunning the plotting area; callers keep
+    the full text reachable via a <title>."""
+    if _legend_text_w(text) <= max_w:
+        return text
+    ellipsis = "…"
+    budget = max_w - _legend_text_w(ellipsis)
+    out, used = "", 0.0
+    for ch in text:
+        cw = 15.0 if ord(ch) > 0x2E80 else 8.0
+        if used + cw > budget:
+            break
+        out += ch
+        used += cw
+    return out + ellipsis
 
 
 def evidence_distribution(evidence_counts: Sequence[dict]) -> Markup:
@@ -539,9 +564,16 @@ _BUILDERS["paid_traffic_efficiency"] = _build_paid
 
 
 def _short_date(value: object) -> str:
-    """Trim an ISO date to MM-DD for a compact axis; pass anything else through."""
+    """Trim an ISO date to MM-DD for a compact axis; pass anything else through.
+
+    Analysis modules normalize dates to canonical ISO ('YYYY-MM-DD') at the source
+    (see core_business._gmv_trend / demand_funnel), so this only strips the year for
+    a narrow edge tick — it does not re-derive any date format.
+    """
     text = str(value)
-    return text[5:] if len(text) == 10 and text[4] == "-" and text[7] == "-" else text
+    if len(text) == 10 and text[4] == "-" and text[7] == "-":
+        return text[5:]
+    return text
 
 
 def _timeseries_line(
@@ -584,15 +616,22 @@ def _timeseries_line(
         f'<line x1="{pad_l}" y1="{_num(baseline_y)}" x2="{width - pad_r}" '
         f'y2="{_num(baseline_y)}" class="ca-axis"/>',
     ]
-    # changepoint verticals sit behind the line so the trend stays readable
+    # changepoint verticals sit behind the line so the trend stays readable. The
+    # label anchor flips near either edge so "结构转折" never clips the plot bounds.
     for i, (d, _) in enumerate(pts):
         if d in changepoint_dates:
             body.append(
                 f'<line x1="{_num(xs[i])}" y1="{pad_t}" x2="{_num(xs[i])}" '
                 f'y2="{_num(baseline_y)}" class="ca-grid" stroke-dasharray="4 3"/>'
             )
+            if xs[i] > width - pad_r - 32:
+                anchor = "end"
+            elif xs[i] < pad_l + 32:
+                anchor = "start"
+            else:
+                anchor = "middle"
             body.append(
-                f'<text x="{_num(xs[i])}" y="{pad_t - 6}" text-anchor="middle" '
+                f'<text x="{_num(xs[i])}" y="{pad_t - 6}" text-anchor="{anchor}" '
                 f'class="ca-cat">结构转折</text>'
             )
     color = "var(--ink-strong)"
