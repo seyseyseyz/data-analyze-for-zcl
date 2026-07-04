@@ -16,7 +16,11 @@ from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.analytics.confidence import min_n_guard, rate_band, wilson_interval
 from xhs_ceramics_analytics.analytics.trends import trend_summary
 from xhs_ceramics_analytics.db.duck import connect
-from xhs_ceramics_analytics.evidence import EvidenceStrength, score_evidence
+from xhs_ceramics_analytics.evidence import (
+    EvidenceStrength,
+    score_evidence,
+    score_reliability,
+)
 
 TASK_ID = "demand_funnel_diagnosis"
 TITLE = "需求漏斗与心愿单诊断"
@@ -163,6 +167,7 @@ def _funnel_finding(
         title="加购→成交需求漏斗",
         conclusion=conclusion,
         evidence_strength=score_evidence(sample_size, has_controls=False, confounder_count=1),
+        descriptive_reliability=score_reliability(sample_size, ci_low, ci_high),
         key_numbers=key_numbers,
         caveats=caveats,
         recommended_action=_LEVER_FUNNEL,
@@ -230,6 +235,7 @@ def _wishlist_finding(
         title="心愿单需求蓄水",
         conclusion=conclusion,
         evidence_strength=score_evidence(len(series) or 1, has_controls=False, confounder_count=1),
+        descriptive_reliability=score_reliability(len(series) or 1),
         key_numbers=key_numbers,
         caveats=[
             "观察性诊断，非因果——心愿单为延迟需求信号，转化受上新/提醒/权益节奏影响。",

@@ -23,7 +23,7 @@ from xhs_ceramics_analytics.analytics.multiplicity import (
     one_sided_binomial_p,
 )
 from xhs_ceramics_analytics.db.duck import connect
-from xhs_ceramics_analytics.evidence import EvidenceStrength, score_evidence
+from xhs_ceramics_analytics.evidence import EvidenceStrength, score_evidence, score_reliability
 
 TASK_ID = "refund_root_cause_diagnosis"
 TITLE = "退款根因诊断"
@@ -165,6 +165,7 @@ def _ship_stage_finding(
         title="发货前后退款分解",
         conclusion=conclusion,
         evidence_strength=score_evidence(int(total_orders), has_controls=False, confounder_count=1),
+        descriptive_reliability=score_reliability(int(total_orders)),
         key_numbers={
             "pre_ship_rate": pre_rate,
             "post_ship_rate": post_rate,
@@ -263,6 +264,7 @@ def _category_finding(
         title="品类退款分解",
         conclusion=conclusion,
         evidence_strength=score_evidence(int(total_orders), has_controls=False, confounder_count=1),
+        descriptive_reliability=score_reliability(int(total_orders)),
         key_numbers={
             "baseline_refund_rate": baseline,
             "top_category": top["category_l1"] if top else None,
@@ -380,6 +382,7 @@ def _price_band_finding(
         title="价格带退款分解",
         conclusion=conclusion,
         evidence_strength=score_evidence(int(total_orders), has_controls=False, confounder_count=1),
+        descriptive_reliability=score_reliability(int(total_orders)),
         key_numbers={
             "highest_refund_band": highest_band,
             "band_count": len(band_rows),

@@ -4,6 +4,7 @@ from xhs_ceramics_analytics.analysis.prose import qty
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.db.duck import connect
 from xhs_ceramics_analytics.evidence import EvidenceStrength, score_evidence
+from xhs_ceramics_analytics.evidence import score_reliability
 
 _WINDOW_SPECS = (
     ("d0_1", -1, 0, 0, 1),
@@ -71,6 +72,9 @@ def run(db_path: Path) -> AnalysisResult:
         has_controls=False,
         confounder_count=1 if link_context["source"] == "note_sku_links" else 3,
     )
+    descriptive_reliability = score_reliability(
+        len({(row["note_id"], row["sku_id"]) for row in rows})
+    )
     findings = [
         Finding(
             title="笔记锚定的 SKU 销量响应窗口",
@@ -80,6 +84,7 @@ def run(db_path: Path) -> AnalysisResult:
                 "生成发布前后的销量观察窗口。"
             ),
             evidence_strength=evidence_strength,
+            descriptive_reliability=descriptive_reliability,
             evidence_reason=_evidence_reason(str(link_context["source"])),
             key_numbers=_key_numbers(rows, str(link_context["source"])),
             caveats=list(link_context["caveats"]),

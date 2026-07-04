@@ -4,6 +4,7 @@ from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.db.duck import connect
 from xhs_ceramics_analytics.evidence import EvidenceStrength
 from xhs_ceramics_analytics.evidence import score_evidence
+from xhs_ceramics_analytics.evidence import score_reliability
 
 
 def run(db_path: Path) -> AnalysisResult:
@@ -18,6 +19,7 @@ def run(db_path: Path) -> AnalysisResult:
         if rows and _has_metric_evidence(rows)
         else EvidenceStrength.NOT_JUDGABLE
     )
+    descriptive_reliability = score_reliability(len(rows))
     return AnalysisResult(
         task_id="copy_angle_effect",
         title="文案角度效果",
@@ -26,6 +28,7 @@ def run(db_path: Path) -> AnalysisResult:
                 title="文案角度已排序",
                 conclusion="已按平均阅读数和收藏数对文案角度分组进行排序。",
                 evidence_strength=evidence_strength,
+                descriptive_reliability=descriptive_reliability,
                 key_numbers={"copy_groups": len(rows)},
                 caveats=["在加入商品和发布时间控制前，这个排序仍是描述性结果。"],
             )

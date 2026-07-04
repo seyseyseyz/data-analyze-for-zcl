@@ -4,6 +4,7 @@ from xhs_ceramics_analytics.analysis.prose import qty
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.db.duck import connect
 from xhs_ceramics_analytics.evidence import score_evidence
+from xhs_ceramics_analytics.evidence import score_reliability
 
 
 _MIN_CONFIDENT_READS = 50.0
@@ -31,6 +32,7 @@ def run(db_path: Path) -> AnalysisResult:
                 evidence_strength=score_evidence(
                     len(metrics), has_controls=False, confounder_count=1
                 ),
+                descriptive_reliability=score_reliability(len(metrics)),
                 key_numbers={
                     "candidate_notes": len(rows),
                     "top_candidate": top_candidate,

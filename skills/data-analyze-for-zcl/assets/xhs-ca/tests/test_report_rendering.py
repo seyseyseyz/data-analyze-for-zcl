@@ -1,10 +1,48 @@
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding, Subsection
-from xhs_ceramics_analytics.evidence import EvidenceStrength
+from xhs_ceramics_analytics.evidence import DescriptiveReliability, EvidenceStrength
 from xhs_ceramics_analytics.reporting.html import (
     render_html,
     render_markdown_document_html,
 )
 from xhs_ceramics_analytics.reporting.markdown import render_markdown
+
+
+def _weak_but_reliable_finding():
+    # Observational (causal WEAK) yet backed by a large, precisely-measured sample.
+    return Finding(
+        title="发货前退款为主漏点",
+        conclusion="发货前退款占比 61.9%。",
+        evidence_strength=EvidenceStrength.WEAK,
+        key_numbers={"dominant_share": 0.619},
+        descriptive_reliability=DescriptiveReliability.HIGH,
+    )
+
+
+def test_markdown_renders_both_evidence_axes_when_reliability_present():
+    md = render_markdown(
+        [AnalysisResult(task_id="x", title="X", findings=[_weak_but_reliable_finding()])]
+    )
+    assert "证据强度：弱" in md  # causal axis preserved
+    assert "描述可靠性：高" in md  # orthogonal reliability axis
+
+
+def test_markdown_omits_reliability_axis_when_not_scored():
+    finding = Finding(
+        title="t",
+        conclusion="c",
+        evidence_strength=EvidenceStrength.WEAK,
+    )
+    md = render_markdown([AnalysisResult(task_id="x", title="X", findings=[finding])])
+    assert "证据强度：弱" in md
+    assert "描述可靠性" not in md
+
+
+def test_html_renders_descriptive_reliability_badge():
+    html = render_html(
+        [AnalysisResult(task_id="x", title="X", findings=[_weak_but_reliable_finding()])]
+    )
+    assert "描述可靠性" in html
+    assert "高" in html
 
 
 def _full_finding():

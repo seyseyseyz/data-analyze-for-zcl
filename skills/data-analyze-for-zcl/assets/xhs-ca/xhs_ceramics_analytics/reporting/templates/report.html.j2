@@ -1,6 +1,9 @@
 {% macro finding_card(finding) %}
 <article class="finding-card">
   <span class="tag {{ finding.evidence_class }}">可信度 {{ finding.evidence }}</span>
+  {% if finding.reliability %}
+  <span class="tag reliability-{{ finding.reliability_class }}" title="{{ finding.reliability_help }}">描述可靠性 {{ finding.reliability }}</span>
+  {% endif %}
   <h3>{{ finding.title }}</h3>
   <p>{{ finding.body }}</p>
 
@@ -330,6 +333,12 @@
     .tag.weak { background: var(--yellow-bg); color: var(--yellow-text); }
     .tag.not_judgable { background: var(--red-bg); color: var(--red-text); }
     .tag.info { background: var(--blue-bg); color: var(--blue-text); }
+    /* Reliability is the orthogonal axis — a distinct blue family so readers never
+       confuse it with the green/yellow/red causal-strength tag beside it. */
+    .tag.reliability-high { background: var(--blue-bg); color: var(--blue-text); }
+    .tag.reliability-medium { background: #EEF6FB; color: var(--blue-text); }
+    .tag.reliability-low,
+    .tag.reliability-not_applicable { background: #F1F1EF; color: var(--muted); }
 
     .action-list {
       display: grid;
@@ -1054,6 +1063,7 @@
             <p>{{ evidence.help }}</p>
           </div>
           {% endfor %}
+          <p class="axis-note"><strong>两把尺子，别混用：</strong>「可信度」量的是这条结论能不能当作<strong>因果依据</strong>——只看观测数据、没有对照实验时天花板就是「低」，这不是数据差，而是不能证明因果。「描述可靠性」量的是数字本身<strong>测得准不准</strong>——样本量大、置信区间窄就是「高」。所以一条结论完全可能「可信度低、描述可靠性高」：现象测得很准，但别当成已被验证的原因。</p>
         </article>
         <article class="card">
           <h3>术语解释</h3>

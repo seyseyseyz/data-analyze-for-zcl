@@ -5,6 +5,7 @@ from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.db.duck import connect
 from xhs_ceramics_analytics.db.sql_helpers import numeric_expr
 from xhs_ceramics_analytics.evidence import EvidenceStrength, score_evidence
+from xhs_ceramics_analytics.evidence import score_reliability
 
 MIN_SPEND_FOR_ACTION = 100
 HIGH_ROAS_THRESHOLD = 3
@@ -68,6 +69,9 @@ def run(db_path: Path) -> AnalysisResult:
         has_controls=has_return,
         confounder_count=1 if has_return else 3,
     )
+    descriptive_reliability = score_reliability(
+        sum(int(row.get("paid_active_days") or 0) for row in rows)
+    )
 
     return AnalysisResult(
         task_id="paid_traffic_efficiency",
@@ -80,6 +84,7 @@ def run(db_path: Path) -> AnalysisResult:
                     f"可见成交金额 {money(total_gmv)}。"
                 ),
                 evidence_strength=evidence_strength,
+                descriptive_reliability=descriptive_reliability,
                 evidence_reason=_evidence_reason(has_return),
                 key_numbers={
                     "rows": len(rows),

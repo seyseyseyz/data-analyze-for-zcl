@@ -32,6 +32,13 @@ _EVIDENCE_LABELS = {
     "not_judgable": "不可判断",
 }
 
+_RELIABILITY_LABELS = {
+    "high": "高",
+    "medium": "中",
+    "low": "低",
+    "not_applicable": "不适用",
+}
+
 
 _DEFAULT_REPORT_TITLE = "小红书账号分析报告"
 
@@ -63,8 +70,12 @@ def _render_finding(finding, heading_level: str = "###") -> list[str]:
         finding.conclusion,
         "",
         f"证据强度：{_evidence_label(finding.evidence_strength.value)}",
-        "",
     ]
+    # Orthogonal axis: how precisely the numbers describe the period. Rendered
+    # only when a module scored it, so causal strength never reads as the whole story.
+    if finding.descriptive_reliability is not None:
+        lines.append(f"描述可靠性：{_reliability_label(finding.descriptive_reliability.value)}")
+    lines.append("")
     if finding.key_numbers:
         lines.append("关键数字：")
         for key, value in finding.key_numbers.items():
@@ -137,6 +148,10 @@ def _display_title(title: str) -> str:
 
 def _evidence_label(value: str) -> str:
     return _EVIDENCE_LABELS.get(value, value)
+
+
+def _reliability_label(value: str) -> str:
+    return _RELIABILITY_LABELS.get(value, value)
 
 
 def _display_limitation(limitation: str) -> str:

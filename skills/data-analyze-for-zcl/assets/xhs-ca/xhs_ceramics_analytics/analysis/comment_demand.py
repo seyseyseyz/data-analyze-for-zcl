@@ -3,6 +3,7 @@ from pathlib import Path
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.db.duck import connect
 from xhs_ceramics_analytics.evidence import score_evidence
+from xhs_ceramics_analytics.evidence import score_reliability
 
 
 _GROUPS = ("price", "link", "capacity", "gift", "other")
@@ -46,6 +47,7 @@ def run(db_path: Path) -> AnalysisResult:
                 evidence_strength=score_evidence(
                     total_comments, has_controls=False, confounder_count=1
                 ),
+                descriptive_reliability=score_reliability(total_comments),
                 key_numbers={
                     "comments": total_comments,
                     "observed_groups": len(detected_groups),

@@ -23,7 +23,7 @@ from xhs_ceramics_analytics.analytics.confidence import (
     wilson_interval,
 )
 from xhs_ceramics_analytics.db.duck import connect
-from xhs_ceramics_analytics.evidence import EvidenceStrength, score_evidence
+from xhs_ceramics_analytics.evidence import EvidenceStrength, score_evidence, score_reliability
 
 TASK_ID = "audience_structure_diagnosis"
 TITLE = "人群结构诊断"
@@ -236,6 +236,7 @@ def _conversion_finding(con, limitations: list[str]) -> tuple[Finding, list[dict
         title="人群转化对比",
         conclusion=conclusion,
         evidence_strength=score_evidence(int(total_n), has_controls=False, confounder_count=1),
+        descriptive_reliability=score_reliability(int(total_n)),
         key_numbers=key_numbers,
         caveats=caveats,
         recommended_action=_LEVER_AUDIENCE,
@@ -317,6 +318,7 @@ def _cycle_finding(con, limitations: list[str]) -> tuple[Finding | None, list[di
         title="首购周期漏斗",
         conclusion=conclusion,
         evidence_strength=score_evidence(int(total_n), has_controls=False, confounder_count=1),
+        descriptive_reliability=score_reliability(int(total_n)),
         key_numbers={
             "cycle_count": len(cycle_rows),
             "weakest_cycle": weakest_cycle,
@@ -402,6 +404,7 @@ def _source_finding(con, limitations: list[str]) -> tuple[Finding | None, list[d
         title="进店来源结构",
         conclusion=conclusion,
         evidence_strength=score_evidence(int(total_n), has_controls=False, confounder_count=1),
+        descriptive_reliability=score_reliability(int(total_n)),
         key_numbers={
             "source_count": len(source_rows),
             "top_source": top_source,

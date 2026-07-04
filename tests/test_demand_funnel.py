@@ -80,6 +80,12 @@ def test_funnel_and_wishlist_surface(tmp_path):
     assert trend[0]["date"] == "2026-04-01"
     assert "cart_to_pay" in trend[0]
 
+    # Orthogonal axes: observational so causal evidence is weak, yet the 6000-cart
+    # sample with a tight Wilson CI makes it a HIGH-reliability description.
+    assert funnel.evidence_strength.value == "weak"
+    assert funnel.descriptive_reliability is not None
+    assert funnel.descriptive_reliability.value == "high"
+
     wishlist = next(f for f in result.findings if f.title == "心愿单需求蓄水")
     wkn = wishlist.key_numbers
     assert abs(wkn["total_new_wishlist"] - 1320.0) < 1e-9

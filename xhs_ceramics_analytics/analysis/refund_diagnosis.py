@@ -10,7 +10,7 @@ from xhs_ceramics_analytics.analytics.confidence import (
 )
 from xhs_ceramics_analytics.analytics.trends import mom_change, trend_summary
 from xhs_ceramics_analytics.db.duck import connect
-from xhs_ceramics_analytics.evidence import EvidenceStrength, score_evidence
+from xhs_ceramics_analytics.evidence import EvidenceStrength, score_evidence, score_reliability
 
 TASK_ID = "refund_structure_diagnosis"
 TITLE = "退款结构诊断"
@@ -137,6 +137,7 @@ def _layer_finding(con, limitations: list[str]) -> tuple[Finding, list[dict]]:
         title="退款主漏点层级",
         conclusion=conclusion,
         evidence_strength=score_evidence(int(n), has_controls=False, confounder_count=1),
+        descriptive_reliability=score_reliability(int(n), lo, hi),
         key_numbers={
             "dominant_layer": dominant_layer,
             "dominant_share": dominant["share"] if dominant else None,
@@ -189,6 +190,7 @@ def _carrier_finding(con, limitations: list[str]) -> tuple[Finding | None, list[
         evidence_strength=score_evidence(
             int(a["n"] + b["n"]), has_controls=False, confounder_count=1
         ),
+        descriptive_reliability=score_reliability(int(a["n"] + b["n"])),
         key_numbers={
             "carrier_high": a["carrier"],
             "diff": test["diff"],
@@ -243,6 +245,7 @@ def _trend_finding(con, limitations: list[str]) -> tuple[Finding | None, list[di
             f"起 {round(series[0][1] * 100)}% 止 {round(series[-1][1] * 100)}%）。"
         ),
         evidence_strength=score_evidence(len(series), has_controls=False, confounder_count=1),
+        descriptive_reliability=score_reliability(len(series)),
         key_numbers={
             "trend_direction": direction,
             "first_rate": series[0][1],
@@ -330,6 +333,7 @@ def _note_finding(con, limitations: list[str]) -> tuple[Finding | None, list[dic
         evidence_strength=score_evidence(
             int(total_n), has_controls=False, confounder_count=1
         ),
+        descriptive_reliability=score_reliability(int(total_n)),
         key_numbers={
             "high_refund_note_count": len(high),
             "baseline_rate": baseline,
@@ -452,6 +456,9 @@ def _product_finding(con, limitations: list[str]) -> tuple[Finding | None, list[
             int(total_n) if has_orders else len(records),
             has_controls=False,
             confounder_count=1,
+        ),
+        descriptive_reliability=score_reliability(
+            int(total_n) if has_orders else len(records)
         ),
         key_numbers={
             "high_refund_product_count": len(high),

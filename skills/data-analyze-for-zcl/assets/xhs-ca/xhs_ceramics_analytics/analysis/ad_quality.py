@@ -4,6 +4,7 @@ from xhs_ceramics_analytics.analysis.prose import qty
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.db.duck import connect
 from xhs_ceramics_analytics.evidence import EvidenceStrength, score_evidence
+from xhs_ceramics_analytics.evidence import score_reliability
 
 
 def run(db_path: Path) -> AnalysisResult:
@@ -23,6 +24,7 @@ def run(db_path: Path) -> AnalysisResult:
         has_controls=has_gmv,
         confounder_count=1 if has_gmv else 2,
     )
+    descriptive_reliability = score_reliability(sample_size)
 
     return AnalysisResult(
         task_id="ad_data_quality_check",
@@ -34,6 +36,7 @@ def run(db_path: Path) -> AnalysisResult:
                     f"当前投放表有 {qty(sample_size)} 行，识别为 {row.get('detected_grain', 'unknown')} 粒度。"
                 ),
                 evidence_strength=evidence_strength,
+                descriptive_reliability=descriptive_reliability,
                 evidence_reason=(
                     "该检查只判断字段和粒度可用性，不判断投放效果好坏。"
                 ),

@@ -4,6 +4,7 @@ from xhs_ceramics_analytics.analysis.prose import qty
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.db.duck import connect
 from xhs_ceramics_analytics.evidence import EvidenceStrength, score_evidence
+from xhs_ceramics_analytics.evidence import score_reliability
 
 _SALES_REQUIRED_COLUMNS = {"date", "sku_id", "units"}
 _NOTES_REQUIRED_COLUMNS = {"note_id", "publish_time"}
@@ -74,6 +75,7 @@ def run(db_path: Path) -> AnalysisResult:
                     has_controls=False,
                     confounder_count=1 if link_context["source"] == "note_sku_links" else 3,
                 ),
+                descriptive_reliability=score_reliability(len(rows)),
                 evidence_reason=_evidence_reason(str(link_context["source"])),
                 key_numbers={
                     "note_sku_rows": len(rows),

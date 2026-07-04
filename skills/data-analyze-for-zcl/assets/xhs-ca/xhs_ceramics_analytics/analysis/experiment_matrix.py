@@ -5,6 +5,7 @@ from pathlib import Path
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.db.duck import connect
 from xhs_ceramics_analytics.evidence import score_evidence
+from xhs_ceramics_analytics.evidence import score_reliability
 
 
 _SLOTS = ("09:00", "12:00", "15:00", "18:00", "21:00")
@@ -41,6 +42,7 @@ def run(db_path: Path) -> AnalysisResult:
                 evidence_strength=score_evidence(
                     evidence_inputs, has_controls=False, confounder_count=2
                 ),
+                descriptive_reliability=score_reliability(evidence_inputs),
                 key_numbers={
                     "planned_rows": len(rows),
                     "days": 7,

@@ -25,7 +25,7 @@ from xhs_ceramics_analytics.analytics.timeseries import (
 )
 from xhs_ceramics_analytics.analytics.trends import mom_change, trend_summary
 from xhs_ceramics_analytics.db.duck import connect
-from xhs_ceramics_analytics.evidence import EvidenceStrength, score_evidence
+from xhs_ceramics_analytics.evidence import EvidenceStrength, score_evidence, score_reliability
 
 TASK_ID = "core_business_diagnosis"
 TITLE = "核心经营结构诊断"
@@ -143,6 +143,7 @@ def _snapshot_finding(
         evidence_strength=score_evidence(
             sample_size, has_controls=False, confounder_count=1
         ),
+        descriptive_reliability=score_reliability(sample_size),
         key_numbers={
             "total_gmv": total_gmv,
             "total_paid_orders": total_orders,
@@ -324,6 +325,7 @@ def _structure_finding(
         evidence_strength=score_evidence(
             sample_size, has_controls=False, confounder_count=1
         ),
+        descriptive_reliability=score_reliability(sample_size),
         key_numbers=key_numbers,
         caveats=caveats,
         recommended_action=_CARRIER_LEVER if carrier_rows is not None else None,
@@ -490,6 +492,7 @@ def _funnel_finding(
         evidence_strength=score_evidence(
             sample_size, has_controls=False, confounder_count=1
         ),
+        descriptive_reliability=score_reliability(sample_size),
         key_numbers=key_numbers,
         caveats=caveats,
         recommended_action=_STAGE_LEVERS.get(weakest) if weakest else None,

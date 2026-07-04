@@ -29,6 +29,23 @@ _EVIDENCE_HELP = {
     "not_judgable": "当前数据不足，需要先补齐导入或埋点。",
 }
 
+# Orthogonal to 可信度 (causal). 可信度 asks "can this prove cause"; 描述可靠性 asks
+# "how precisely is the number measured". A large, tightly-measured but purely
+# observational finding is 可信度低 yet 描述可靠性高 — both true at once.
+_RELIABILITY_LABELS = {
+    "high": "高",
+    "medium": "中",
+    "low": "低",
+    "not_applicable": "不适用",
+}
+
+_RELIABILITY_HELP = {
+    "high": "样本量大、置信区间窄，这个数字对本期是精确的描述。",
+    "medium": "样本量中等，数字方向可靠但精度一般。",
+    "low": "样本量小或区间较宽，数字仅供参考。",
+    "not_applicable": "该结论没有可量化的估计，不评描述精度。",
+}
+
 _MAX_TABLE_ROWS = 20
 
 # Tables with fewer than this many rows open by default — short enough to read at
@@ -1174,12 +1191,18 @@ def _evidence_counts(findings: list[Finding]) -> list[dict[str, object]]:
 
 def _finding_summary(finding: Finding) -> dict[str, str]:
     evidence_value = finding.evidence_strength.value
+    reliability = finding.descriptive_reliability
+    reliability_value = reliability.value if reliability is not None else None
     return {
         "title": finding.title,
         "body": finding.conclusion,
         "evidence": _EVIDENCE_LABELS.get(evidence_value, evidence_value),
         "evidence_class": evidence_value,
         "help": _EVIDENCE_HELP.get(evidence_value, "请结合数据限制一起阅读。"),
+        # Second, orthogonal axis. None keys let the template skip the tag entirely.
+        "reliability": _RELIABILITY_LABELS.get(reliability_value) if reliability_value else None,
+        "reliability_class": reliability_value,
+        "reliability_help": _RELIABILITY_HELP.get(reliability_value) if reliability_value else None,
     }
 
 

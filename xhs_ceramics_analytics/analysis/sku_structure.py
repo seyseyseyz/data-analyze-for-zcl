@@ -17,7 +17,11 @@ from xhs_ceramics_analytics.analytics.multiplicity import (
     one_sided_binomial_p,
 )
 from xhs_ceramics_analytics.db.duck import connect
-from xhs_ceramics_analytics.evidence import EvidenceStrength, score_evidence
+from xhs_ceramics_analytics.evidence import (
+    EvidenceStrength,
+    score_evidence,
+    score_reliability,
+)
 
 TASK_ID = "sku_structure_diagnosis"
 TITLE = "SKU 结构与退款诊断"
@@ -164,6 +168,7 @@ def _pareto_finding(
         title="GMV 集中度与类目结构（帕累托）",
         conclusion=conclusion,
         evidence_strength=score_evidence(sku_count, has_controls=False, confounder_count=1),
+        descriptive_reliability=score_reliability(sku_count),
         key_numbers=key_numbers,
         caveats=["观察性诊断，非因果——GMV 集中度可能由品类结构、价格带与活动节奏共同驱动。"],
         recommended_action=_LEVER_PARETO,
@@ -251,6 +256,7 @@ def _refund_finding(
         title="高退款 SKU 识别",
         conclusion=conclusion,
         evidence_strength=score_evidence(len(usable), has_controls=False, confounder_count=1),
+        descriptive_reliability=score_reliability(len(usable)),
         key_numbers={
             "baseline_refund_rate": baseline,
             "high_refund_sku_count": len(outliers),
@@ -338,6 +344,7 @@ def _conversion_finding(
         title="加购转化与客单价结构",
         conclusion=conclusion,
         evidence_strength=score_evidence(len(usable), has_controls=False, confounder_count=1),
+        descriptive_reliability=score_reliability(len(usable)),
         key_numbers={
             "overall_cart_to_pay": overall_cart_to_pay,
             "median_aov": median_aov,
@@ -472,6 +479,7 @@ def _category_l2_finding(
         title="二级品类结构（营收 vs 退款）",
         conclusion=conclusion,
         evidence_strength=score_evidence(len(valid), has_controls=False, confounder_count=1),
+        descriptive_reliability=score_reliability(len(valid)),
         key_numbers=key_numbers,
         caveats=caveats,
         recommended_action=_LEVER_L2,

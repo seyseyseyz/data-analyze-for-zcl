@@ -17,7 +17,11 @@ from xhs_ceramics_analytics.analytics.multiplicity import (
     one_sided_binomial_p,
 )
 from xhs_ceramics_analytics.db.duck import connect
-from xhs_ceramics_analytics.evidence import EvidenceStrength, score_evidence
+from xhs_ceramics_analytics.evidence import (
+    EvidenceStrength,
+    score_evidence,
+    score_reliability,
+)
 
 TASK_ID = "note_commercial_diagnosis"
 TITLE = "笔记级商业效能诊断"
@@ -164,6 +168,7 @@ def _gmv_pareto_finding(con, limitations: list[str]) -> tuple[Finding, list[dict
         title="GMV 集中度（帕累托）",
         conclusion=conclusion,
         evidence_strength=score_evidence(int(note_count), has_controls=False, confounder_count=1),
+        descriptive_reliability=score_reliability(int(note_count)),
         key_numbers={
             "note_count": note_count,
             "gmv_total": total_gmv,
@@ -264,6 +269,7 @@ def _conversion_finding(con, limitations: list[str]) -> tuple[Finding | None, li
         title="转化效率分布",
         conclusion=conclusion,
         evidence_strength=score_evidence(len(valid), has_controls=False, confounder_count=1),
+        descriptive_reliability=score_reliability(len(valid)),
         key_numbers={
             "notes_with_orders": notes_with_orders,
             "notes_with_reads": len(notes_with_reads),
@@ -364,6 +370,7 @@ def _refund_finding(con, limitations: list[str]) -> tuple[Finding | None, list[d
         evidence_strength=score_evidence(
             int(total_paid_orders), has_controls=False, confounder_count=1
         ),
+        descriptive_reliability=score_reliability(int(total_paid_orders)),
         key_numbers={
             "baseline_refund_rate": baseline,
             "high_refund_note_count": len(high_refund_rows),
@@ -471,6 +478,7 @@ def _referral_finding(con, limitations: list[str]) -> tuple[Finding | None, list
         evidence_strength=score_evidence(
             int(total_referral), has_controls=False, confounder_count=1
         ),
+        descriptive_reliability=score_reliability(int(total_referral)),
         key_numbers={
             "direct_note_gmv": direct_gmv,
             "shop_referral_gmv": shop_gmv,

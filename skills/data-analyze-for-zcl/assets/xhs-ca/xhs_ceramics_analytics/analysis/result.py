@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 
-from xhs_ceramics_analytics.evidence import EvidenceStrength
+from xhs_ceramics_analytics.evidence import DescriptiveReliability, EvidenceStrength
 
 
 @dataclass
@@ -15,6 +15,9 @@ class Finding:
     confounders: list[str] = field(default_factory=list)
     next_test: str | None = None
     appendix: str | None = None
+    # Orthogonal to evidence_strength (causal): how precisely this finding's
+    # numbers describe the observed period. None when a module has not scored it.
+    descriptive_reliability: DescriptiveReliability | None = None
 
 
 @dataclass

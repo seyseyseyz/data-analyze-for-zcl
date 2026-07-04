@@ -20,7 +20,11 @@ from xhs_ceramics_analytics.analytics.confidence import (
 )
 from xhs_ceramics_analytics.analytics.trends import mom_change, trend_summary
 from xhs_ceramics_analytics.db.duck import connect
-from xhs_ceramics_analytics.evidence import EvidenceStrength, score_evidence
+from xhs_ceramics_analytics.evidence import (
+    EvidenceStrength,
+    score_evidence,
+    score_reliability,
+)
 
 TASK_ID = "search_efficiency_diagnosis"
 TITLE = "搜索效率诊断"
@@ -205,6 +209,7 @@ def _carrier_finding(con, limitations: list[str]) -> tuple[Finding, list[dict]]:
         evidence_strength=score_evidence(
             int(total_impr), has_controls=False, confounder_count=1
         ),
+        descriptive_reliability=score_reliability(int(total_impr)),
         key_numbers=key_numbers,
         caveats=caveats,
         recommended_action=recommended_action,
@@ -255,6 +260,7 @@ def _trend_finding(con, limitations: list[str]) -> tuple[Finding | None, list[di
         evidence_strength=score_evidence(
             len(series), has_controls=False, confounder_count=1
         ),
+        descriptive_reliability=score_reliability(len(series)),
         key_numbers={
             "trend_direction": direction,
             "first_rate": series[0][1],
@@ -423,6 +429,7 @@ def _term_finding(con, limitations: list[str]) -> tuple[Finding | None, list[dic
         evidence_strength=score_evidence(
             int(total_n), has_controls=False, confounder_count=1
         ),
+        descriptive_reliability=score_reliability(int(total_n)),
         key_numbers={
             "opportunity_count": len(opportunities),
             "leak_count": len(leaks),

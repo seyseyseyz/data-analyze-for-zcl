@@ -5,6 +5,7 @@ from xhs_ceramics_analytics.analysis.prose import qty
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.db.duck import connect
 from xhs_ceramics_analytics.evidence import score_evidence
+from xhs_ceramics_analytics.evidence import score_reliability
 
 
 _DEMAND_KEYWORDS: dict[str, tuple[str, ...]] = {
@@ -36,6 +37,7 @@ def run(db_path: Path) -> AnalysisResult:
                 evidence_strength=score_evidence(
                     evidence_count, has_controls=False, confounder_count=1
                 ),
+                descriptive_reliability=score_reliability(evidence_count),
                 key_numbers={
                     "hypotheses": len(rows),
                     "evidence_items": evidence_count,

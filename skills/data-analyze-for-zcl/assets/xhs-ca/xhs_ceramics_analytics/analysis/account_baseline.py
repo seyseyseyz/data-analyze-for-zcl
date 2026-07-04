@@ -5,6 +5,7 @@ from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.db.duck import connect
 from xhs_ceramics_analytics.evidence import EvidenceStrength
 from xhs_ceramics_analytics.evidence import score_evidence
+from xhs_ceramics_analytics.evidence import score_reliability
 
 
 def run(db_path: Path) -> AnalysisResult:
@@ -48,6 +49,7 @@ def run(db_path: Path) -> AnalysisResult:
                 evidence_strength=score_evidence(
                     sample_size, has_controls=False, confounder_count=1
                 ),
+                descriptive_reliability=score_reliability(sample_size),
                 key_numbers={"posts": sample_size, "active_days": len(daily_posts)},
                 caveats=[
                     "样本量和对照上下文有限，这个基线只能做描述性判断。"

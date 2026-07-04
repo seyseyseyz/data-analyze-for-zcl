@@ -20,7 +20,7 @@ from xhs_ceramics_analytics.analytics.confidence import (
     wilson_interval,
 )
 from xhs_ceramics_analytics.db.duck import connect
-from xhs_ceramics_analytics.evidence import EvidenceStrength, score_evidence
+from xhs_ceramics_analytics.evidence import EvidenceStrength, score_evidence, score_reliability
 
 TASK_ID = "channel_structure_diagnosis"
 TITLE = "渠道结构与健康诊断"
@@ -173,6 +173,7 @@ def _scale_finding(con, limitations: list[str]) -> tuple[Finding, list[dict]]:
         evidence_strength=score_evidence(
             int(sample_size), has_controls=False, confounder_count=len(_SCALE_CONFOUNDERS)
         ),
+        descriptive_reliability=score_reliability(int(sample_size)),
         key_numbers={
             "note_gmv": note_gmv,
             "card_gmv": card_gmv,
@@ -265,6 +266,7 @@ def _conversion_finding(con, limitations: list[str]) -> tuple[Finding | None, li
         evidence_strength=score_evidence(
             int(sample_size), has_controls=False, confounder_count=len(_CONV_CONFOUNDERS)
         ),
+        descriptive_reliability=score_reliability(int(sample_size)),
         key_numbers={
             "note_conversion": note_conversion,
             "card_conversion": card_conversion,
@@ -418,6 +420,7 @@ def _refund_finding(con, limitations: list[str]) -> tuple[Finding | None, list[d
         evidence_strength=score_evidence(
             int(sample_size), has_controls=False, confounder_count=len(_REFUND_CONFOUNDERS)
         ),
+        descriptive_reliability=score_reliability(int(sample_size)),
         key_numbers={
             "note_refund_rate": note_refund_rate,
             "card_refund_rate": card_refund_rate,
