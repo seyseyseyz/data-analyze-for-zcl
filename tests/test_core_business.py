@@ -131,10 +131,14 @@ def test_funnel_finding_identifies_weakest_stage_and_audience(tmp_path):
     con.close()
     result = run_task("core_business_diagnosis", db_path)
     funnel = next(f for f in result.findings if "漏斗" in f.title)
-    assert funnel.key_numbers["weakest_stage"] == "click_pay"
+    assert funnel.key_numbers["weakest_stage"] == "点击→支付"
     assert funnel.recommended_action  # lever text present
     stages = result.tables["shop_funnel_stages"]
-    assert {r["stage"] for r in stages} == {"visit_click", "click_pay", "visit_pay"}
+    # #15: 漏斗环节列改名为 funnel_stage（与退款环节 stage 解碰撞），值直接为中文，
+    # 且不再复用 stage / stage_zh。
+    assert "stage" not in stages[0]
+    assert "stage_zh" not in stages[0]
+    assert {r["funnel_stage"] for r in stages} == {"访问→点击", "点击→支付", "访问→支付"}
     aud = result.tables["audience_conversion"]
     assert {r["audience_type"] for r in aud} == {"新客", "老客"}
 
@@ -230,12 +234,20 @@ def test_growth_attribution_identifies_traffic_driver(tmp_path):
     result = run_task("core_business_diagnosis", db_path)
     bridge = next(f for f in result.findings if "增长归因" in f.title)
     kn = bridge.key_numbers
-    assert kn["dominant_factor"] == "traffic"
+    # 读者面 key_numbers 只暴露中文枚举值，不含英文残留，也不与 _zh 重复。
+    assert kn["dominant_factor"] == "流量"
+    assert "dominant_factor_zh" not in kn
     assert kn["delta_gmv"] == 10000.0
     # three contributions reconstruct ΔGMV (LMDI is exactly additive)
     total = kn["contrib_traffic"] + kn["contrib_conversion"] + kn["contrib_aov"]
     assert abs(total - kn["delta_gmv"]) < 1e-6
-    assert result.tables["gmv_bridge"]
+    # gmv_bridge 表格行以中文因子名呈现，不外泄英文枚举（traffic/conversion/aov）。
+    bridge_rows = result.tables["gmv_bridge"]
+    assert bridge_rows
+    factor_values = {str(row.get("factor_zh")) for row in bridge_rows}
+    assert factor_values == {"流量", "转化", "客单价"}
+    assert all("factor" not in row or row.get("factor") not in {"traffic", "conversion", "aov"}
+               for row in bridge_rows)
     assert "流量" in bridge.conclusion
 
 

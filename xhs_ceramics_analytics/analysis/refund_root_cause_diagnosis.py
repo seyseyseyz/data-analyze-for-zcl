@@ -11,6 +11,7 @@ from pathlib import Path
 
 from xhs_ceramics_analytics.analytics.numeric import to_finite_float
 from xhs_ceramics_analytics.analysis.prose import qty
+from xhs_ceramics_analytics.analysis import methodology as M
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.analytics.confidence import (
     bounded_rate,
@@ -106,9 +107,12 @@ def _ship_stage_finding(
                 "dominant_stage": None,
                 "source": None,
             },
-            caveats=["观察性诊断，非因果；缺少发货前后退款率列。"],
+            caveats=["缺少发货前/发货后退款率列，暂无法判断退款阶段结构。"],
             confounders=list(_SHIP_CONFOUNDERS),
-            evidence_reason="business_overview_daily 与 sku_performance 均无发货前后退款率列，无法计算。",
+            evidence_reason=M.methodology_note(
+                "business_overview_daily 与 sku_performance 均无发货前后退款率列，无法计算。",
+                M.METHOD_OBSERVATIONAL,
+            ),
         )
         return finding, []
 
@@ -136,7 +140,7 @@ def _ship_stage_finding(
         dominant_stage = "pre_ship" if pre_rate > post_rate else "post_ship"
 
     caveats = [
-        "观察性诊断，非因果——发货前后退款差异可能由品类结构、物流时效与描述一致性共同驱动。",
+        M.causal_disclaimer("品类结构、物流时效和描述一致性不同"),
         "本节为订单加权退款率口径；退款金额份额口径见退款结构诊断，分渠道退款率见渠道结构与健康诊断，三者非重复。",
     ]
     if dominant_stage is not None:
@@ -175,8 +179,9 @@ def _ship_stage_finding(
         },
         caveats=caveats,
         recommended_action=recommended_action,
-        evidence_reason=(
-            f"发货前后退款率用 {source} 的 paid_orders 加权聚合，观察性描述，非因果。"
+        evidence_reason=M.methodology_note(
+            f"发货前后退款率用 {source} 的 paid_orders 加权聚合。",
+            M.METHOD_OBSERVATIONAL,
         ),
         confounders=list(_SHIP_CONFOUNDERS),
     )
@@ -255,9 +260,14 @@ def _category_finding(
 
     has_category = top is not None and top["refund_rate"] is not None
     if has_category:
+        fdr_clause = (
+            "没有品类明显高于大盘（已排除统计误报）"
+            if fdr_count == 0
+            else f"{qty(fdr_count)} 个品类明显高于大盘（已排除统计误报）"
+        )
         conclusion = (
             f"最高退款品类为 {top['category_l1']}（退款率 {round(top['refund_rate'] * 100, 1)}%）；"
-            f"{qty(fdr_count)} 个品类显著高于大盘（BH-FDR 5%，预计假阳性约 {round(exp_fp, 1)} 个）。"
+            f"{fdr_clause}。"
         )
     else:
         conclusion = "sku_performance 品类数据不足，无法判断最高退款品类。"
@@ -275,13 +285,13 @@ def _category_finding(
             "expected_false_positives": exp_fp,
         },
         caveats=[
-            "观察性诊断，非因果——品类退款率差异可能由品类内价格带、尺寸与季节活动共同驱动。",
-            "BH-FDR 控制多重比较下的预计假阳性数，非逐类因果证明。",
+            M.causal_disclaimer("品类内价格带、尺寸和季节活动不同"),
         ],
         # 品类不可判断时不给出跟进动作（避免无数据支撑的建议）。
         recommended_action=_LEVER_CATEGORY if has_category else None,
-        evidence_reason=(
-            "品类退款率用真实 paid_orders 加权聚合基线，显著性用单侧二项检验 + BH-FDR 控制多重比较，观察性。"
+        evidence_reason=M.methodology_note(
+            "品类退款率用真实 paid_orders 加权聚合基线，显著性用单侧二项检验判定。",
+            M.METHOD_FDR,
         ),
         confounders=list(_CATEGORY_CONFOUNDERS),
     )
@@ -382,10 +392,11 @@ def _price_band_finding(
             "highest_refund_band": highest_band,
             "band_count": len(band_rows),
         },
-        caveats=["观察性诊断，非因果——价格带退款率差异可能由价格与预期落差、类目结构与赠品活动共同驱动。"],
+        caveats=[M.causal_disclaimer("价格与预期落差、类目结构和赠品活动不同")],
         recommended_action=_LEVER_PRICE_BAND,
-        evidence_reason=(
-            "价格带由 gmv>0 SKU 的 aov 四分位切分，退款率用真实 paid_orders 加权聚合，观察性。"
+        evidence_reason=M.methodology_note(
+            "价格带由 gmv>0 SKU 的 aov 四分位切分，退款率用真实 paid_orders 加权聚合。",
+            M.METHOD_OBSERVATIONAL,
         ),
         confounders=list(_PRICE_BAND_CONFOUNDERS),
     )

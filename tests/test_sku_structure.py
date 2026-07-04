@@ -134,7 +134,9 @@ def test_pareto_reports_gini_and_hhi_single_values(tmp_path):
     kn = pareto.key_numbers
     assert kn["gmv_gini"] is not None and 0.0 < kn["gmv_gini"] < 1.0
     assert kn["gmv_hhi"] is not None and 0.0 < kn["gmv_hhi"] <= 1.0
-    assert "基尼" in pareto.conclusion
+    # 基尼系数是方法学术语，商家可读的 conclusion 里不出现；细节搬进 evidence_reason。
+    assert "基尼" not in pareto.conclusion
+    assert "基尼" in pareto.evidence_reason
 
 
 def test_price_band_distribution_uses_shared_caliber(tmp_path):

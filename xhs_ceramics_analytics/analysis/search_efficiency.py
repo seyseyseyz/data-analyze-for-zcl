@@ -12,6 +12,7 @@ from pathlib import Path
 from xhs_ceramics_analytics.analytics.numeric import to_finite_float
 from xhs_ceramics_analytics.analysis.prose import qty
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
+from xhs_ceramics_analytics.analysis import methodology as M
 from xhs_ceramics_analytics.analytics.confidence import (
     MIN_ORDERS_FOR_RATE,
     bounded_rate,
@@ -45,7 +46,7 @@ _LEVER_LEAK = "高流失词降权 / 修词-货匹配 / 修承接页相关性。"
 _LEVER_CLICK_LEAK = "高曝光低点击词：优化封面/标题与词-货匹配（点击漏损）。"
 _LEVER_CONV_LEAK = "高点击低转化词：优化商详/价格/信任状承接（转化漏损）。"
 
-_OBS_CAVEAT = "观察性诊断，非因果——载体/词间效率差异仅供假设生成。"
+_OBS_CAVEAT = M.causal_disclaimer("不同载体/搜索词的流量结构和承接页不同")
 
 
 def run(db_path: Path) -> AnalysisResult:
@@ -155,6 +156,7 @@ def _carrier_finding(con, limitations: list[str]) -> tuple[Finding, list[dict]]:
         "total_impressions": total_impr,
     }
     recommended_action = None
+    method_note = None
 
     if len(eligible) >= 2:
         top2 = eligible[:2]
@@ -184,9 +186,9 @@ def _carrier_finding(con, limitations: list[str]) -> tuple[Finding, list[dict]]:
             f"{hi['carrier']} 搜索成交效率（{_pct(hi['effectiveness'])}）高于 "
             f"{lo['carrier']}（{_pct(lo['effectiveness'])}），差异{sig_zh}。"
         )
-        caveats.append("显著性用两样本比例 z 检验，并要求非平凡效应量后再判显著。")
         if significant:
             recommended_action = _LEVER_CARRIER_GAP
+        method_note = M.METHOD_PROPORTION_TEST
     elif len(eligible) == 1:
         only = eligible[0]
         limitations.append("search_overview 只有单一载体，跳过载体对比。")
@@ -214,7 +216,10 @@ def _carrier_finding(con, limitations: list[str]) -> tuple[Finding, list[dict]]:
         key_numbers=key_numbers,
         caveats=caveats,
         recommended_action=recommended_action,
-        evidence_reason="载体搜索成交效率=成交人数/曝光人数；成交人数优先取真实值，否则由率正推。",
+        evidence_reason=M.methodology_note(
+            "载体搜索成交效率=成交人数/曝光人数；成交人数优先取真实值，否则由率正推。",
+            method_note,
+        ),
         confounders=_CARRIER_CONFOUNDERS,
     )
     return finding, carrier_rows
@@ -270,13 +275,14 @@ def _trend_finding(con, limitations: list[str]) -> tuple[Finding | None, list[di
         },
         caveats=[
             _OBS_CAVEAT,
-            "方向按最小二乘斜率判定（非首末两点），未对趋势做显著性检验。",
             "日度成交转化波动较大，逐期环比见搜索转化趋势表。",
         ],
         recommended_action=recommended_action,
-        evidence_reason="逐期平均成交转化率走势，方向用最小二乘斜率，观察性描述。",
+        evidence_reason=M.methodology_note(
+            "逐期平均成交转化率走势。", M.METHOD_TREND_SLOPE
+        ),
         confounders=_TREND_CONFOUNDERS,
-        appendix="趋势方向用最小二乘斜率；逐期环比（delta/pct）见搜索转化趋势表。",
+        appendix="逐期环比（delta/pct）见搜索转化趋势表。",
     )
     return finding, trend_rows
 
@@ -408,7 +414,7 @@ def _term_finding(con, limitations: list[str]) -> tuple[Finding | None, list[dic
     else:
         recommended_action = None
 
-    caveats = [_OBS_CAVEAT, "分类以 Wilson 区间对比加权基线，避免小样本误报。"]
+    caveats = [_OBS_CAVEAT]
     if click_base is not None:
         caveats.append("高流失词按点击率/转化率基线拆分为点击漏损 vs 转化漏损，定位对应杠杆。")
     small = sum(1 for r in term_rows if r["term_class"] == "small_sample")
@@ -443,9 +449,10 @@ def _term_finding(con, limitations: list[str]) -> tuple[Finding | None, list[dic
         },
         caveats=caveats,
         recommended_action=recommended_action,
-        evidence_reason=(
-            "以 Wilson 下界高于基线判高机会、上界低于基线判高流失；高流失再按"
-            "点击率<点击基线（点击漏损）或转化率<转化基线（转化漏损）拆分；成交人数优先取真实值。"
+        evidence_reason=M.methodology_note(
+            "下界高于基线判高机会、上界低于基线判高流失；高流失再按"
+            "点击率<点击基线（点击漏损）或转化率<转化基线（转化漏损）拆分；成交人数优先取真实值。",
+            M.METHOD_WILSON,
         ),
         confounders=_TERM_CONFOUNDERS,
         next_test="对高机会词做定向内容/加投后复测转化；对漏损词按漏损类型分别处置后复测。",
