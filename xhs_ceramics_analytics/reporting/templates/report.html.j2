@@ -1079,7 +1079,47 @@
       </div>
     </section>
 
-    <section id="actions" class="reveal" style="--index: 2">
+    {% if report.priority_table %}
+    <section id="priority" class="reveal" style="--index: 2">
+      <div class="section-heading">
+        <p class="section-kicker">Where to Start</p>
+        <h2>{{ ic('target') }}优先级导读：先动哪里</h2>
+        <p class="section-lede">
+          把各模块的结论收成一张表，按「预期影响 × 可行性」跨模块排序，越靠前越该先动。可行性同时看因果证据强度与描述可靠性——低可行性代表更像实验线索，而非可直接放大的定论。
+        </p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>优先级</th>
+              <th>模块</th>
+              <th>最弱环节</th>
+              <th>最高杠杆（建议动作）</th>
+              <th>预期影响</th>
+              <th>可行性</th>
+              <th>证据</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in report.priority_table %}
+            <tr>
+              <td>{{ row.rank }}</td>
+              <td>{{ row.module }}</td>
+              <td>{{ row.weak_link }}</td>
+              <td>{{ row.lever }}</td>
+              <td>{{ row.impact_label }}</td>
+              <td>{{ row.feasibility_label }}</td>
+              <td><span class="tag {{ row.evidence_class }}">可信度 {{ row.evidence }}</span></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+    {% endif %}
+
+    <section id="actions" class="reveal" style="--index: 3">
       <div class="section-heading">
         <p class="section-kicker">Next Week</p>
         <h2>{{ ic('checklist') }}下周行动计划</h2>
@@ -1118,7 +1158,7 @@
       </div>
     </section>
 
-    <section id="analysis" class="reveal" style="--index: 3">
+    <section id="analysis" class="reveal" style="--index: 4">
       <div class="section-heading">
         <p class="section-kicker">Deep Dive</p>
         <h2>{{ ic('analysis') }}详细分析</h2>
@@ -1279,7 +1319,7 @@
       {% endfor %}
     </section>
 
-    <section id="appendix" class="reveal" style="--index: 4">
+    <section id="appendix" class="reveal" style="--index: 5">
       <div class="section-heading">
         <p class="section-kicker">Appendix</p>
         <h2>{{ ic('appendix') }}数据附录</h2>
@@ -1310,7 +1350,7 @@
       </div>
     </section>
 
-    <section id="assistant" class="reveal" style="--index: 5">
+    <section id="assistant" class="reveal" style="--index: 6">
       <div class="section-heading">
         <p class="section-kicker">Assistant Questions</p>
         <h2>{{ ic('chat') }}可以问{{ report.assistant_name }}的问题</h2>

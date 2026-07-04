@@ -190,6 +190,75 @@ def test_paid_traffic_efficiency_handles_weak_export(tmp_path, fixture_dir):
     assert "成交金额" in result.findings[0].recommended_action
 
 
+def _make_ad_daily(con, rows):
+    con.execute(
+        """
+        CREATE TABLE ad_performance_daily (
+          date DATE,
+          campaign_name_optional VARCHAR,
+          spend DOUBLE,
+          impressions DOUBLE,
+          clicks DOUBLE,
+          gmv_optional DOUBLE
+        )
+        """
+    )
+    con.executemany(
+        "INSERT INTO ad_performance_daily VALUES (?, ?, ?, ?, ?, ?)", rows
+    )
+
+
+def test_paid_traffic_elasticity_flags_saturation_point(tmp_path):
+    db_path = tmp_path / "ads.duckdb"
+    con = connect(db_path)
+    # 16 campaigns across 4 spend quartiles; ROAS falls as spend rises so marginal
+    # ROAS crosses below break-even in the 中高投放 band → saturation point.
+    tiers = [(25.0, 5.0), (115.0, 3.0), (315.0, 1.5), (1015.0, 0.8)]
+    rows = []
+    idx = 0
+    for base_spend, roas in tiers:
+        for offset in (0.0, 10.0, 20.0, 30.0):
+            spend = base_spend + offset
+            rows.append(
+                ("2026-06-01", f"c{idx:02d}", spend, 1000.0, 100.0, spend * roas)
+            )
+            idx += 1
+    _make_ad_daily(con, rows)
+    con.close()
+
+    result = run_task("paid_traffic_efficiency", db_path)
+
+    finding = next(f for f in result.findings if f.title == "投放弹性与饱和点")
+    assert finding.key_numbers["saturation_band"] == "中高投放"
+    assert finding.key_numbers["diminishing"] is True
+    curve = result.tables["paid_spend_response"]
+    assert len(curve) == 4
+    assert sum(1 for r in curve if r["is_saturation"]) == 1
+    saturated = next(r for r in curve if r["is_saturation"])
+    assert saturated["marginal_roas"] < 1.0
+
+
+def test_paid_traffic_elasticity_absent_without_gmv(tmp_path):
+    db_path = tmp_path / "ads_noreturn.duckdb"
+    con = connect(db_path)
+    con.execute(
+        """
+        CREATE TABLE ad_performance_daily (
+          date DATE, campaign_name_optional VARCHAR,
+          spend DOUBLE, impressions DOUBLE, clicks DOUBLE
+        )
+        """
+    )
+    con.executemany(
+        "INSERT INTO ad_performance_daily VALUES (?, ?, ?, ?, ?)",
+        [("2026-06-01", f"c{i}", 100.0 * (i + 1), 1000.0, 100.0) for i in range(8)],
+    )
+    con.close()
+    result = run_task("paid_traffic_efficiency", db_path)
+    assert not any(f.title == "投放弹性与饱和点" for f in result.findings)
+    assert "paid_spend_response" not in result.tables
+
+
 def test_all_tasks_include_paid_traffic_tasks_when_ad_data_missing(tmp_path, fixture_dir):
     db_path = _db(tmp_path, fixture_dir)
 

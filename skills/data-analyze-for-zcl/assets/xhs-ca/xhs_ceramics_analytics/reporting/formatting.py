@@ -84,7 +84,7 @@ PERCENT_FIELDS = {
 # 支付时间 caliber marker (e.g. ``post_ship_refund_rate_pay``) whose trailing
 # ``_pay`` would otherwise hide the ``_rate`` from the suffix test. All denote
 # 0-1 fractions rendered as percents.
-PERCENT_SUFFIXES = ("_rate", "_share", "_pct", "_rate_pay")
+PERCENT_SUFFIXES = ("_rate", "_share", "_pct", "_rate_pay", "_mde")
 
 # Fields whose values denote a calendar day. Real exports carry these as integer
 # YYYYMMDD, ISO strings, or datetime — the date branch normalizes all to ISO.
@@ -156,7 +156,7 @@ def format_scalar(field_name: str, value: object) -> str:
         return VALUE_LABELS.get(value, value)
     if isinstance(value, Number):
         numeric = float(value)
-        if field_name == "relative_lift":
+        if field_name == "relative_lift" or field_name.endswith("_rel_lift"):
             if numeric > 0:
                 return f"提升 {format_percent(numeric)}"
             if numeric < 0:

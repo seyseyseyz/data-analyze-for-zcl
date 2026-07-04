@@ -114,6 +114,136 @@ def test_full_sku_rows_produce_weak_findings(tmp_path):
     assert ("高退款 SKU 识别" in other_titles) or ("加购转化与客单价结构" in other_titles)
 
 
+def test_pareto_reports_gini_and_hhi_single_values(tmp_path):
+    con, db_path = _con(tmp_path)
+    # 12 SKUs with a steep GMV gradient → concentrated → gini well above 0.
+    rows = [
+        (
+            f"sku_{i:02d}", f"陶瓷杯-{i:02d}", "prod_1", "陶瓷杯系列", False,
+            "杯具", "马克杯", "自有品牌",
+            100.0 + i * 5, 20000.0 - i * 1200.0, 40.0 + i, 50.0 + i, 55.0 + i,
+            300.0 + i * 20, 5.0 + i * 1.5, 2.0 + i * 0.5, 2.0, 3.0 + i * 0.5,
+            (20000.0 - i * 1200.0) * 0.9,
+        )
+        for i in range(12)
+    ]
+    _make_full_table(con, rows)
+    con.close()
+    result = run(db_path)
+    pareto = next(f for f in result.findings if "集中度" in f.title)
+    kn = pareto.key_numbers
+    assert kn["gmv_gini"] is not None and 0.0 < kn["gmv_gini"] < 1.0
+    assert kn["gmv_hhi"] is not None and 0.0 < kn["gmv_hhi"] <= 1.0
+    assert "基尼" in pareto.conclusion
+
+
+def test_price_band_distribution_uses_shared_caliber(tmp_path):
+    con, db_path = _con(tmp_path)
+    # 12 SKUs spread across a wide AOV range → 4 quantile price bands.
+    rows = [
+        (
+            f"sku_{i:02d}", f"陶瓷杯-{i:02d}", "prod_1", "陶瓷杯系列", False,
+            "杯具", "马克杯", "自有品牌",
+            100.0 + i * 5, 2000.0 + i * 800.0, 40.0 + i, 50.0 + i, 55.0 + i,
+            50.0 + i * 60.0, 5.0, 2.0, 2.0, 3.0,
+            (2000.0 + i * 800.0) * 0.9,
+        )
+        for i in range(12)
+    ]
+    _make_full_table(con, rows)
+    con.close()
+    result = run(db_path)
+
+    band = next(f for f in result.findings if f.title == "价格带分布（SKU × GMV）")
+    assert band.key_numbers["band_count"] == 4
+    band_rows = result.tables["sku_price_band_distribution"]
+    assert len(band_rows) == 4
+    # Shares are proper proportions that sum to ~1 across the four bands.
+    assert abs(sum(r["gmv_share"] for r in band_rows) - 1.0) < 1e-9
+    assert abs(sum(r["sku_share"] for r in band_rows) - 1.0) < 1e-9
+    assert sum(r["sku_count"] for r in band_rows) == 12
+    # Every band carries its AOV window + the shared band label vocabulary.
+    assert band_rows[0]["band"] == "低价位"
+    assert all(r["aov_low"] is not None for r in band_rows)
+
+
+def test_price_band_distribution_degrades_without_aov(tmp_path):
+    con, db_path = _con(tmp_path)
+    _make_partial_table(con, [(f"sku_{i}", 1000.0 * (i + 1)) for i in range(6)])
+    con.close()
+    result = run(db_path)
+    titles = {f.title for f in result.findings}
+    assert "价格带分布（SKU × GMV）" not in titles
+    assert any("aov" in lim for lim in result.limitations)
+
+
+# ---- Price sweet spot (price band × conversion × refund) --------------------
+
+
+def test_price_sweet_spot_flags_high_conversion_low_refund_band(tmp_path):
+    con, db_path = _con(tmp_path)
+    # 12 SKUs across 4 AOV quartile bands. The top band (i=9,10,11) converts far
+    # better (0.60 vs 0.20) at a much lower refund (0.05 vs 0.20) → the sweet spot.
+    rows = []
+    for i in range(12):
+        top = i >= 9
+        rows.append(
+            (
+                f"sku_{i:02d}", f"陶瓷杯-{i:02d}", "prod_1", "陶瓷杯系列", False,
+                "杯具", "马克杯", "自有品牌",
+                100.0,                       # add_to_cart_users
+                5000.0,                      # gmv
+                60.0 if top else 20.0,       # paid_buyers → conversion
+                70.0 if top else 25.0,       # paid_orders
+                30.0,                        # paid_units
+                50.0 + i * 60.0,             # aov → price band
+                0.05 if top else 0.20,       # refund_rate_pay
+                3.5 if top else 5.0,         # refund_orders_pay → refund rate
+                2.0, 3.0,
+                4500.0,
+            )
+        )
+    _make_full_table(con, rows)
+    con.close()
+    result = run(db_path)
+
+    finding = next(
+        f for f in result.findings if f.title == "价格甜点（价格带 × 转化 × 退款）"
+    )
+    assert finding.key_numbers["sweet_spot_band"] == "高价位"
+    rows_t = result.tables["sku_price_sweet_spot"]
+    assert len(rows_t) == 4
+    top_row = next(r for r in rows_t if r["band"] == "高价位")
+    assert top_row["is_sweet_spot"] is True
+    assert top_row["net_margin"] > 0.4
+    # low band converts below overall and refunds above → not a sweet spot
+    low_row = next(r for r in rows_t if r["band"] == "低价位")
+    assert low_row["is_sweet_spot"] is False
+
+
+def test_price_sweet_spot_degrades_without_refund_column(tmp_path):
+    con, db_path = _con(tmp_path)
+    # sku_performance with price + conversion but no refund columns → three-dim
+    # table not computable, finding skipped with a limitation.
+    con.execute(
+        """
+        CREATE TABLE sku_performance (
+          sku_name VARCHAR, aov DOUBLE,
+          add_to_cart_users DOUBLE, paid_buyers DOUBLE
+        )
+        """
+    )
+    con.executemany(
+        "INSERT INTO sku_performance VALUES (?, ?, ?, ?)",
+        [(f"sku_{i}", 100.0 + i * 50, 100.0, 30.0) for i in range(6)],
+    )
+    con.close()
+    result = run(db_path)
+    titles = {f.title for f in result.findings}
+    assert "价格甜点（价格带 × 转化 × 退款）" not in titles
+    assert any("价格甜点" in lim for lim in result.limitations)
+
+
 # ---- Refund outlier FDR control (D2) ----------------------------------------
 
 

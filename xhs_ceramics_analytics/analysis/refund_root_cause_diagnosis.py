@@ -7,7 +7,6 @@ no causal attribution. Category and price-band scans additionally use
 ``multiplicity.py`` (one-sided binomial test + Benjamini-Hochberg) to control
 the false-discovery rate across many simultaneous "above baseline" checks.
 """
-import statistics
 from pathlib import Path
 
 from xhs_ceramics_analytics.analysis.prose import qty
@@ -17,6 +16,7 @@ from xhs_ceramics_analytics.analytics.confidence import (
     min_n_guard,
     wilson_interval,
 )
+from xhs_ceramics_analytics.analytics.distribution import band_of, quantile_edges
 from xhs_ceramics_analytics.analytics.multiplicity import (
     benjamini_hochberg,
     expected_false_positives,
@@ -312,26 +312,18 @@ def _price_band_finding(
         limitations.append("sku_performance 无有效 aov/paid_orders 样本，跳过价格带退款分解。")
         return None, []
 
-    gmv_positive_aovs = sorted(
+    gmv_positive_aovs = [
         _num(r.get("aov")) for r in usable if has_gmv and _num(r.get("gmv")) > 0
-    )
-    if len(gmv_positive_aovs) < 4:
+    ]
+    # Price bands come from the shared caliber (analytics.distribution): quartile
+    # left edges + left-closed band_of. sku_structure bands prices the same way, so
+    # "中高价位" means the identical AOV window in both modules.
+    edges = quantile_edges(gmv_positive_aovs, 4)
+    if not edges:
         limitations.append("gmv>0 的 SKU 样本不足 4 个，无法计算价格带分位，跳过价格带退款分解。")
         return None, []
-
-    q1, q2, q3 = statistics.quantiles(gmv_positive_aovs, n=4)
-    aov_min = gmv_positive_aovs[0]
-    aov_max = gmv_positive_aovs[-1]
-    thresholds = [aov_min, q1, q2, q3, aov_max]
-
-    def band_index(aov_value: float) -> int:
-        if aov_value <= q1:
-            return 0
-        if aov_value <= q2:
-            return 1
-        if aov_value <= q3:
-            return 2
-        return 3
+    aov_max = max(gmv_positive_aovs)
+    thresholds = list(edges) + [aov_max]
 
     total_orders = sum(_num(r.get("paid_orders")) for r in usable)
     total_gmv = sum(_num(r.get("gmv")) for r in usable) if has_gmv else None
@@ -340,7 +332,7 @@ def _price_band_finding(
         i: {"paid_orders": 0.0, "refund_orders": 0.0, "gmv": 0.0} for i in range(4)
     }
     for r in usable:
-        idx = band_index(_num(r.get("aov")))
+        idx = band_of(_num(r.get("aov")), edges)
         b = bands[idx]
         b["paid_orders"] += _num(r.get("paid_orders"))
         b["refund_orders"] += _refund_orders(r, has_refund_orders)

@@ -215,6 +215,167 @@ def test_gmv_trend_decomposition_reports_structure(tmp_path):
     assert "结构性变化" in snap.conclusion
 
 
+def test_growth_attribution_identifies_traffic_driver(tmp_path):
+    con, db_path = _con(tmp_path)
+    # Early two days vs late two days: visitors double, conversion & AOV flat →
+    # the GMV bridge (B1 LMDI) must attribute ΔGMV to traffic.
+    rows = [
+        (20260401, 5000.0, 100.0, 100.0, 50.0, 3000.0, 2000.0, 60.0, 40.0, 1000.0, 100.0, 0.1),
+        (20260402, 5000.0, 100.0, 100.0, 50.0, 3000.0, 2000.0, 60.0, 40.0, 1000.0, 100.0, 0.1),
+        (20260403, 10000.0, 200.0, 200.0, 50.0, 6000.0, 4000.0, 120.0, 80.0, 2000.0, 200.0, 0.1),
+        (20260404, 10000.0, 200.0, 200.0, 50.0, 6000.0, 4000.0, 120.0, 80.0, 2000.0, 200.0, 0.1),
+    ]
+    _make_business_full(con, rows)
+    con.close()
+    result = run_task("core_business_diagnosis", db_path)
+    bridge = next(f for f in result.findings if "增长归因" in f.title)
+    kn = bridge.key_numbers
+    assert kn["dominant_factor"] == "traffic"
+    assert kn["delta_gmv"] == 10000.0
+    # three contributions reconstruct ΔGMV (LMDI is exactly additive)
+    total = kn["contrib_traffic"] + kn["contrib_conversion"] + kn["contrib_aov"]
+    assert abs(total - kn["delta_gmv"]) < 1e-6
+    assert result.tables["gmv_bridge"]
+    assert "流量" in bridge.conclusion
+
+
+def test_growth_attribution_skipped_without_visitors(tmp_path):
+    con, db_path = _con(tmp_path)
+    _make_business_minimal(
+        con,
+        [
+            (20260401, 10000.0, 200.0, 180.0, 55.5),
+            (20260402, 12000.0, 240.0, 210.0, 57.0),
+            (20260403, 15000.0, 300.0, 260.0, 57.6),
+            (20260404, 16000.0, 320.0, 280.0, 57.1),
+        ],
+    )
+    con.close()
+    result = run_task("core_business_diagnosis", db_path)
+    # no product_visitors column → bridge finding absent, degrades with limitation
+    assert not any("增长归因" in f.title for f in result.findings)
+    assert any("增长归因" in lim or "GMV 桥" in lim for lim in result.limitations)
+
+
+def test_flat_noisy_series_reads_trend_unclear(tmp_path):
+    con, db_path = _con(tmp_path)
+    # Wobble around 10000 with no real slope: significance gating (A1) must report
+    # 趋势不明, not a spurious direction from a near-zero OLS slope.
+    rows = [
+        ("2026-04-01", 10000.0, 200.0, 180.0, 55.5),
+        ("2026-04-02", 9800.0, 196.0, 176.0, 55.5),
+        ("2026-04-03", 10200.0, 204.0, 184.0, 55.5),
+        ("2026-04-04", 9900.0, 198.0, 178.0, 55.5),
+        ("2026-04-05", 10100.0, 202.0, 182.0, 55.5),
+        ("2026-04-06", 9950.0, 199.0, 179.0, 55.5),
+        ("2026-04-07", 10050.0, 201.0, 181.0, 55.5),
+    ]
+    _make_business_dated(con, rows)
+    con.close()
+    result = run_task("core_business_diagnosis", db_path)
+    assert result.findings[0].key_numbers["trend_direction"] == "趋势不明"
+
+
+def _make_calendar_events(con, rows):
+    con.execute(
+        """
+        CREATE TABLE calendar_events (
+          date VARCHAR, event_type VARCHAR, event_name VARCHAR, severity VARCHAR
+        )
+        """
+    )
+    con.executemany("INSERT INTO calendar_events VALUES (?,?,?,?)", rows)
+
+
+def test_event_activity_lift_compares_event_vs_baseline(tmp_path):
+    con, db_path = _con(tmp_path)
+    # 4 baseline days (GMV 5000, conv .05) vs 3 event days (GMV 15000, conv .10).
+    # Business dates are INTEGER YYYYMMDD; calendar dates are ISO strings — the
+    # shared iso_date key must still align the two calibers.
+    base = [
+        (d, 5000.0, 50.0, 50.0, 100.0, 3000.0, 2000.0, 30.0, 20.0, 1000.0, 50.0, 0.05)
+        for d in (20260401, 20260402, 20260403, 20260404)
+    ]
+    event = [
+        (d, 15000.0, 120.0, 120.0, 125.0, 9000.0, 6000.0, 70.0, 50.0, 1200.0, 120.0, 0.10)
+        for d in (20260405, 20260406, 20260407)
+    ]
+    _make_business_full(con, base + event)
+    _make_calendar_events(
+        con,
+        [
+            ("2026-04-05", "大促", "五五购物节", "high"),
+            ("2026-04-06", "大促", "五五购物节", "high"),
+            ("2026-04-07", "大促", "五五购物节", "high"),
+        ],
+    )
+    con.close()
+    result = run_task("core_business_diagnosis", db_path)
+
+    lift = result.tables["event_activity_lift"]
+    gmv_row = next(r for r in lift if r["metric"] == "日均 GMV")
+    assert gmv_row["event_value"] == 15000.0
+    assert gmv_row["baseline_value"] == 5000.0
+    assert gmv_row["lift_pct"] == 200.0
+    conv_row = next(r for r in lift if r["metric"] == "支付转化率")
+    assert conv_row["event_value"] == 0.1
+    assert conv_row["baseline_value"] == 0.05
+    assert conv_row["significance"] == "显著"
+
+    finding = next(f for f in result.findings if f.title == "活动期抬升对比")
+    assert finding.key_numbers["event_days"] == 3
+    assert finding.key_numbers["baseline_days"] == 4
+    assert finding.key_numbers["gmv_lift_pct"] == 200.0
+
+
+def test_event_activity_lift_absent_without_calendar(tmp_path):
+    con, db_path = _con(tmp_path)
+    _make_business_full(con, _FULL_ROWS)
+    con.close()
+    result = run_task("core_business_diagnosis", db_path)
+    assert "event_activity_lift" not in result.tables
+    assert not any(f.title == "活动期抬升对比" for f in result.findings)
+
+
+def test_self_benchmark_places_latest_week_at_top_percentile(tmp_path):
+    con, db_path = _con(tmp_path)
+    # Five clean ISO weeks (one Monday each) with strictly rising weekly GMV, so the
+    # latest week is the strict max of five points → midrank (4 + 0.5)/5 = 0.9 → P90.
+    rows = [
+        ("2026-04-06", 1000.0, 20.0, 18.0, 55.0),  # ISO week 15
+        ("2026-04-13", 2000.0, 40.0, 36.0, 55.0),  # week 16
+        ("2026-04-20", 3000.0, 60.0, 54.0, 55.0),  # week 17
+        ("2026-04-27", 4000.0, 80.0, 72.0, 55.0),  # week 18
+        ("2026-05-04", 5000.0, 100.0, 90.0, 55.0),  # week 19 (latest, strict max)
+    ]
+    _make_business_dated(con, rows)
+    con.close()
+    result = run_task("core_business_diagnosis", db_path)
+    bench = result.tables["business_self_benchmark"]
+    gmv_row = next(r for r in bench if r["metric"] == "周 GMV")
+    assert gmv_row["percentile_label"] == "P90"
+    assert gmv_row["periods"] == 5
+    assert gmv_row["latest_period"] == "2026-W19"
+    finding = next(f for f in result.findings if f.title == "自身历史基准分位")
+    assert "P90" in finding.conclusion
+
+
+def test_self_benchmark_skipped_below_four_weeks(tmp_path):
+    con, db_path = _con(tmp_path)
+    # Only three ISO weeks — a percentile over 2–3 points is noise, so the finding
+    # must degrade (no table, no finding) rather than emit a spurious rank.
+    rows = [
+        ("2026-04-06", 1000.0, 20.0, 18.0, 55.0),
+        ("2026-04-13", 2000.0, 40.0, 36.0, 55.0),
+        ("2026-04-20", 3000.0, 60.0, 54.0, 55.0),
+    ]
+    _make_business_dated(con, rows)
+    con.close()
+    result = run_task("core_business_diagnosis", db_path)
+    assert "business_self_benchmark" not in result.tables
+    assert not any(f.title == "自身历史基准分位" for f in result.findings)
+
+
 def test_channel_share_only_without_paid_buyers(tmp_path):
     con, db_path = _con(tmp_path)
     _make_business_full(con, _FULL_ROWS)
@@ -237,3 +398,31 @@ def test_channel_share_only_without_paid_buyers(tmp_path):
     struct = next(f for f in result.findings if "载体" in f.title or "渠道" in f.title)
     # no two_proportion without paid_buyers counts
     assert struct.key_numbers.get("channel_diff") is None
+
+
+def test_snapshot_flags_anomaly_days_and_projects_trend(tmp_path):
+    # 14 rising days with one sharp spike on day 8 → significant upward trend +
+    # a single >2σ anomaly day; the snapshot must flag the anomaly and project forward.
+    con, db_path = _con(tmp_path)
+    rows = []
+    for i in range(14):
+        date = 20260401 + i
+        gmv = 1000.0 + 100.0 * i
+        if i == 7:
+            gmv += 2500.0  # anomalous spike
+        rows.append((date, gmv, 20.0 + i, 18.0 + i, 55.0))
+    _make_business_minimal(con, rows)
+    con.close()
+
+    result = run_task("core_business_diagnosis", db_path)
+    snapshot = next(f for f in result.findings if f.title == "整体经营快照与趋势")
+
+    # Anomaly day surfaced in key_numbers and flagged on the trend table.
+    assert snapshot.key_numbers.get("anomaly_day_count", 0) >= 1
+    trend = result.tables["business_trend"]
+    flagged = [r for r in trend if r.get("is_anomaly")]
+    assert any(r["date"] == "2026-04-08" for r in flagged)
+    # A significant rising trend yields a forward projection (observational hint).
+    assert "projected_gmv_next" in snapshot.key_numbers
+    # The projection is framed as an observational hint, not a promise.
+    assert any("外推" in c or "预测" in c for c in snapshot.caveats)

@@ -3,8 +3,11 @@ import pytest
 from xhs_ceramics_analytics.analytics.confidence import (
     MIN_ORDERS_FOR_RATE,
     bounded_rate,
+    min_detectable_effect,
     min_n_guard,
     rate_band,
+    relative_lift,
+    stratified_two_proportion,
     two_proportion,
     wilson_interval,
 )
@@ -87,3 +90,56 @@ def test_bounded_rate_rejects_dirty_values():
     assert bounded_rate(None) is None
     assert bounded_rate(-0.1) is None
     assert bounded_rate(150) is None
+
+
+# --- A4: stratified two-proportion (Cochran–Mantel–Haenszel) -----------------
+def test_stratified_two_proportion_resists_simpson_reversal():
+    # Each stratum has A ≈ B, but pooling makes A look far better because A's
+    # denominators concentrate where the base rate is high. CMH must NOT flag it.
+    strata = [
+        {"k1": 90, "n1": 100, "k2": 9, "n2": 10},    # both ~0.90
+        {"k1": 10, "n1": 100, "k2": 90, "n2": 1000},  # both ~0.10 / 0.09
+    ]
+    result = stratified_two_proportion(strata)
+    assert result["n_strata"] == 2
+    assert result["significant"] is False
+
+
+def test_stratified_two_proportion_flags_consistent_gap():
+    strata = [
+        {"k1": 80, "n1": 100, "k2": 50, "n2": 100},
+        {"k1": 82, "n1": 100, "k2": 48, "n2": 100},
+    ]
+    result = stratified_two_proportion(strata)
+    assert result["significant"] is True
+    assert result["pooled_diff"] > 0
+
+
+def test_stratified_two_proportion_degrades_safely():
+    assert stratified_two_proportion([])["significant"] is False
+    # A degenerate single-row stratum (T-1 == 0) is skipped, never raises.
+    assert stratified_two_proportion([{"k1": 1, "n1": 1, "k2": 0, "n2": 0}])["n_strata"] == 0
+
+
+# --- A6: relative lift with CI + minimum detectable effect -------------------
+def test_relative_lift_point_and_interval():
+    lift = relative_lift(60, 100, 40, 100)  # 0.60 vs 0.40 → +50%
+    assert lift["lift"] == pytest.approx(0.5, abs=0.001)
+    assert lift["lift_ci_low"] < lift["lift"] < lift["lift_ci_high"]
+
+
+def test_relative_lift_degrades_on_zero_denominator():
+    assert relative_lift(1, 0, 1, 10)["lift"] is None
+    assert relative_lift(1, 10, 0, 10)["lift"] is None  # divide by p2==0
+
+
+def test_min_detectable_effect_shrinks_with_sample():
+    small = min_detectable_effect(50, 50, 0.2)
+    big = min_detectable_effect(5000, 5000, 0.2)
+    assert small is not None and big is not None
+    assert big < small
+
+
+def test_min_detectable_effect_degrades():
+    assert min_detectable_effect(0, 100, 0.2) is None
+    assert min_detectable_effect(100, 100, 0.0) is None

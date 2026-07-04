@@ -13,22 +13,37 @@ from xhs_ceramics_analytics.analysis.prose import cn_date, money, pp, qty
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.analytics.confidence import (
     bounded_rate,
+    min_detectable_effect,
     min_n_guard,
     rate_band,
+    relative_lift,
     two_proportion,
     wilson_interval,
 )
+from xhs_ceramics_analytics.analytics.benchmark import percentile_label, self_percentile
+from xhs_ceramics_analytics.analytics.decomposition import gmv_bridge
 from xhs_ceramics_analytics.analytics.timeseries import (
-    changepoint,
+    anomaly_days,
+    changepoints,
     dow_seasonality,
-    week_over_week,
+    iso_date,
+    iso_week,
+    week_over_week_calendar,
 )
-from xhs_ceramics_analytics.analytics.trends import mom_change, trend_summary
+from xhs_ceramics_analytics.analytics.trends import (
+    direction_from_summary,
+    mom_change,
+    trend_extrapolation,
+    trend_summary,
+)
 from xhs_ceramics_analytics.db.duck import connect
 from xhs_ceramics_analytics.evidence import EvidenceStrength, score_evidence, score_reliability
 
 TASK_ID = "core_business_diagnosis"
 TITLE = "核心经营结构诊断"
+
+# D1 前瞻: how many days ahead the significant trend is projected (one week).
+_PROJECTION_HORIZON = 7
 
 _SNAPSHOT_CONFOUNDERS = ["促销节奏", "季节性", "流量结构变化"]
 _STRUCTURE_CONFOUNDERS = ["渠道流量结构", "客群差异", "投放节奏"]
@@ -62,6 +77,16 @@ def run(db_path: Path) -> AnalysisResult:
         if trend_rows:
             tables["business_trend"] = trend_rows
 
+        benchmark_finding, benchmark_rows = _benchmark_finding(con, limitations)
+        if benchmark_finding is not None:
+            findings.append(benchmark_finding)
+            tables["business_self_benchmark"] = benchmark_rows
+
+        bridge_finding, bridge_tables = _growth_attribution_finding(con, limitations)
+        if bridge_finding is not None:
+            findings.append(bridge_finding)
+            tables.update(bridge_tables)
+
         struct_finding, struct_tables = _structure_finding(con, limitations)
         if struct_finding is not None:
             findings.append(struct_finding)
@@ -71,6 +96,11 @@ def run(db_path: Path) -> AnalysisResult:
         if funnel_finding is not None:
             findings.append(funnel_finding)
             tables.update(funnel_tables)
+
+        event_finding, event_rows = _event_lift_finding(con, limitations)
+        if event_finding is not None:
+            findings.append(event_finding)
+            tables["event_activity_lift"] = event_rows
     finally:
         con.close()
     return AnalysisResult(
@@ -120,11 +150,26 @@ def _snapshot_finding(
     elif conv_source is None:
         caveats.append("缺 product_visitors 与 pay_conversion_uv，无法给出支付转化率。")
     if decomp.get("changepoint_date") or decomp.get("peak_dow"):
-        caveats.append("周对比/周内节律/结构性变化点为观察性分解，仅提示何时移动，非因果。")
+        dow_note = "已去趋势" if decomp.get("detrended_dow") else "未去趋势（序列过短）"
+        caveats.append(
+            f"周对比按 ISO 日历周（非行数）；周内节律{dow_note}后取残差均值；"
+            "结构性变化点为递归多变点分解，均为观察性，仅提示何时移动，非因果。"
+        )
     if summary and summary.get("n"):
         caveats.append(
             "趋势方向按逐日 GMV 的最小二乘斜率判定（非首末两点），日度数据波动较大，"
             "逐期环比见趋势表。"
+        )
+    if decomp.get("anomaly_count"):
+        sample = "、".join(cn_date(d) for d in decomp.get("anomaly_dates", [])[:3])
+        caveats.append(
+            f"已标记 {decomp['anomaly_count']} 个异常日（去趋势后 GMV 偏离 ±2σ，如 {sample}），"
+            "多为大促/断货/数据缺口所致，是观察性提示而非因果。"
+        )
+    if decomp.get("projected_gmv") is not None:
+        caveats.append(
+            f"末尾的 {decomp.get('projection_horizon')} 日 GMV 外推为显著趋势线的线性延伸，"
+            "是观察性提示、非预测承诺，活动或季节变化会使其失真。"
         )
 
     snapshot_row = {
@@ -155,6 +200,8 @@ def _snapshot_finding(
             "wow_last_pct": decomp.get("wow_last_pct"),
             "peak_dow": decomp.get("peak_dow"),
             "changepoint_date": decomp.get("changepoint_date"),
+            "anomaly_day_count": decomp.get("anomaly_count"),
+            "projected_gmv_next": decomp.get("projected_gmv"),
         },
         caveats=caveats,
         evidence_reason="经营规模为聚合快照，趋势为逐期 GMV 走势，均为观察性描述。",
@@ -214,40 +261,316 @@ def _gmv_trend(
          "pct": s["pct"], "direction": s["direction"]}
         for s in steps
     ]
-    # Direction from the OLS slope over all points — robust to noisy endpoints.
+    # Significance-gated direction: a near-zero slope buried in daily noise reads as
+    # 趋势不明, not a spurious 上升/下降 (A1 — the OLS slope alone over-claims).
     summary = trend_summary(series)
     decomp = _decompose_gmv(series, trend_rows)
-    return trend_rows, summary["direction"], summary, decomp
+    return trend_rows, direction_from_summary(summary), summary, decomp
+
+
+# --------------------------------------------------------------------------- #
+# Finding — 自身历史基准分位 (C1): no external benchmark exists, so anchor the
+# latest week against the account's own weekly distribution.
+# --------------------------------------------------------------------------- #
+_BENCHMARK_MIN_WEEKS = 4
+_BENCHMARK_CONFOUNDERS = ["促销与活动节奏", "季节性", "流量结构变化"]
+
+
+def _benchmark_finding(con, limitations: list[str]):
+    """Anchor the latest ISO week's GMV / 支付转化 to the shop's own history.
+
+    A raw "2% 转化" is meaningless without a yardstick; this shop has no external
+    industry baseline, so the yardstick is its *own* recent weeks. Each metric's
+    latest week is placed as a self-percentile of all observed weeks. Degrades to
+    ``(None, {})`` when there is no date column or fewer than
+    ``_BENCHMARK_MIN_WEEKS`` weeks — a percentile over 2–3 points is noise.
+    """
+    cols = _table_columns(con, "business_overview_daily")
+    rows = _fetch_all(con, "business_overview_daily")
+    if "date" not in cols:
+        return None, {}
+
+    metrics = _weekly_metric_series(cols, rows)
+    bench_rows = []
+    for metric_key, series in metrics.items():
+        if len(series) < _BENCHMARK_MIN_WEEKS:
+            continue
+        latest_week, latest_value = series[-1]
+        history = [v for _, v in series]
+        pct = self_percentile(latest_value, history)
+        if pct is None:
+            continue
+        bench_rows.append(
+            {
+                "metric": _BENCHMARK_LABELS.get(metric_key, metric_key),
+                "latest_period": latest_week,
+                "value": round(latest_value, 4),
+                "self_percentile": round(pct, 4),
+                "percentile_label": percentile_label(pct),
+                "periods": len(series),
+            }
+        )
+
+    if not bench_rows:
+        limitations.append("周期不足 4 个 ISO 周或缺 GMV/转化列，跳过自身历史基准分位。")
+        return None, []
+
+    headline = max(bench_rows, key=lambda r: r["self_percentile"])
+    worst = min(bench_rows, key=lambda r: r["self_percentile"])
+    n_weeks = max(r["periods"] for r in bench_rows)
+    conclusion = (
+        f"以近 {n_weeks} 个 ISO 周为自身基准，最新一周"
+        f"「{headline['metric']}」处于 {headline['percentile_label']} 分位"
+    )
+    if worst["metric"] != headline["metric"]:
+        conclusion += (
+            f"，而「{worst['metric']}」仅 {worst['percentile_label']} 分位、相对偏弱。"
+        )
+    else:
+        conclusion += "。"
+
+    n = n_weeks
+    return (
+        Finding(
+            title="自身历史基准分位",
+            conclusion=conclusion,
+            evidence_strength=score_evidence(n, has_controls=False, confounder_count=2),
+            descriptive_reliability=score_reliability(n),
+            key_numbers={
+                "periods": n_weeks,
+                "top_metric": headline["metric"],
+                "top_percentile": headline["percentile_label"],
+                "weak_metric": worst["metric"],
+                "weak_percentile": worst["percentile_label"],
+            },
+            caveats=[
+                "分位是相对自身历史的排名，非绝对好坏；周期越少越易受单周波动影响。",
+                "GMV 按周求和、转化率按周内日均聚合；促销周天然偏高，读数需结合活动节奏。",
+            ],
+            recommended_action=(
+                "把最新周处于低分位的指标列为本周重点，对照高分位周的动作复盘差异。"
+            ),
+            evidence_reason=(
+                "用 analytics.benchmark.self_percentile 把最新周放进自身周度分布的中位秩分位，"
+                "为观察性相对定位，无外部对照。"
+            ),
+            confounders=_BENCHMARK_CONFOUNDERS,
+        ),
+        bench_rows,
+    )
+
+
+_BENCHMARK_LABELS = {
+    "weekly_gmv": "周 GMV",
+    "weekly_pay_conversion": "周支付转化率",
+}
+
+
+def _weekly_metric_series(cols, rows) -> dict[str, list[tuple[str, float]]]:
+    """ISO-week series per benchmarkable metric.
+
+    GMV is summed within a week; 支付转化 is the week's mean of daily
+    ``pay_conversion_uv`` (the only per-day rate column). Weeks are keyed by ISO
+    ``YYYY-Www`` and returned in chronological order. A metric with no usable
+    column is simply absent from the result.
+    """
+    gmv_by_week: dict[str, float] = {}
+    conv_by_week: dict[str, list[float]] = {}
+    has_gmv = "gmv" in cols
+    has_conv = "pay_conversion_uv" in cols
+    for r in rows:
+        week = iso_week(r.get("date"))
+        if week is None:
+            continue
+        if has_gmv:
+            gmv_by_week[week] = gmv_by_week.get(week, 0.0) + _num(r.get("gmv"))
+        if has_conv:
+            rate = bounded_rate(r.get("pay_conversion_uv"))
+            if rate is not None:
+                conv_by_week.setdefault(week, []).append(rate)
+
+    series: dict[str, list[tuple[str, float]]] = {}
+    if gmv_by_week:
+        series["weekly_gmv"] = [(w, gmv_by_week[w]) for w in sorted(gmv_by_week)]
+    if conv_by_week:
+        series["weekly_pay_conversion"] = [
+            (w, sum(v) / len(v)) for w, v in sorted(conv_by_week.items())
+        ]
+    return series
+
+
+# A lift comparison needs at least this many days on each side; a single event day
+# vs a single baseline day is anecdote, not a rate.
+_EVENT_MIN_DAYS = 2
+_EVENT_CONFOUNDERS = ["活动期降价/满减", "活动期投放加码", "季节性与节假日", "事件选择性排布"]
+
+
+def _event_lift_finding(con, limitations: list[str]):
+    """活动期 vs 平销期 的日均 GMV 与支付转化抬升（两比例检验 + 相对效应量）。
+
+    Splits every business day into event / baseline by matching ``calendar_events``
+    dates against ``business_overview_daily`` on a shared day key (so mixed date
+    calibers still align). GMV lift is a descriptive daily-mean ratio (continuous,
+    no p-value); conversion lift carries a two-proportion significance flag. Degrades
+    to ``(None, [])`` without a calendar table, without a GMV column, or when either
+    side has fewer than ``_EVENT_MIN_DAYS`` days. Observational — a promotion-day GMV
+    bump largely reflects the promotion itself, never a clean causal lift.
+    """
+    if not _table_exists(con, "calendar_events"):
+        return None, []
+    cols = _table_columns(con, "business_overview_daily")
+    if "date" not in cols or "gmv" not in cols:
+        return None, []
+    if "date" not in _table_columns(con, "calendar_events"):
+        return None, []
+
+    event_dates = {iso_date(r.get("date")) for r in _fetch_all(con, "calendar_events")}
+    event_dates.discard(None)
+    if not event_dates:
+        return None, []
+
+    has_conv = "product_visitors" in cols and "paid_buyers" in cols
+    ev = {"days": 0, "gmv": 0.0, "visitors": 0.0, "payers": 0.0}
+    base = {"days": 0, "gmv": 0.0, "visitors": 0.0, "payers": 0.0}
+    for r in _fetch_all(con, "business_overview_daily"):
+        key = iso_date(r.get("date"))
+        if key is None:
+            continue
+        bucket = ev if key in event_dates else base
+        bucket["days"] += 1
+        bucket["gmv"] += _num(r.get("gmv"))
+        if has_conv:
+            bucket["visitors"] += _num(r.get("product_visitors"))
+            bucket["payers"] += _num(r.get("paid_buyers"))
+
+    if ev["days"] < _EVENT_MIN_DAYS or base["days"] < _EVENT_MIN_DAYS:
+        limitations.append("活动日或平销日不足 2 天，跳过活动抬升对比。")
+        return None, []
+
+    rows = []
+    ev_gmv = ev["gmv"] / ev["days"]
+    base_gmv = base["gmv"] / base["days"]
+    gmv_lift = (ev_gmv - base_gmv) / base_gmv if base_gmv else None
+    rows.append(
+        {
+            "metric": "日均 GMV",
+            "event_value": round(ev_gmv, 2),
+            "baseline_value": round(base_gmv, 2),
+            "lift_pct": round(gmv_lift * 100, 1) if gmv_lift is not None else None,
+            "significance": "描述性",
+        }
+    )
+
+    conv_significant = None
+    if has_conv and ev["visitors"] > 0 and base["visitors"] > 0:
+        tp = two_proportion(ev["payers"], ev["visitors"], base["payers"], base["visitors"])
+        rl = relative_lift(ev["payers"], ev["visitors"], base["payers"], base["visitors"])
+        conv_significant = tp["significant"]
+        rows.append(
+            {
+                "metric": "支付转化率",
+                "event_value": round(ev["payers"] / ev["visitors"], 4),
+                "baseline_value": round(base["payers"] / base["visitors"], 4),
+                "lift_pct": round(rl["lift"] * 100, 1) if rl["lift"] is not None else None,
+                "significance": "显著" if tp["significant"] else "不显著",
+            }
+        )
+
+    gmv_dir = "高" if (gmv_lift or 0) >= 0 else "低"
+    conclusion = (
+        f"活动期日均 GMV {money(ev_gmv)}，较平销期（{money(base_gmv)}）"
+        f"{gmv_dir} {abs(round((gmv_lift or 0) * 100, 1))}%"
+    )
+    if conv_significant is not None:
+        conclusion += f"；支付转化差异{'显著' if conv_significant else '不显著'}。"
+    else:
+        conclusion += "。"
+
+    n = ev["days"] + base["days"]
+    return (
+        Finding(
+            title="活动期抬升对比",
+            conclusion=conclusion,
+            evidence_strength=score_evidence(n, has_controls=False, confounder_count=3),
+            descriptive_reliability=score_reliability(n),
+            key_numbers={
+                "event_days": ev["days"],
+                "baseline_days": base["days"],
+                "gmv_lift_pct": round(gmv_lift * 100, 1) if gmv_lift is not None else None,
+                "conversion_significant": conv_significant,
+            },
+            caveats=[
+                "活动期 GMV 抬升主要来自降价/满减与投放加码本身，是活动的组成，不能读作「活动很成功」的独立因果。",
+                "活动日与平销日非随机分配（大促常压在周末/节假日），季节性与流量结构是主要混淆项。",
+            ],
+            recommended_action=(
+                "对照抬升幅度与活动让利成本核算净收益，再决定活动强度与频率；"
+                "转化差异不显著时优先复盘承接页而非加大让利。"
+            ),
+            evidence_reason=(
+                "按 calendar_events 日期切分活动/平销两组，GMV 取日均相对差、"
+                "转化用 analytics.confidence.two_proportion 做两比例检验；观察性对比、无随机对照。"
+            ),
+            confounders=_EVENT_CONFOUNDERS,
+        ),
+        rows,
+    )
 
 
 def _decompose_gmv(series: list[tuple[str, float]], trend_rows: list[dict]) -> dict:
     """Layer week-over-week, day-of-week, and changepoint structure over the slope.
 
-    Every sub-metric degrades independently: too-short series → no WoW bucket,
-    unparseable dates → no peak weekday, <6 points → no changepoint (each side of
-    the split needs min_segment=3 points, so two segments need six). The
-    changepoint date is looked up from the series and mirrored onto trend_rows so
-    the exported table flags the shift row.
+    Each sub-metric degrades independently. Weeks are bucketed by real ISO calendar
+    (A3) so a missing day never drifts the Mon–Sun boundary; weekday seasonality is
+    detrended (A2) so a rising series' late weekdays are not mislabelled "peak"; and
+    the level shifts come from recursive multi-changepoint detection (A5), of which
+    the strongest is surfaced as the headline date and mirrored onto trend_rows.
     """
-    weeks = week_over_week(series)
+    weeks = week_over_week_calendar(series)
     wow_last_pct = next(
         (b["pct"] for b in reversed(weeks) if b["pct"] is not None), None
     )
     dow = dow_seasonality(series)
     peak_dow = dow.get("peak_dow")
-    cp = changepoint([g for _, g in series])
-    cp_idx = cp.get("index")
+    detrended_dow = dow.get("detrended", False)
+    cps = changepoints([g for _, g in series], max_k=2)
+    # The strongest break (largest relative shift) is the headline; all detected
+    # breaks flag their row so the trend table shows every structural move.
+    strongest = max(cps, key=lambda c: abs(c["rel_shift"]), default=None)
+    cp_dates = {
+        series[c["index"]][0]
+        for c in cps
+        if 0 <= c["index"] < len(series)
+    }
     changepoint_date = (
-        series[cp_idx][0] if cp_idx is not None and 0 <= cp_idx < len(series) else None
+        series[strongest["index"]][0]
+        if strongest is not None and 0 <= strongest["index"] < len(series)
+        else None
     )
-    if changepoint_date is not None:
+    if cp_dates:
         for row in trend_rows:
-            row["is_changepoint"] = row["date"] == changepoint_date
+            row["is_changepoint"] = row["date"] in cp_dates
+    # D1 前瞻: flag ±2σ anomaly days (detrended residual outliers) and, when the
+    # trend is significant, project it one horizon ahead. Both are observational
+    # hints — the projection is the trend line extended, never a prediction promise.
+    anomalies = anomaly_days(series)
+    anomaly_by_date = {a["date"]: a for a in anomalies}
+    if anomaly_by_date:
+        for row in trend_rows:
+            row["is_anomaly"] = row["date"] in anomaly_by_date
+    projection = trend_extrapolation(series, horizon=_PROJECTION_HORIZON, non_negative=True)
     return {
         "wow_last_pct": wow_last_pct,
         "peak_dow": peak_dow,
+        "detrended_dow": detrended_dow,
         "changepoint_date": changepoint_date,
-        "changepoint_shift": cp.get("shift"),
+        "changepoint_shift": strongest["shift"] if strongest is not None else None,
+        "changepoint_count": len(cps),
+        "anomaly_count": len(anomalies),
+        "anomaly_dates": [a["date"] for a in anomalies],
+        "projected_gmv": projection["projected_value"] if projection else None,
+        "projection_horizon": _PROJECTION_HORIZON if projection else None,
+        "projection_direction": projection["direction"] if projection else None,
     }
 
 
@@ -259,7 +582,12 @@ def _snapshot_conclusion(total_gmv, total_buyers, aov, pay_conv, direction, deco
         parts.append(f"客单价 {money(aov)} 元")
     if pay_conv is not None:
         parts.append(f"支付转化率 {round(pay_conv * 100, 1)}%")
-    tail = f"，GMV 趋势{direction}。" if direction else "，趋势数据不足。"
+    if direction is None:
+        tail = "，趋势数据不足。"
+    elif direction == "趋势不明":
+        tail = "，GMV 趋势不明（日度斜率未过显著性门槛）。"
+    else:
+        tail = f"，GMV 趋势{direction}。"
     extras: list[str] = []
     if decomp.get("changepoint_date"):
         extras.append(f"GMV 在 {cn_date(decomp['changepoint_date'])} 附近出现结构性变化")
@@ -267,6 +595,126 @@ def _snapshot_conclusion(total_gmv, total_buyers, aov, pay_conv, direction, deco
         extras.append(f"周内 {decomp['peak_dow']} GMV 最高")
     extra = ("（" + "；".join(extras) + "）") if extras else ""
     return "、".join(parts) + tail + extra
+
+
+# --------------------------------------------------------------------------- #
+# Finding 1.5 — 增长归因 GMV 桥 (degrade-gated, ★highest value)
+# --------------------------------------------------------------------------- #
+_BRIDGE_CONFOUNDERS = ["促销与活动", "流量结构变化", "品类结构变化"]
+_FACTOR_LEVER = {
+    "traffic": "GMV 变化主要由流量驱动：稳固当前流量来源，并检视转化/客单是否被稀释。",
+    "conversion": "GMV 变化主要由转化驱动：延续起效的详情页/信任状/优惠，扩大到更多商品。",
+    "aov": "GMV 变化主要由客单价驱动：核对是价格结构还是连带/客群变化，评估可持续性。",
+}
+
+
+def _growth_attribution_finding(
+    con, limitations: list[str]
+) -> tuple[Finding | None, dict[str, list[dict]]]:
+    """Decompose the window's ΔGMV into traffic × conversion × AOV (LMDI bridge).
+
+    Splits the dated series into an early and a late half, aggregates each into
+    (gmv, visitors, buyers), and runs :func:`gmv_bridge`. Needs product_visitors +
+    paid_buyers to reverse-derive conversion and AOV; missing either → degrade with
+    a limitation. Deterministic attribution, not causal.
+    """
+    cols = _table_columns(con, "business_overview_daily")
+    if not {"date", "gmv", "paid_buyers", "product_visitors"} <= cols:
+        limitations.append(
+            "business_overview_daily 缺 product_visitors 或 paid_buyers，跳过增长归因（GMV 桥）。"
+        )
+        return None, {}
+    rows = _fetch_all(con, "business_overview_daily")
+    dated = [(str(r.get("date")), r) for r in rows if r.get("date") is not None]
+    if len(dated) < 4:
+        limitations.append("business_overview_daily 日期行不足四期，跳过增长归因（GMV 桥）。")
+        return None, {}
+    dated.sort(key=lambda t: t[0])
+    mid = len(dated) // 2
+    early = [r for _, r in dated[:mid]]
+    late = [r for _, r in dated[mid:]]
+
+    def _aggregate(part: list[dict]) -> dict:
+        return {
+            "gmv": sum(_num(r.get("gmv")) for r in part),
+            "visitors": sum(_num(r.get("product_visitors")) for r in part),
+            "buyers": sum(_num(r.get("paid_buyers")) for r in part),
+        }
+
+    p0, p1 = _aggregate(early), _aggregate(late)
+    bridge = gmv_bridge(p0, p1)
+    bridge_rows = _bridge_rows(bridge)
+    factor_zh = bridge.get("dominant_factor_zh")
+
+    caveats = [
+        "GMV = 访客数 × 支付转化率 × 客单价 的 LMDI 确定性分解，三项贡献之和≈ΔGMV，非因果。",
+        f"前后各取半程聚合：前段 {dated[0][0]}–{dated[mid - 1][0]}，后段 {dated[mid][0]}–{dated[-1][0]}。",
+    ]
+    if bridge.get("partial"):
+        caveats.append("部分因子缺失或非正（如某段访客/买家为零），分解降级，未拆部分计入残差。")
+
+    sample_size = int(p0["buyers"] + p1["buyers"])
+    finding = Finding(
+        title="增长归因（GMV 桥）",
+        conclusion=_bridge_conclusion(bridge, p0, p1),
+        evidence_strength=score_evidence(sample_size, has_controls=False, confounder_count=1),
+        descriptive_reliability=score_reliability(sample_size),
+        key_numbers={
+            "delta_gmv": bridge.get("delta_gmv"),
+            "dominant_factor": bridge.get("dominant_factor"),
+            "dominant_factor_zh": factor_zh,
+            "contrib_traffic": bridge.get("contrib_traffic"),
+            "contrib_conversion": bridge.get("contrib_conversion"),
+            "contrib_aov": bridge.get("contrib_aov"),
+            "residual": bridge.get("residual"),
+            "partial": bridge.get("partial"),
+        },
+        caveats=caveats,
+        recommended_action=_FACTOR_LEVER.get(bridge.get("dominant_factor")),
+        evidence_reason="用 LMDI 把 ΔGMV 完全可加地拆到流量/转化/客单三因子，确定性分解、观察性。",
+        confounders=_BRIDGE_CONFOUNDERS,
+    )
+    return finding, {"gmv_bridge": bridge_rows}
+
+
+def _bridge_rows(bridge: dict) -> list[dict]:
+    delta = bridge.get("delta_gmv")
+    out: list[dict] = []
+    for factor, zh in (("traffic", "流量"), ("conversion", "转化"), ("aov", "客单价")):
+        contrib = bridge.get(f"contrib_{factor}")
+        out.append(
+            {
+                "factor": factor,
+                "factor_zh": zh,
+                "contribution": contrib,
+                "share": (contrib / delta) if (contrib is not None and delta) else None,
+                "is_dominant": factor == bridge.get("dominant_factor"),
+            }
+        )
+    return out
+
+
+def _bridge_conclusion(bridge: dict, p0: dict, p1: dict) -> str:
+    delta = bridge.get("delta_gmv")
+    if delta is None:
+        return "增长归因数据不足，无法分解 ΔGMV。"
+    move = "增长" if delta > 0 else ("下滑" if delta < 0 else "持平")
+    head = (
+        f"GMV 从 {money(p0['gmv'])} 元{move}至 {money(p1['gmv'])} 元"
+        f"（Δ {money(delta)} 元）"
+    )
+    zh = bridge.get("dominant_factor_zh")
+    if zh is None:
+        return head + "，各因子贡献相近或数据不足以定位主因。"
+    contrib = bridge.get(f"contrib_{bridge['dominant_factor']}")
+    # When the biggest-magnitude factor moves *against* the net change, it was
+    # offset by the others — calling it the "driver" would misread the sign.
+    if contrib is not None and delta != 0 and (contrib > 0) != (delta > 0):
+        return head + (
+            f"，其中{zh}变动最大（贡献 {money(contrib)} 元，方向与净变化相反，"
+            "被其他因子抵消）。"
+        )
+    return head + f"，主要由{zh}拉动（贡献 {money(contrib)} 元）。"
 
 
 # --------------------------------------------------------------------------- #
@@ -315,10 +763,18 @@ def _structure_finding(
             n = int(_num(a["click_users"]) + _num(b["click_users"]))
             sample_size = max(sample_size, n)
             verdict = _verdict(channel_test, diff)
+            lift, mde, mde_caveat = _comparison_extras(
+                _num(a["paid_buyers"]), _num(a["click_users"]),
+                _num(b["paid_buyers"]), _num(b["click_users"]), channel_test,
+            )
+            key_numbers["channel_rel_lift"] = lift
+            key_numbers["channel_mde"] = mde
             parts.append(
                 f"{a['channel']} 与 {b['channel']} 支付转化率相差 {pp(diff)}（{verdict}）"
             )
             caveats.append("渠道显著性用两样本比例检验，并结合效应量（差值）判断。")
+            if mde_caveat:
+                caveats.append(mde_caveat)
         else:
             key_numbers["channel_diff"] = None
             caveats.append("traffic_source 缺 paid_buyers 或渠道不足两组，仅报点击份额。")
@@ -487,7 +943,15 @@ def _funnel_finding(
         key_numbers["audience_diff"] = aud_test["diff"]
         key_numbers["audience_significant"] = _sig_gated(aud_test, aud_test["diff"])
         key_numbers["audience_top2"] = [a["audience_type"], b["audience_type"]]
+        lift, mde, mde_caveat = _comparison_extras(
+            _num(a["payers"]), _num(a["visitors"]),
+            _num(b["payers"]), _num(b["visitors"]), aud_test,
+        )
+        key_numbers["audience_rel_lift"] = lift
+        key_numbers["audience_mde"] = mde
         caveats.append("客群转化差异用两样本比例检验，并结合效应量判断。")
+        if mde_caveat:
+            caveats.append(mde_caveat)
 
     sample_size = int(visitors) if visitors else len(rows)
     finding = Finding(
@@ -596,6 +1060,28 @@ def _sig_gated(test: dict, diff: float | None) -> bool:
 
 def _verdict(test: dict, diff: float | None) -> str:
     return "显著" if _sig_gated(test, diff) else "不显著"
+
+
+def _comparison_extras(
+    k1: float, n1: float, k2: float, n2: float, test: dict
+) -> tuple[float | None, float | None, str | None]:
+    """Relative lift + minimum detectable effect for a two-proportion comparison.
+
+    The raw diff alone hides scale and cannot tell "truly no gap" from "sample too
+    small". Returns (relative_lift, mde, caveat) where the caveat fires only when
+    the test is non-significant and the MDE is known — so a null result is read as
+    under-powered, not as proven equality.
+    """
+    lift = relative_lift(k1, n1, k2, n2).get("lift")
+    p_base = (k2 / n2) if n2 else None
+    mde = min_detectable_effect(n1, n2, p_base) if p_base is not None else None
+    caveat = None
+    if not _sig_gated(test, test.get("diff")) and mde is not None:
+        caveat = (
+            f"当前样本量下最小可测差约 {round(mde * 100, 1)}pp，"
+            "未达显著更可能是样本不足而非确无差异。"
+        )
+    return lift, mde, caveat
 
 
 def _avg_rate(rows: list[dict], col: str) -> float | None:

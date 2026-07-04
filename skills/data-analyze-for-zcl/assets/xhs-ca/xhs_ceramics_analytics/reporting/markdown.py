@@ -4,6 +4,7 @@ from xhs_ceramics_analytics.reporting.formatting import (
     format_scalar,
     should_render_table,
 )
+from xhs_ceramics_analytics.reporting.priority import build_priority_table
 from xhs_ceramics_analytics.reporting.section_order import order_results
 
 
@@ -45,6 +46,7 @@ _DEFAULT_REPORT_TITLE = "小红书账号分析报告"
 
 def render_markdown(results: list[AnalysisResult], title: str | None = None) -> str:
     lines = [f"# {title or _DEFAULT_REPORT_TITLE}", ""]
+    lines.extend(_render_priority_table(results))
     for result in order_results(results):
         lines.extend([f"## {_display_title(result.title)}", ""])
         if result.limitations:
@@ -61,6 +63,37 @@ def render_markdown(results: list[AnalysisResult], title: str | None = None) -> 
         for table_name, rows in result.tables.items():
             lines.extend(_render_table_preview(table_name, rows))
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _render_priority_table(results: list[AnalysisResult]) -> list[str]:
+    """Cross-module 「最弱环节 × 最高杠杆」 priority table at the top of the report.
+
+    Renders a single ranked table so the reader sees, before any module detail,
+    which lever to pull first (预期影响 × 可行性). Omitted entirely when no module
+    carries an actionable finding.
+    """
+    rows = build_priority_table(results)
+    if not rows:
+        return []
+    lines = [
+        "## 优先级导读：先动哪里",
+        "",
+        "按「预期影响 × 可行性」跨模块排序，越靠前越该先动。可行性同时看因果证据强度与描述可靠性。",
+        "",
+        "| 优先级 | 模块 | 最弱环节 | 最高杠杆（建议动作） | 预期影响 | 可行性 | 证据 |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for index, row in enumerate(rows, start=1):
+        lever = str(row.get("lever") or "").replace("|", "\\|").replace("\n", " ")
+        weak_link = str(row.get("weak_link") or "").replace("|", "\\|").replace("\n", " ")
+        module = str(row.get("module") or "").replace("|", "\\|").replace("\n", " ")
+        lines.append(
+            f"| {index} | {module} | {weak_link} | {lever} | "
+            f"{row.get('impact_label')} | {row.get('feasibility_label')} | "
+            f"{_evidence_label(str(row.get('evidence')))} |"
+        )
+    lines.append("")
+    return lines
 
 
 def _render_finding(finding, heading_level: str = "###") -> list[str]:

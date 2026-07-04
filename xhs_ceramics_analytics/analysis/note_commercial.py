@@ -10,6 +10,7 @@ from pathlib import Path
 
 from xhs_ceramics_analytics.analysis.prose import money, qty
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
+from xhs_ceramics_analytics.analytics.concentration import gini, hhi
 from xhs_ceramics_analytics.analytics.confidence import bounded_rate, wilson_interval
 from xhs_ceramics_analytics.analytics.multiplicity import (
     benjamini_hochberg,
@@ -155,11 +156,20 @@ def _gmv_pareto_finding(con, limitations: list[str]) -> tuple[Finding, list[dict
                 }
             )
 
+    # One comparable concentration number beside the head-share Pareto.
+    note_gmv_gini = gini([_num(r.get("note_gmv")) for r in gmv_rows])
+    note_gmv_hhi = hhi([_num(r.get("note_gmv")) for r in gmv_rows])
+
     if gmv_rows and total_gmv > 0:
+        gini_note = (
+            f" GMV 基尼系数 {round(note_gmv_gini, 2)}（越高越集中于头部笔记）。"
+            if note_gmv_gini is not None
+            else ""
+        )
         conclusion = (
             f"共 {qty(note_count)} 篇笔记（{qty(len(gmv_rows))} 篇有 GMV）；"
             f"Top 10% 笔记贡献 GMV {round((top_decile_gmv_share or 0) * 100)}%，"
-            f"{qty(notes_for_80pct)} 篇笔记贡献 80% GMV。"
+            f"{qty(notes_for_80pct)} 篇笔记贡献 80% GMV。" + gini_note
         )
     else:
         conclusion = f"共 {qty(note_count)} 篇笔记，但无正 GMV 记录，无法计算集中度。"
@@ -174,6 +184,8 @@ def _gmv_pareto_finding(con, limitations: list[str]) -> tuple[Finding, list[dict
             "gmv_total": total_gmv,
             "top_decile_gmv_share": top_decile_gmv_share,
             "notes_for_80pct": notes_for_80pct,
+            "note_gmv_gini": note_gmv_gini,
+            "note_gmv_hhi": note_gmv_hhi,
         },
         caveats=[_OBS_CAVEAT, "帕累托集中度为快照统计，非因果归因。"],
         recommended_action=_LEVER_PARETO,

@@ -5,6 +5,7 @@ from jinja2 import Environment, PackageLoader
 
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding, Subsection
 from xhs_ceramics_analytics.reporting.markdown import render_markdown
+from xhs_ceramics_analytics.reporting.priority import build_priority_table
 from xhs_ceramics_analytics.reporting.section_order import APPENDIX_TASKS
 from xhs_ceramics_analytics.reporting.formatting import (
     field_help as _field_help,
@@ -141,6 +142,7 @@ _APPENDIX_GROUP = {
 _TABLE_LABELS = {
     "table_row_counts": "导入数据检查",
     "daily_posts": "账号日发布与互动",
+    "posting_windows": "最优发布窗口",
     "note_funnel": "笔记漏斗明细",
     "cover_effects": "封面效果对比",
     "copy_effects": "文案角度对比",
@@ -150,15 +152,20 @@ _TABLE_LABELS = {
     "product_interactions": "商品与内容组合",
     "portfolio_mix": "内容组合占比",
     "comment_demands": "评论需求分组",
+    "comment_emergent_themes": "涌现需求主题与异议",
     "experiment_plan": "下周实验排期",
     "reshoot_candidates": "重拍候选笔记",
     "hypotheses": "经营假设库",
     "weekly_sections": "周复盘模块",
     "ad_data_quality": "投放数据可用性",
     "paid_traffic_efficiency": "投放效率明细",
+    "paid_spend_response": "投放弹性（花费→成交响应）",
     # --- 经营/搜索/人群/退款/渠道 深度诊断模块 ---
     "business_snapshot": "整体经营快照",
     "business_trend": "GMV 趋势与结构性变化",
+    "business_self_benchmark": "自身历史基准分位",
+    "event_activity_lift": "活动期抬升对比",
+    "gmv_bridge": "增长归因（GMV 桥）",
     "demand_funnel_trend": "加购→成交漏斗趋势",
     "wishlist_demand_trend": "心愿单需求趋势",
     "carrier_structure": "载体 GMV 结构",
@@ -170,11 +177,14 @@ _TABLE_LABELS = {
     "audience_conversion": "人群转化",
     "audience_conversion_comparison": "新老客转化对比",
     "first_purchase_cycle_funnel": "首购周期漏斗",
+    "audience_gmv_contribution": "人群 GMV 贡献",
     "sku_gmv_pareto": "SKU GMV 帕累托",
     "sku_category_mix": "SKU 类目结构",
     "sku_category_l2_mix": "二级品类营收与退款",
     "sku_refund_outliers": "高退款 SKU",
     "sku_conversion_and_aov": "SKU 加购转化与客单价",
+    "sku_price_band_distribution": "价格带分布（SKU × GMV）",
+    "sku_price_sweet_spot": "价格甜点（价格带 × 转化 × 退款）",
     "note_gmv_pareto": "笔记 GMV 帕累托",
     "note_conversion_outliers": "高流量低转化笔记",
     "note_refund_outliers": "高退款笔记",
@@ -195,7 +205,30 @@ _TABLE_LABELS = {
 
 _USER_TABLE_COLUMNS = {
     "table_row_counts": ("table", "rows"),
+    "business_self_benchmark": (
+        "metric",
+        "latest_period",
+        "value",
+        "percentile_label",
+        "periods",
+    ),
+    "event_activity_lift": (
+        "metric",
+        "event_value",
+        "baseline_value",
+        "lift_pct",
+        "significance",
+    ),
+    "audience_gmv_contribution": ("audience_type", "gmv", "gmv_share"),
     "daily_posts": ("date", "posts", "reads", "collects", "comments"),
+    "posting_windows": (
+        "publish_window",
+        "posts",
+        "avg_reads",
+        "avg_engagement",
+        "avg_note_gmv",
+        "perf_lift",
+    ),
     "note_funnel": (
         "note_id",
         "reads",
@@ -243,6 +276,13 @@ _USER_TABLE_COLUMNS = {
         "comment_share",
         "example_comments",
     ),
+    "comment_emergent_themes": (
+        "term",
+        "comments",
+        "polarity",
+        "trend",
+        "content_hook",
+    ),
     "experiment_plan": (
         "date",
         "slot_time",
@@ -287,6 +327,14 @@ _USER_TABLE_COLUMNS = {
         "roas_calc",
         "budget_action",
     ),
+    "paid_spend_response": (
+        "spend_band",
+        "objects",
+        "avg_spend",
+        "avg_roas",
+        "marginal_roas",
+        "is_saturation",
+    ),
     "note_referral_attribution": (
         "note_id",
         "referral_orders",
@@ -299,6 +347,20 @@ _USER_TABLE_COLUMNS = {
         "gmv_share",
         "refund_rate",
     ),
+    "sku_price_band_distribution": (
+        "band",
+        "sku_count",
+        "sku_share",
+        "gmv_share",
+    ),
+    "sku_price_sweet_spot": (
+        "band",
+        "sku_count",
+        "cart_to_pay",
+        "refund_rate_pay",
+        "net_margin",
+        "is_sweet_spot",
+    ),
     "demand_funnel_trend": (
         "date",
         "add_to_cart_users",
@@ -308,6 +370,20 @@ _USER_TABLE_COLUMNS = {
     "wishlist_demand_trend": (
         "date",
         "new_wishlist_users",
+    ),
+    "gmv_bridge": (
+        "factor_zh",
+        "contribution",
+        "share",
+        "is_dominant",
+    ),
+    "business_trend": (
+        "date",
+        "gmv",
+        "pct",
+        "direction",
+        "is_changepoint",
+        "is_anomaly",
     ),
 }
 
@@ -681,6 +757,7 @@ def _build_report_context(
         "total_table_rows": total_table_rows,
         "assistant_name": (assistant or _DEFAULT_ASSISTANT_NAME).strip() or _DEFAULT_ASSISTANT_NAME,
         "highlights": _business_highlights(results),
+        "priority_table": _priority_table_view(results),
         "actions": _business_actions(results, findings),
         "analysis_groups": _analysis_groups(result_views),
         "evidence_counts": _evidence_counts(findings),
@@ -856,6 +933,32 @@ def _analysis_groups(result_views: list[dict[str, object]]) -> list[dict[str, ob
             }
         )
     return grouped
+
+
+def _priority_table_view(results: list[AnalysisResult]) -> list[dict[str, object]]:
+    """Reader-facing rows for the cross-module 「最弱环节 × 最高杠杆」 priority table.
+
+    Each row already carries 高/中/低 bands and an evidence class from the pure
+    :func:`build_priority_table` primitive; here we only attach the display rank and
+    the evidence label so the template stays logic-free.
+    """
+    rows = build_priority_table(results)
+    views: list[dict[str, object]] = []
+    for index, row in enumerate(rows, start=1):
+        evidence_value = str(row.get("evidence"))
+        views.append(
+            {
+                "rank": index,
+                "module": row.get("module"),
+                "weak_link": row.get("weak_link"),
+                "lever": row.get("lever"),
+                "impact_label": row.get("impact_label"),
+                "feasibility_label": row.get("feasibility_label"),
+                "evidence": _EVIDENCE_LABELS.get(evidence_value, evidence_value),
+                "evidence_class": evidence_value,
+            }
+        )
+    return views
 
 
 def _highlights(findings: list[Finding]) -> list[dict[str, str]]:

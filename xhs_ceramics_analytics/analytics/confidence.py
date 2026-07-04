@@ -77,3 +77,100 @@ def two_proportion(k1: float, n1: float, k2: float, n2: float) -> dict:
         "significant": z is not None and abs(z) >= 1.96,
         "ci_overlap": ci_overlap,
     }
+
+
+# 95% two-sided and 80% power normal quantiles, hardcoded (no scipy dependency).
+_Z_ALPHA = 1.96
+_Z_POWER = 0.84
+_CMH_CHI2_CRIT = 3.841  # 1-dof chi-square at alpha=0.05
+
+
+def stratified_two_proportion(strata: list[dict]) -> dict:
+    """Cochran–Mantel–Haenszel test across strata — controls a confounder like time.
+
+    A plain :func:`two_proportion` pools A vs B over the whole window; if the two
+    groups' volumes concentrate in different periods, a time trend masquerades as a
+    group effect (Simpson's paradox). Passing per-stratum counts (e.g. one dict per
+    week: ``{k1, n1, k2, n2}``) tests the *within-stratum* gap and pools it fairly.
+
+    Returns {pooled_diff, mh_chi2, significant, n_strata, ci_overlap}. Strata with a
+    degenerate total (T ≤ 1) are skipped; no usable stratum → not significant. Never
+    raises.
+    """
+    sum_a = sum_e = sum_v = 0.0
+    diff_num = diff_den = 0.0
+    used = 0
+    for s in strata:
+        n1 = float(s.get("n1", 0) or 0)
+        n2 = float(s.get("n2", 0) or 0)
+        k1 = min(max(float(s.get("k1", 0) or 0), 0.0), n1)
+        k2 = min(max(float(s.get("k2", 0) or 0), 0.0), n2)
+        total = n1 + n2
+        if total <= 1 or n1 <= 0 or n2 <= 0:
+            continue
+        m1 = k1 + k2  # successes in stratum
+        m2 = total - m1
+        expected = n1 * m1 / total
+        variance = (n1 * n2 * m1 * m2) / (total * total * (total - 1))
+        sum_a += k1
+        sum_e += expected
+        sum_v += variance
+        # Volume-weighted pooled difference (Mantel–Haenszel style weighting).
+        weight = n1 * n2 / total
+        diff_num += weight * (k1 / n1 - k2 / n2)
+        diff_den += weight
+        used += 1
+    if used == 0 or sum_v <= 0:
+        return {
+            "pooled_diff": None, "mh_chi2": None,
+            "significant": False, "n_strata": used, "ci_overlap": True,
+        }
+    # Continuity-corrected CMH statistic.
+    mh_chi2 = (abs(sum_a - sum_e) - 0.5) ** 2 / sum_v
+    pooled_diff = diff_num / diff_den if diff_den else None
+    return {
+        "pooled_diff": pooled_diff,
+        "mh_chi2": mh_chi2,
+        "significant": mh_chi2 >= _CMH_CHI2_CRIT,
+        "n_strata": used,
+        "ci_overlap": mh_chi2 < _CMH_CHI2_CRIT,
+    }
+
+
+def relative_lift(k1: float, n1: float, k2: float, n2: float) -> dict:
+    """Relative lift p1/p2 − 1 with a conservative Wilson-based interval.
+
+    Absolute differences hide scale (a 1pp gap is huge at a 1% base, trivial at
+    50%). The interval combines the two rates' Wilson bounds at their worst-case
+    corners, so it is deliberately wide but honest. None when either rate is
+    undefined or the baseline p2 is zero.
+    """
+    if n1 <= 0 or n2 <= 0:
+        return {"lift": None, "lift_ci_low": None, "lift_ci_high": None}
+    k1 = min(max(k1, 0.0), n1)
+    k2 = min(max(k2, 0.0), n2)
+    p1, p2 = k1 / n1, k2 / n2
+    if p2 <= 0:
+        return {"lift": None, "lift_ci_low": None, "lift_ci_high": None}
+    lo1, hi1 = wilson_interval(k1, n1)
+    lo2, hi2 = wilson_interval(k2, n2)
+    ci_low = (lo1 / hi2 - 1) if hi2 > 0 else None
+    ci_high = (hi1 / lo2 - 1) if lo2 > 0 else None
+    return {"lift": p1 / p2 - 1, "lift_ci_low": ci_low, "lift_ci_high": ci_high}
+
+
+def min_detectable_effect(
+    n1: float, n2: float, p_base: float, power: float = 0.8, alpha: float = 0.05
+) -> float | None:
+    """Smallest absolute rate gap a two-proportion test could detect at ``power``.
+
+    Lets a "not significant" verdict be read correctly: a large MDE means the
+    sample was simply too small to resolve a real difference, not that none exists.
+    Normal approximation with fixed 95%/80% quantiles. None on degenerate input.
+    """
+    if n1 <= 0 or n2 <= 0 or not (0.0 < p_base < 1.0):
+        return None
+    if not (0.0 < power < 1.0) or not (0.0 < alpha < 1.0):
+        return None
+    se = math.sqrt(p_base * (1 - p_base) * (1 / n1 + 1 / n2))
+    return (_Z_ALPHA + _Z_POWER) * se

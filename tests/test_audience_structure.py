@@ -273,7 +273,80 @@ def test_source_finding_skipped_without_table(tmp_path):
     assert any("shop_page_source" in lim for lim in result.limitations)
 
 
-# ---- Finding 4 composition (documented gap) -------------------------------
+# ---- Finding 4 customer value (contribution + concentration) --------------
+
+
+def test_customer_value_contribution_and_concentration(tmp_path):
+    con, db_path = _con(tmp_path)
+    _make_funnel_full(
+        con,
+        [("2026-06-01", "新客", "首购", 1000.0, 100.0, 400.0, 0.4, 0.25, 0.10)],
+    )
+    # 老客 out-contributes 新客 on GMV (10000 vs 8000), and its GMV is spread across
+    # three进店来源 so the source-level Gini is a real, non-degenerate number.
+    _make_source(
+        con,
+        [
+            ("新客", "首购", "搜索", 1000.0, 0.10, 6000.0),
+            ("新客", "首购", "推荐", 500.0, 0.02, 2000.0),
+            ("老客", "复购", "搜索", 800.0, 0.15, 5000.0),
+            ("老客", "复购", "推荐", 400.0, 0.05, 1000.0),
+            ("老客", "复购", "商城", 300.0, 0.20, 4000.0),
+        ],
+    )
+    con.close()
+    result = run_task(TASK, db_path)
+    finding = next(f for f in result.findings if f.title == "客户价值贡献与集中度")
+    rows = result.tables["audience_gmv_contribution"]
+    assert {r["audience_type"] for r in rows} == {"新客", "老客"}
+    # total GMV 18000 → 老客 share = 10000/18000, the top contributor
+    assert rows[0]["audience_type"] == "老客"
+    kn = finding.key_numbers
+    assert kn["top_audience_by_gmv"] == "老客"
+    assert kn["repeat_gmv_share"] > 0.5
+    assert kn["repeat_source_count"] == 3
+    assert kn["repeat_gmv_gini"] is not None and kn["repeat_gmv_gini"] > 0
+    assert "顾客个体层面" in " ".join(finding.caveats)
+
+
+def test_customer_value_skipped_without_source_table(tmp_path):
+    con, db_path = _con(tmp_path)
+    _make_funnel_full(
+        con,
+        [("2026-06-01", "新客", "首购", 1000.0, 100.0, 400.0, 0.4, 0.25, 0.10)],
+    )
+    con.close()
+    result = run_task(TASK, db_path)
+    assert "客户价值贡献与集中度" not in [f.title for f in result.findings]
+    assert "audience_gmv_contribution" not in result.tables
+
+
+def test_customer_value_skipped_without_gmv_column(tmp_path):
+    con, db_path = _con(tmp_path)
+    _make_funnel_full(
+        con,
+        [("2026-06-01", "新客", "首购", 1000.0, 100.0, 400.0, 0.4, 0.25, 0.10)],
+    )
+    # shop_page_source without shop_gmv → contribution not computable, degrade.
+    con.execute(
+        """
+        CREATE TABLE shop_page_source (
+          audience_type VARCHAR, first_purchase_cycle VARCHAR,
+          source_page VARCHAR, shop_visitors DOUBLE, enter_pay_rate DOUBLE
+        )
+        """
+    )
+    con.executemany(
+        "INSERT INTO shop_page_source VALUES (?, ?, ?, ?, ?)",
+        [("新客", "首购", "搜索", 1000.0, 0.10)],
+    )
+    con.close()
+    result = run_task(TASK, db_path)
+    assert "客户价值贡献与集中度" not in [f.title for f in result.findings]
+    assert any("shop_gmv" in lim for lim in result.limitations)
+
+
+# ---- Finding 5 composition (documented gap) -------------------------------
 
 
 def test_composition_gap_notice_without_profile(tmp_path):

@@ -7,6 +7,73 @@ from xhs_ceramics_analytics.reporting.html import (
 from xhs_ceramics_analytics.reporting.markdown import render_markdown
 
 
+def _priority_results():
+    # Two actionable modules with different lever weights → deterministic ordering.
+    return [
+        AnalysisResult(
+            task_id="account_baseline",
+            title="账号基线",
+            findings=[
+                Finding(
+                    title="基线稳定",
+                    conclusion="账号发布节奏稳定。",
+                    evidence_strength=EvidenceStrength.STRONG,
+                    recommended_action="维持当前节奏。",
+                    descriptive_reliability=DescriptiveReliability.HIGH,
+                )
+            ],
+        ),
+        AnalysisResult(
+            task_id="core_business_diagnosis",
+            title="整体经营诊断",
+            findings=[
+                Finding(
+                    title="搜索承接是最弱环节",
+                    conclusion="搜索点击多但成交少。",
+                    evidence_strength=EvidenceStrength.STRONG,
+                    recommended_action="优先补详情页与承接内容。",
+                    descriptive_reliability=DescriptiveReliability.HIGH,
+                )
+            ],
+        ),
+    ]
+
+
+def test_markdown_renders_priority_table_ranked():
+    md = render_markdown(_priority_results())
+    assert "优先级" in md
+    # Highest-lever module's weak link appears before the low-lever reference module.
+    assert md.index("搜索承接是最弱环节") < md.index("基线稳定")
+    assert "优先补详情页与承接内容。" in md
+
+
+def test_markdown_omits_priority_table_when_nothing_actionable():
+    result = AnalysisResult(
+        task_id="core_business_diagnosis",
+        title="整体经营诊断",
+        findings=[
+            Finding(
+                title="数据不足",
+                conclusion="无法判断。",
+                evidence_strength=EvidenceStrength.NOT_JUDGABLE,
+            )
+        ],
+    )
+    md = render_markdown([result])
+    assert "先动哪里" not in md
+
+
+def test_html_renders_priority_table_section():
+    html = render_html(_priority_results())
+    assert 'id="priority"' in html
+    assert "优先补详情页与承接内容。" in html
+    # Within the priority section itself, the high-lever module outranks the
+    # low-lever reference module (guide highlights above use raw result order).
+    start = html.index('id="priority"')
+    section = html[start : html.index("</section>", start)]
+    assert section.index("搜索承接是最弱环节") < section.index("基线稳定")
+
+
 def _weak_but_reliable_finding():
     # Observational (causal WEAK) yet backed by a large, precisely-measured sample.
     return Finding(
