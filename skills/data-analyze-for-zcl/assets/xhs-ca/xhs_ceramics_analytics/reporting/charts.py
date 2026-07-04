@@ -63,7 +63,11 @@ def _empty_state(width: int, height: int) -> str:
 def _chart_badge(strength: EvidenceStrength, n: int) -> str:
     """Evidence badge as an HTML tag span, reusing the report's tag CSS mapping."""
     if strength == EvidenceStrength.WEAK:
-        cls, text = "weak", f"样本不足 · n={n}"
+        # "弱" is the causal tier, not a sample-size verdict: many observational
+        # modules are inherently causal-weak yet carry a large n. Parallel the
+        # other tiers ("可信度 中/强") so a big-n directional chart never reads as
+        # "broken"; n is shown so a genuinely small sample is still visible.
+        cls, text = "weak", f"可信度 弱 · n={n}"
     elif strength == EvidenceStrength.MEDIUM:
         cls, text = "medium", f"可信度 中 · n={n}"
     else:
@@ -532,3 +536,212 @@ def _build_paid(result: AnalysisResult, strength: EvidenceStrength) -> str:
 
 _BUILDERS["product_opportunity_matrix"] = _build_opportunity
 _BUILDERS["paid_traffic_efficiency"] = _build_paid
+
+
+def _short_date(value: object) -> str:
+    """Trim an ISO date to MM-DD for a compact axis; pass anything else through."""
+    text = str(value)
+    return text[5:] if len(text) == 10 and text[4] == "-" and text[7] == "-" else text
+
+
+def _timeseries_line(
+    rows: list[dict],
+    *,
+    date_key: str,
+    value_key: str,
+    value_fmt: Callable[[float], str],
+    de_emphasize: bool,
+    title: str,
+    changepoint_dates: frozenset[str] | set[str] = frozenset(),
+) -> str:
+    """A single metric over a (possibly long) date series.
+
+    Unlike _line, x-tick labels are THINNED to ~6 evenly-spaced dates so a 90-day
+    series stays legible. Rows missing value_key are skipped; an all-null series
+    degrades to the honest empty state rather than an empty axis.
+    """
+    width, height = _VIEW_W, 300
+    pad_l, pad_r, pad_t, pad_b = 56, 24, 44, 52
+    plot_w = width - pad_l - pad_r
+    plot_h = height - pad_t - pad_b
+    baseline_y = pad_t + plot_h
+    pts = [
+        (str(r.get(date_key)), float(r[value_key]))
+        for r in rows
+        if r.get(value_key) is not None
+    ]
+    if not pts:
+        return _frame(_title(title) + _empty_state(width, height), width, height, label=title)
+    n = len(pts)
+    vmax = max(v for _, v in pts) or 1.0
+    xs = [pad_l + (plot_w * i / (n - 1) if n > 1 else plot_w / 2) for i in range(n)]
+
+    def y_of(v: float) -> float:
+        return baseline_y - (v / vmax) * plot_h
+
+    body: list[str] = [
+        _title(title),
+        f'<line x1="{pad_l}" y1="{_num(baseline_y)}" x2="{width - pad_r}" '
+        f'y2="{_num(baseline_y)}" class="ca-axis"/>',
+    ]
+    # changepoint verticals sit behind the line so the trend stays readable
+    for i, (d, _) in enumerate(pts):
+        if d in changepoint_dates:
+            body.append(
+                f'<line x1="{_num(xs[i])}" y1="{pad_t}" x2="{_num(xs[i])}" '
+                f'y2="{_num(baseline_y)}" class="ca-grid" stroke-dasharray="4 3"/>'
+            )
+            body.append(
+                f'<text x="{_num(xs[i])}" y="{pad_t - 6}" text-anchor="middle" '
+                f'class="ca-cat">结构转折</text>'
+            )
+    color = "var(--ink-strong)"
+    opacity = "0.55" if de_emphasize else "1"
+    dash = ' stroke-dasharray="4 3"' if de_emphasize else ""
+    if n >= 2:
+        path = "M" + " L".join(f"{_num(x)} {_num(y_of(v))}" for x, (_, v) in zip(xs, pts))
+        body.append(
+            f'<path d="{path}" fill="none" stroke="{color}" stroke-width="2" '
+            f'stroke-opacity="{opacity}"{dash}/>'
+        )
+    for i in {0, n - 1}:  # anchor first + last observations (single point => one dot)
+        body.append(
+            f'<circle cx="{_num(xs[i])}" cy="{_num(y_of(pts[i][1]))}" r="4" '
+            f'fill="{color}" fill-opacity="{opacity}"/>'
+        )
+    last_x, last_v = xs[n - 1], pts[n - 1][1]
+    body.append(
+        f'<text x="{_num(last_x)}" y="{_num(y_of(last_v) - 10)}" text-anchor="end" '
+        f'class="ca-num">{_esc(value_fmt(last_v))}</text>'
+    )
+    ticks = min(6, n)
+    if ticks <= 1:
+        idxs = [0]
+    else:
+        step = (n - 1) / (ticks - 1)
+        idxs = sorted({round(step * t) for t in range(ticks)})
+    for i in idxs:
+        body.append(
+            f'<text x="{_num(xs[i])}" y="{_num(baseline_y + 20)}" text-anchor="middle" '
+            f'class="ca-cat">{_esc(_short_date(pts[i][0]))}</text>'
+        )
+    return _frame("".join(body), width, height, label=title)
+
+
+def _rank_bars(
+    rows: list[dict],
+    *,
+    label_key: str,
+    value_key: str,
+    value_fmt: Callable[[float], str],
+    strength: EvidenceStrength,
+    top_n: int = 8,
+) -> str:
+    """Horizontal bars ranked by value_key descending, top_n kept. Returns "" when
+    no row carries a usable value (graceful degradation for absent/empty tables)."""
+    clean = [r for r in rows if r.get(value_key) is not None]
+    if not clean:
+        return ""
+    clean = sorted(clean, key=lambda r: float(r[value_key]), reverse=True)[:top_n]
+    vmax = max(float(r[value_key]) for r in clean) or 1.0
+    de = strength == EvidenceStrength.WEAK
+    bar_rows = [
+        (
+            str(r.get(label_key) or "—"),
+            float(r[value_key]),
+            value_fmt(float(r[value_key])),
+            "var(--ink-strong)",
+        )
+        for r in clean
+    ]
+    return f'{_chart_badge(strength, len(clean))}{_hbar(bar_rows, value_max=vmax, de_emphasize=de)}'
+
+
+def _build_demand_funnel(result: AnalysisResult, strength: EvidenceStrength) -> str:
+    rows = [
+        r for r in result.tables.get("demand_funnel_trend", [])
+        if r.get("add_to_cart_users") is not None
+    ]
+    if not rows:
+        return ""
+    total_cart = sum(float(r.get("add_to_cart_users") or 0) for r in rows)
+    total_pay = sum(float(r.get("paid_buyers") or 0) for r in rows)
+    if total_cart <= 0:
+        return ""
+    de = strength == EvidenceStrength.WEAK
+    funnel_rows = [
+        ("加购人数", total_cart, labels.format_number(total_cart), "var(--ink-strong)"),
+        ("成交人数", total_pay, labels.format_number(total_pay), "var(--ink-strong)"),
+    ]
+    funnel = _hbar(funnel_rows, value_max=total_cart, de_emphasize=de)
+    trend = _timeseries_line(
+        rows, date_key="date", value_key="cart_to_pay",
+        value_fmt=labels.format_percent, de_emphasize=de,
+        title="加购→成交转化率趋势",
+    )
+    return f'{_chart_badge(strength, int(total_cart))}{funnel}{trend}'
+
+
+def _build_core_business(result: AnalysisResult, strength: EvidenceStrength) -> str:
+    rows = [r for r in result.tables.get("business_trend", []) if r.get("gmv") is not None]
+    if not rows:
+        return ""
+    de = strength == EvidenceStrength.WEAK
+    changepoints = {str(r.get("date")) for r in rows if r.get("is_changepoint")}
+    body = _timeseries_line(
+        rows, date_key="date", value_key="gmv",
+        value_fmt=labels.format_number, de_emphasize=de,
+        title="成交金额(GMV)趋势", changepoint_dates=changepoints,
+    )
+    return f'{_chart_badge(strength, len(rows))}{body}'
+
+
+def _build_channel(result: AnalysisResult, strength: EvidenceStrength) -> str:
+    return _rank_bars(
+        result.tables.get("channel_scale", []),
+        label_key="carrier_zh", value_key="gmv",
+        value_fmt=labels.format_number, strength=strength,
+    )
+
+
+def _build_sku_l2(result: AnalysisResult, strength: EvidenceStrength) -> str:
+    return _rank_bars(
+        result.tables.get("sku_category_l2_mix", []),
+        label_key="category_l2", value_key="gmv",
+        value_fmt=labels.format_number, strength=strength,
+    )
+
+
+def _build_refund_category(result: AnalysisResult, strength: EvidenceStrength) -> str:
+    return _rank_bars(
+        result.tables.get("refund_by_category", []),
+        label_key="category_l1", value_key="refund_orders",
+        value_fmt=labels.format_number, strength=strength,
+    )
+
+
+def _build_audience(result: AnalysisResult, strength: EvidenceStrength) -> str:
+    # findings[0] is the 人群转化对比 finding, so prefer the conversion table; fall
+    # back to GMV composition share when conversion data is absent.
+    conversion = [
+        r for r in result.tables.get("audience_conversion_comparison", [])
+        if r.get("conversion") is not None
+    ]
+    if conversion:
+        return _rank_bars(
+            conversion, label_key="audience_type", value_key="conversion",
+            value_fmt=labels.format_percent, strength=strength,
+        )
+    return _rank_bars(
+        result.tables.get("audience_composition", []),
+        label_key="audience_segment", value_key="gmv_share",
+        value_fmt=labels.format_percent, strength=strength,
+    )
+
+
+_BUILDERS["demand_funnel_diagnosis"] = _build_demand_funnel
+_BUILDERS["core_business_diagnosis"] = _build_core_business
+_BUILDERS["channel_structure_diagnosis"] = _build_channel
+_BUILDERS["sku_structure_diagnosis"] = _build_sku_l2
+_BUILDERS["refund_root_cause_diagnosis"] = _build_refund_category
+_BUILDERS["audience_structure_diagnosis"] = _build_audience

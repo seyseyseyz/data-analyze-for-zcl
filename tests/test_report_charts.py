@@ -120,7 +120,7 @@ def test_cover_chart_weak_evidence_is_de_emphasized():
         ]},
     )
     html = charts.for_result(result)
-    assert "样本不足" in html
+    assert "可信度 弱" in html
     assert "url(#ca-hatch)" in html
 
 
@@ -169,7 +169,7 @@ def test_comment_demand_skips_zero_comment_groups():
         ]},
     )
     html = charts.for_result(result)
-    assert "样本不足" in html            # weak evidence badge
+    assert "可信度 弱" in html            # weak evidence badge
     assert "送礼角度" not in html         # zero-comment group omitted
 
 
@@ -209,7 +209,7 @@ def test_response_curve_single_point_series_draws_dot_not_line():
     html = charts.for_result(result)
     assert "<circle" in html
     assert "<path" not in html             # one observed point never draws a line
-    assert "样本不足" in html
+    assert "可信度 弱" in html
 
 
 def test_response_curve_empty_when_no_rows():
@@ -364,6 +364,164 @@ def test_paid_scatter_needs_data_is_neutral_hollow():
     html = charts.for_result(result)
     assert "需要补数据" in html                        # value_label("needs_data")
     assert 'fill="var(--ink-strong)"' not in html      # never a confident-looking mark
+
+
+def test_demand_funnel_draws_two_stage_funnel_and_trend():
+    result = _result(
+        "demand_funnel_diagnosis",
+        EvidenceStrength.WEAK,
+        {"demand_funnel_trend": [
+            {"date": "2026-04-01", "add_to_cart_users": 100.0, "paid_buyers": 20.0,
+             "cart_to_pay": 0.20},
+            {"date": "2026-04-02", "add_to_cart_users": 120.0, "paid_buyers": 30.0,
+             "cart_to_pay": 0.25},
+            {"date": "2026-04-03", "add_to_cart_users": 80.0, "paid_buyers": 24.0,
+             "cart_to_pay": 0.30},
+        ]},
+    )
+    html = charts.for_result(result)
+    assert "加购人数" in html and "成交人数" in html
+    assert "加购→成交转化率趋势" in html
+    assert "<path" in html                 # cart_to_pay trend draws a line
+    assert "可信度 弱" in html
+    assert "n=300" in html                 # total add_to_cart_users, not a row count
+
+
+def test_demand_funnel_empty_when_no_trend_table():
+    result = _result("demand_funnel_diagnosis", EvidenceStrength.MEDIUM, {})
+    assert charts.for_result(result) == ""
+
+
+def test_demand_funnel_survives_null_cart_to_pay():
+    result = _result(
+        "demand_funnel_diagnosis",
+        EvidenceStrength.MEDIUM,
+        {"demand_funnel_trend": [
+            {"date": "2026-04-01", "add_to_cart_users": 50.0, "paid_buyers": 10.0,
+             "cart_to_pay": None},
+        ]},
+    )
+    html = charts.for_result(result)
+    assert "加购人数" in html               # funnel still renders
+    assert "数据不足，无法判断" in html      # the trend panel degrades honestly
+
+
+def test_core_business_draws_gmv_trend_with_changepoint():
+    result = _result(
+        "core_business_diagnosis",
+        EvidenceStrength.MEDIUM,
+        {"business_trend": [
+            {"date": "2026-04-01", "gmv": 1000.0, "is_changepoint": False},
+            {"date": "2026-04-02", "gmv": 1500.0, "is_changepoint": True},
+            {"date": "2026-04-03", "gmv": 1200.0, "is_changepoint": False},
+        ]},
+    )
+    html = charts.for_result(result)
+    assert "成交金额" in html               # timeseries title
+    assert "<path" in html
+    assert "结构转折" in html               # changepoint annotation drawn
+    assert "可信度 中" in html
+
+
+def test_core_business_empty_when_no_trend():
+    result = _result("core_business_diagnosis", EvidenceStrength.MEDIUM,
+                     {"business_trend": []})
+    assert charts.for_result(result) == ""
+
+
+def test_channel_structure_bars_use_carrier_zh_labels():
+    result = _result(
+        "channel_structure_diagnosis",
+        EvidenceStrength.MEDIUM,
+        {"channel_scale": [
+            {"carrier": "note", "carrier_zh": "笔记", "gmv": 8000.0},
+            {"carrier": "card", "carrier_zh": "商品卡", "gmv": 3000.0},
+        ]},
+    )
+    html = charts.for_result(result)
+    assert "笔记" in html and "商品卡" in html
+    assert "<rect" in html
+    assert html.index("笔记") < html.index("商品卡")   # ranked by gmv desc
+
+
+def test_channel_structure_empty_when_absent():
+    result = _result("channel_structure_diagnosis", EvidenceStrength.MEDIUM, {})
+    assert charts.for_result(result) == ""
+
+
+def test_sku_structure_bars_rank_category_l2_by_gmv():
+    result = _result(
+        "sku_structure_diagnosis",
+        EvidenceStrength.MEDIUM,
+        {"sku_category_l2_mix": [
+            {"category_l2": "马克杯", "gmv": 5000.0},
+            {"category_l2": "盖碗", "gmv": 9000.0},
+        ]},
+    )
+    html = charts.for_result(result)
+    assert "盖碗" in html and "马克杯" in html
+    assert html.index("盖碗") < html.index("马克杯")    # highest gmv sits on top
+    assert "<rect" in html
+
+
+def test_sku_structure_empty_when_absent():
+    result = _result("sku_structure_diagnosis", EvidenceStrength.MEDIUM, {})
+    assert charts.for_result(result) == ""
+
+
+def test_refund_root_cause_bars_use_refund_orders():
+    result = _result(
+        "refund_root_cause_diagnosis",
+        EvidenceStrength.MEDIUM,
+        {"refund_by_category": [
+            {"category_l1": "茶具", "paid_orders": 100.0, "refund_orders": 12.0,
+             "refund_rate": 0.12},
+            {"category_l1": "餐具", "paid_orders": 80.0, "refund_orders": 4.0,
+             "refund_rate": 0.05},
+        ]},
+    )
+    html = charts.for_result(result)
+    assert "茶具" in html and "餐具" in html
+    assert html.index("茶具") < html.index("餐具")     # ranked by refund_orders desc
+    assert "<rect" in html
+
+
+def test_refund_root_cause_empty_when_absent():
+    result = _result("refund_root_cause_diagnosis", EvidenceStrength.MEDIUM, {})
+    assert charts.for_result(result) == ""
+
+
+def test_audience_structure_prefers_conversion_comparison():
+    result = _result(
+        "audience_structure_diagnosis",
+        EvidenceStrength.MEDIUM,
+        {"audience_conversion_comparison": [
+            {"audience_type": "新客", "visitors": 500.0, "payers": 25.0, "conversion": 0.05},
+            {"audience_type": "老客", "visitors": 200.0, "payers": 40.0, "conversion": 0.20},
+        ]},
+    )
+    html = charts.for_result(result)
+    assert "新客" in html and "老客" in html
+    assert "20%" in html                   # format_percent(0.20)
+
+
+def test_audience_structure_falls_back_to_composition():
+    result = _result(
+        "audience_structure_diagnosis",
+        EvidenceStrength.MEDIUM,
+        {"audience_composition": [
+            {"audience_segment": "礼品客", "gmv": 3000.0, "gmv_share": 0.6},
+            {"audience_segment": "自用客", "gmv": 2000.0, "gmv_share": 0.4},
+        ]},
+    )
+    html = charts.for_result(result)
+    assert "礼品客" in html and "自用客" in html
+    assert "60%" in html                   # gmv_share as percent when no conversion
+
+
+def test_audience_structure_empty_when_absent():
+    result = _result("audience_structure_diagnosis", EvidenceStrength.MEDIUM, {})
+    assert charts.for_result(result) == ""
 
 
 def test_builder_escapes_injected_text():

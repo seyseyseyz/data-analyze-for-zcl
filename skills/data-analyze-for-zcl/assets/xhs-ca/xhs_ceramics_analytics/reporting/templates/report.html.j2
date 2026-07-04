@@ -23,6 +23,16 @@
 <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h7l9 9-7 7-9-9z"/><circle cx="8.5" cy="8.5" r="1.3" fill="currentColor" stroke="none"/></svg>
 {%- elif name == 'chevron' -%}
 <svg class="ic ic-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+{%- elif name == 'book' -%}
+<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 6.5C10 5 6.8 5 4.5 5.6v11.8C6.8 16.8 10 16.8 12 18.3"/><path d="M12 6.5C14 5 17.2 5 19.5 5.6v11.8C17.2 16.8 14 16.8 12 18.3"/><path d="M12 6.5v11.8"/></svg>
+{%- elif name == 'checklist' -%}
+<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.8 6.6l1.3 1.3L7.6 5.4"/><path d="M10.5 6.8h9.7"/><path d="M3.8 12.4l1.3 1.3L7.6 11.2"/><path d="M10.5 12.6h9.7"/><path d="M3.8 18.2l1.3 1.3L7.6 17"/><path d="M10.5 18.4h9.7"/></svg>
+{%- elif name == 'analysis' -%}
+<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 4v15.5H20"/><rect x="7.8" y="12" width="2.8" height="5" rx="0.7"/><rect x="12.2" y="9" width="2.8" height="8" rx="0.7"/><rect x="16.6" y="6" width="2.8" height="11" rx="0.7"/></svg>
+{%- elif name == 'appendix' -%}
+<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M4 9.5h16"/><path d="M11 9.5v9.5"/></svg>
+{%- elif name == 'chat' -%}
+<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 6.2A1.7 1.7 0 0 1 6.2 4.5h11.6A1.7 1.7 0 0 1 19.5 6.2v6.6A1.7 1.7 0 0 1 17.8 14.5H10l-4 3.2v-3.2H6.2A1.7 1.7 0 0 1 4.5 12.8z"/><circle cx="9" cy="9.5" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="9.5" r="1" fill="currentColor" stroke="none"/><circle cx="15" cy="9.5" r="1" fill="currentColor" stroke="none"/></svg>
 {%- endif -%}
 {%- endmacro %}
 {% macro finding_card(finding) %}
@@ -355,6 +365,17 @@
       font-size: clamp(30px, 3.6vw, 46px);
       line-height: 1.08;
       letter-spacing: -0.01em;
+    }
+
+    /* Section-marker icon: sized in em so it tracks the responsive heading, and
+       muted so it reads as a quiet landmark rather than competing with the type. */
+    h2 .ic {
+      width: 0.62em;
+      height: 0.62em;
+      margin-right: 0.42em;
+      color: var(--muted);
+      stroke-width: 1.9;
+      vertical-align: -0.04em;
     }
 
     .section-kicker {
@@ -1016,7 +1037,7 @@
     <section id="guide" class="reveal" style="--index: 1">
       <div class="section-heading">
         <p class="section-kicker">Reader Path</p>
-        <h2>经营导读</h2>
+        <h2>{{ ic('book') }}经营导读</h2>
         <p class="section-lede">
           先读这里就能知道本周最值得做什么。数据质量和原始字段放在后面，避免一打开报告就被机器字段打断。
         </p>
@@ -1061,7 +1082,7 @@
     <section id="actions" class="reveal" style="--index: 2">
       <div class="section-heading">
         <p class="section-kicker">Next Week</p>
-        <h2>下周行动计划</h2>
+        <h2>{{ ic('checklist') }}下周行动计划</h2>
         <p class="section-lede">
           每条行动都写清楚目标、原因、执行方式、观察指标和暂停条件。执行时一次只改一个变量，避免看不出到底是什么起作用。
         </p>
@@ -1100,7 +1121,7 @@
     <section id="analysis" class="reveal" style="--index: 3">
       <div class="section-heading">
         <p class="section-kicker">Deep Dive</p>
-        <h2>详细分析</h2>
+        <h2>{{ ic('analysis') }}详细分析</h2>
         <p class="section-lede">
           这里按业务问题分组，不按程序模块排序。每个小节先讲结论，再给用户视图表格；需要查原始字段时，再展开技术追溯信息。
         </p>
@@ -1261,7 +1282,7 @@
     <section id="appendix" class="reveal" style="--index: 4">
       <div class="section-heading">
         <p class="section-kicker">Appendix</p>
-        <h2>数据附录</h2>
+        <h2>{{ ic('appendix') }}数据附录</h2>
         <p class="section-lede">
           附录保留字段和机器表名，方便复查。普通读者可以只看中文解释；需要查数时再展开表格。
         </p>
@@ -1292,7 +1313,7 @@
     <section id="assistant" class="reveal" style="--index: 5">
       <div class="section-heading">
         <p class="section-kicker">Assistant Questions</p>
-        <h2>可以问{{ report.assistant_name }}的问题</h2>
+        <h2>{{ ic('chat') }}可以问{{ report.assistant_name }}的问题</h2>
         <p class="section-lede">
           报告本身负责稳定交付；{{ report.assistant_name }}更适合解释细节、改写成执行清单，或根据你的约束重新排优先级。
         </p>
