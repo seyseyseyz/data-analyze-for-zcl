@@ -1,0 +1,227 @@
+tests/test_analytics_text_mining.py
+  s_6bd2349b4ebd4d::t_57e49d6dfa11c5 39
+  s_6bd2349b4ebd4d::t_723e3d85fd3187 75-94
+  s_6bd2349b4ebd4d::t_ae6443f996bdf4 1-8,10-38,40-41,63-74,120-155
+  s_6bd2349b4ebd4d::t_d19820ed61ad6c 42-62
+  s_6bd2349b4ebd4d::t_7ca79f09fd5cd7 9
+  s_6bd2349b4ebd4d::t_64521dd197b0eb 95-119
+tests/test_analytics_concentration.py
+  s_6bd2349b4ebd4d::t_cf316bdf484b7c 1-61
+xhs_ceramics_analytics/analytics/benchmark.py
+  s_6bd2349b4ebd4d::t_64129efb542768 1-51
+xhs_ceramics_analytics/analysis/note_commercial.py
+  s_6bd2349b4ebd4d::t_23453c85ed94e2 13
+  s_6bd2349b4ebd4d::t_f1cfd9938699a2 159-162,164-168,172,187-188
+xhs_ceramics_analytics/analysis/audience_structure.py
+  s_6bd2349b4ebd4d::t_9867b975dcf434 18
+  s_6bd2349b4ebd4d::t_c9dd887236b3ce 46-49,54-59
+  s_6bd2349b4ebd4d::t_e64ec94f97fc90 439-563
+  s_6bd2349b4ebd4d::t_00cc486e391d7a 85-90
+tests/test_report_rendering.py
+  s_6bd2349b4ebd4d::t_482499db7e484e 10-67,69,75-76
+  s_6bd2349b4ebd4d::t_54643c39238a69 68,70-74
+xhs_ceramics_analytics/analytics/timeseries.py
+  s_6bd2349b4ebd4d::t_46de0f91d641cb 272-320
+  s_6bd2349b4ebd4d::t_3a5a998b81fd8e 83-94,96,98-107,110,117-182
+  s_6bd2349b4ebd4d::t_85c989beaebcb5 33-43
+  s_6bd2349b4ebd4d::t_2d8e1ab9239bdf 251-255,261-263
+  s_6bd2349b4ebd4d::t_2ae28612c57bc4 44-52
+  s_6bd2349b4ebd4d::t_31a34cadddd7e3 185-232
+tests/test_comment_demand.py
+  s_6bd2349b4ebd4d::t_41d48a68ae561a 70-75,78,81-104
+  s_6bd2349b4ebd4d::t_4b40cb51e9fae6 76-77,79-80
+  s_6bd2349b4ebd4d::t_7b58dab77ea41a 1-25,36-69,105-128
+  s_6bd2349b4ebd4d::t_3e20ab6fa6e679 26-35
+tests/test_analytics_distribution.py
+  s_6bd2349b4ebd4d::t_412b2aeaf1293e 1-4,6-8,10-77
+  s_6bd2349b4ebd4d::t_1ad1a127599694 78-122
+  s_6bd2349b4ebd4d::t_86d8a170902e2e 5,9
+xhs_ceramics_analytics/analysis/refund_root_cause_diagnosis.py
+  s_6bd2349b4ebd4d::t_6435c4f9fa0d33 315,317-322,325-326,335
+  s_6bd2349b4ebd4d::t_92fb148de788c2 19
+xhs_ceramics_analytics/analytics/cadence.py
+  s_6bd2349b4ebd4d::t_1c01f8123f5d24 1-49,58-64,66-115
+  s_6bd2349b4ebd4d::t_77b207b073542d 50-57,65
+tests/test_analytics_elasticity.py
+  s_6bd2349b4ebd4d::t_4b98ad944410d9 1-76
+xhs_ceramics_analytics/reporting/templates/report.html.j2
+  s_6bd2349b4ebd4d::t_d7ac1147c04b5e 1082-1122
+  s_6bd2349b4ebd4d::t_e11247ce0dd0ca 1161,1322,1353
+tests/test_analytics_trends.py
+  s_6bd2349b4ebd4d::t_9b8cd5ab16f13c 103-133
+  s_6bd2349b4ebd4d::t_825685e14b31d5 2
+  s_6bd2349b4ebd4d::t_bc01d9669eb67d 65-102
+  s_6bd2349b4ebd4d::t_da1dae082e3f95 6
+docs/superpowers/specs/2026-07-04-analytics-rigor-and-depth-overhaul-design.md
+  s_6bd2349b4ebd4d::t_eacf0fd2f92da2 1-184
+xhs_ceramics_analytics/analysis/core_business.py
+  s_6bd2349b4ebd4d::t_e154ae7821ef44 601-709,718-719
+  s_6bd2349b4ebd4d::t_11988978a4a483 163-173
+  s_6bd2349b4ebd4d::t_772186ec6b619c 80-84
+  s_6bd2349b4ebd4d::t_b8c883ed863bb4 45-47
+  s_6bd2349b4ebd4d::t_3fca0d91d62744 382
+  s_6bd2349b4ebd4d::t_6d054eb8b89c79 99-103
+  s_6bd2349b4ebd4d::t_c354b7ad271103 402-517
+  s_6bd2349b4ebd4d::t_1a6a185eff694c 29
+  s_6bd2349b4ebd4d::t_b2a0918085c336 85-89
+  s_6bd2349b4ebd4d::t_6849461e8a434d 26,36
+  s_6bd2349b4ebd4d::t_b9c92f45349576 553-558,560-561,569-573
+  s_6bd2349b4ebd4d::t_27ccbdc25c2204 710-717
+  s_6bd2349b4ebd4d::t_5f7b70ed64e4d9 23
+  s_6bd2349b4ebd4d::t_8d1fdae3bfcf28 305,323,327,341,343
+  s_6bd2349b4ebd4d::t_dddac9bcf29e05 30
+  s_6bd2349b4ebd4d::t_9df0beebc6a197 271-304,306-322,324-326,328-340,342,344-381,383-401
+  s_6bd2349b4ebd4d::t_ef2cc9719b959b 1065-1086
+  s_6bd2349b4ebd4d::t_a9ac3263a2cbc4 264-265,268
+  s_6bd2349b4ebd4d::t_5e86ff6f94b091 585-590
+  s_6bd2349b4ebd4d::t_c5ffce6f45d14a 766-771,776-777
+  s_6bd2349b4ebd4d::t_ca010874519022 946-951,953-954
+  s_6bd2349b4ebd4d::t_66c21e9028dd04 24,27,31-35,37
+  s_6bd2349b4ebd4d::t_fd6a05de117f15 153-157
+  s_6bd2349b4ebd4d::t_9adaff170eb323 203-204
+  s_6bd2349b4ebd4d::t_553491a96b5663 16,19
+  s_6bd2349b4ebd4d::t_d616c39e406ead 523-527,529,535-544,546-548,550-552,565,567-568
+xhs_ceramics_analytics/analysis/comment_demand.py
+  s_6bd2349b4ebd4d::t_9c368f3d34e115 8,11
+  s_6bd2349b4ebd4d::t_7be80359cc2672 116
+  s_6bd2349b4ebd4d::t_0ee063981bf83c 57-87,91-92,97-112,121-127,131-136,138-143,145-149,154-165,167-171,173-192
+  s_6bd2349b4ebd4d::t_34c3d02259228f 166,172
+  s_6bd2349b4ebd4d::t_d5c6d546c68720 201,212,221-222
+  s_6bd2349b4ebd4d::t_524f69b57e9591 113-115,117-120,128-130,137,144,150-153
+  s_6bd2349b4ebd4d::t_cdc44190c29002 4-7,9,25-35
+  s_6bd2349b4ebd4d::t_462afc57ca27e6 10
+xhs_ceramics_analytics/analytics/elasticity.py
+  s_6bd2349b4ebd4d::t_18f4600bf8c57f 1-118
+xhs_ceramics_analytics/analytics/concentration.py
+  s_6bd2349b4ebd4d::t_558791a9f7f274 1-58
+tests/test_analytics_decomposition.py
+  s_6bd2349b4ebd4d::t_63f39980ffc9ca 1-80
+tests/test_sku_structure.py
+  s_6bd2349b4ebd4d::t_13885f19c9ff7e 140-179
+  s_6bd2349b4ebd4d::t_83d681c3cd956d 117-139
+  s_6bd2349b4ebd4d::t_045f827884ac8e 180-246
+xhs_ceramics_analytics/analysis/paid_traffic.py
+  s_6bd2349b4ebd4d::t_c61e8149b93aa7 84-112,116-203,207-229,233-250
+  s_6bd2349b4ebd4d::t_6607852467cfe6 59
+  s_6bd2349b4ebd4d::t_fa533818e420fe 230-232
+  s_6bd2349b4ebd4d::t_1f55b1171a8374 5,12-13,19-21
+xhs_ceramics_analytics/analytics/distribution.py
+  s_6bd2349b4ebd4d::t_cdb03b248f5b72 1-93,133-168
+  s_6bd2349b4ebd4d::t_75447331e303b2 94-132
+tests/test_core_business.py
+  s_6bd2349b4ebd4d::t_f27a9fa75f6403 340-378
+  s_6bd2349b4ebd4d::t_9597e7c8595c4a 218-278
+  s_6bd2349b4ebd4d::t_82636a7b51d3f4 279-339
+  s_6bd2349b4ebd4d::t_4ddce7d4c62b4c 401-428
+xhs_ceramics_analytics/analytics/decomposition.py
+  s_6bd2349b4ebd4d::t_85be49990dd9c0 1-99
+xhs_ceramics_analytics/analysis/account_baseline.py
+  s_6bd2349b4ebd4d::t_31b3f1a5235ac5 57,61-81,85-174,178-261
+  s_6bd2349b4ebd4d::t_8d421a201239f4 5,11-29
+xhs_ceramics_analytics/reporting/field_labels.py
+  s_6bd2349b4ebd4d::t_850472222ce71e 304-311
+  s_6bd2349b4ebd4d::t_8b0b1e67224218 120-125
+  s_6bd2349b4ebd4d::t_fa4e7622e58b2c 174-178
+  s_6bd2349b4ebd4d::t_edaebbeaa940be 141-142
+  s_6bd2349b4ebd4d::t_53f3eb5e6815b8 312-316
+  s_6bd2349b4ebd4d::t_ee59b8fa8d847a 158-160
+  s_6bd2349b4ebd4d::t_eaea3b10c9b982 135-140,143
+  s_6bd2349b4ebd4d::t_f40ad98867539b 179-183
+  s_6bd2349b4ebd4d::t_415a6199d6732b 244-245
+  s_6bd2349b4ebd4d::t_1612ac8392b23e 317-321
+  s_6bd2349b4ebd4d::t_6e761337a86789 379-381
+  s_6bd2349b4ebd4d::t_eab877e9ed325b 157,161-173
+xhs_ceramics_analytics/reporting/html.py
+  s_6bd2349b4ebd4d::t_40dcbef3ac5076 330-337
+  s_6bd2349b4ebd4d::t_a17adcf11f0d50 350-355
+  s_6bd2349b4ebd4d::t_6c44ac919a0f97 168
+  s_6bd2349b4ebd4d::t_f50e179140f8fe 187
+  s_6bd2349b4ebd4d::t_f659604e7b0447 356-363
+  s_6bd2349b4ebd4d::t_1029faf91e1852 180
+  s_6bd2349b4ebd4d::t_5f63f84d38137f 760
+  s_6bd2349b4ebd4d::t_020ae17ae758a6 155
+  s_6bd2349b4ebd4d::t_0b2475c7a9860b 167
+  s_6bd2349b4ebd4d::t_4edfc833538490 279-282,284-285
+  s_6bd2349b4ebd4d::t_881329f3381bd5 380-387
+  s_6bd2349b4ebd4d::t_b3a941f3b72374 162
+  s_6bd2349b4ebd4d::t_88a964e5b8f75e 8
+  s_6bd2349b4ebd4d::t_07363ec2bb4f02 145
+  s_6bd2349b4ebd4d::t_9c975ad8a01060 215-221
+  s_6bd2349b4ebd4d::t_48a4895984100c 222
+  s_6bd2349b4ebd4d::t_91a6dad7fd0483 938-963
+  s_6bd2349b4ebd4d::t_feab4fe323c647 283
+  s_6bd2349b4ebd4d::t_26aec665b1f724 166
+  s_6bd2349b4ebd4d::t_e56869bd794f5e 374-379
+  s_6bd2349b4ebd4d::t_23059fe9241ccd 208-214
+  s_6bd2349b4ebd4d::t_d1b90d6dac8ec5 186
+  s_6bd2349b4ebd4d::t_12595d682e7893 224-231
+xhs_ceramics_analytics/reporting/formatting.py
+  s_6bd2349b4ebd4d::t_791c7ebb351e1f 87
+  s_6bd2349b4ebd4d::t_31257b904232f8 159
+xhs_ceramics_analytics/analytics/confidence.py
+  s_6bd2349b4ebd4d::t_8dc884993c999a 80-176
+tests/test_analytics_cadence.py
+  s_6bd2349b4ebd4d::t_bad1a2ab5cd1cb 1-63
+tests/test_analytics_confidence.py
+  s_6bd2349b4ebd4d::t_2a5f4affe6299b 93-145
+  s_6bd2349b4ebd4d::t_c53ebde853d8bd 6,9-10
+xhs_ceramics_analytics/analytics/text_mining.py
+  s_6bd2349b4ebd4d::t_5c3d33fbb5279d 1-33,35-41,51-86,88-89,122,124-126,145,147-148,175-217
+  s_6bd2349b4ebd4d::t_b025922827a746 149-174
+  s_6bd2349b4ebd4d::t_5fa8133261d984 127-144,146
+  s_6bd2349b4ebd4d::t_14a30245dcdce9 34,42-50,87,90-121,123
+tests/test_account_baseline.py
+  s_6bd2349b4ebd4d::t_df47b2d6568d6f 1-87
+tests/test_audience_structure.py
+  s_6bd2349b4ebd4d::t_2df390c9079218 276-349
+tests/test_analysis_tasks.py
+  s_6bd2349b4ebd4d::t_dcf897b295a59e 193-261
+xhs_ceramics_analytics/reporting/markdown.py
+  s_6bd2349b4ebd4d::t_13359cfec6d1d7 7
+  s_6bd2349b4ebd4d::t_bb4209e798680f 49
+  s_6bd2349b4ebd4d::t_6f942a30e77dc0 68-98
+tests/test_reporting_priority.py
+  s_6bd2349b4ebd4d::t_e72e721e1314f0 1-160
+xhs_ceramics_analytics/reporting/priority.py
+  s_6bd2349b4ebd4d::t_4e69535504ad12 1-161
+tests/test_analytics_timeseries.py
+  s_6bd2349b4ebd4d::t_1c301f38925942 8,14-25
+  s_6bd2349b4ebd4d::t_137d34d240d736 28-38
+  s_6bd2349b4ebd4d::t_3a33dbcf8e66ea 109-190
+  s_6bd2349b4ebd4d::t_4f04172c1c52b8 7
+  s_6bd2349b4ebd4d::t_44a2b84f60cdf8 3
+  s_6bd2349b4ebd4d::t_f7df858c63d586 191-228
+  s_6bd2349b4ebd4d::t_2729caf86e9d89 5,10
+xhs_ceramics_analytics/analysis/sku_structure.py
+  s_6bd2349b4ebd4d::t_19146e94638bc0 49-55
+  s_6bd2349b4ebd4d::t_9526705067baa3 180-185,191-192,197-201,206
+  s_6bd2349b4ebd4d::t_ebf39dca230401 86-90
+  s_6bd2349b4ebd4d::t_226d4942c92221 91-95
+  s_6bd2349b4ebd4d::t_6469700fde62f8 324-404
+  s_6bd2349b4ebd4d::t_9285b9d316f5b1 39-48
+  s_6bd2349b4ebd4d::t_6d6e7073b37e0c 405-537
+  s_6bd2349b4ebd4d::t_2ef33c80b08ac8 15
+  s_6bd2349b4ebd4d::t_f8b34cfad36dd7 13
+xhs_ceramics_analytics/analytics/trends.py
+  s_6bd2349b4ebd4d::t_9837bf9094134e 2,5-7,22-34
+  s_6bd2349b4ebd4d::t_cb1274ce47ecc5 108-140
+  s_6bd2349b4ebd4d::t_19c167dec5c4a2 50,55,58,64-66,75-105
+tests/test_analytics_benchmark.py
+  s_6bd2349b4ebd4d::t_71b49009714264 1-45
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.28-trip",
+  "base_commit_sha": "4c0f345516cf5c3bc63e6d8aa2c80d69c0470d71",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
