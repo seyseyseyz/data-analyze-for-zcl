@@ -1,0 +1,33 @@
+xhs_ceramics_analytics/analysis/core_business.py
+  s_6bd2349b4ebd4d::t_85598e181cea43 201-205
+xhs_ceramics_analytics/reporting/charts.py
+  s_6bd2349b4ebd4d::t_88d25416d7d37e 165-182
+  s_6bd2349b4ebd4d::t_ad432287db0fef 567,569-571
+  s_6bd2349b4ebd4d::t_65b5a174a4be86 568,572,574-576
+  s_6bd2349b4ebd4d::t_01a10855b94aca 619-620,627-632,634
+  s_6bd2349b4ebd4d::t_72e5d4e166c32f 113-121,131,139
+tests/test_report_charts.py
+  s_6bd2349b4ebd4d::t_da010d64ccd184 534-582
+  s_6bd2349b4ebd4d::t_c962c39a1ce43e 529-533
+  s_6bd2349b4ebd4d::t_8c056ea49df345 1-2
+xhs_ceramics_analytics/analysis/demand_funnel.py
+  s_6bd2349b4ebd4d::t_6445c74f650007 114-117,123,130
+  s_6bd2349b4ebd4d::t_fbdab0c095856c 14
+  s_6bd2349b4ebd4d::t_d4ca8173ffc96b 206,209,211
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.28-trip",
+  "base_commit_sha": "9bcc522bc4bdafbe9cc5a6b62360e4c428c14aab",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
