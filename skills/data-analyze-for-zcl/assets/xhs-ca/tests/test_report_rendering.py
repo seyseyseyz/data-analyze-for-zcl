@@ -334,11 +334,17 @@ def test_render_html_builds_reader_friendly_editorial_report():
     assert "可以问分析助手的问题" in html
     assert "<details" in html
     assert "<pre>" not in html
-    assert (
-        "font-family: 'SF Pro Display', 'Geist Sans', 'Helvetica Neue', 'Switzer', sans-serif;"
-        in html
-    )
-    assert "border: 1px solid #EAEAEA" in html
+    # CJK-aware system stacks (no external webfonts — the single-file report
+    # forbids http(s) refs), driven by design tokens: Latin resolves to an
+    # editorial serif for headings, CJK to Songti/思源宋体.
+    assert "font-family: var(--font-sans);" in html
+    assert "font-family: var(--font-serif);" in html
+    assert "'PingFang SC'" in html
+    assert "--line: #EAEAEA;" in html
+    assert "border: 1px solid var(--line)" in html
+    # Borders are tokenized, never hard-coded to the raw hex anymore.
+    assert "1px solid #EAEAEA" not in html
+    # radial-gradient is allowed (ambient light spots); linear-gradient is not.
     assert "linear-gradient" not in html
     assert "Lucide" not in html
 

@@ -62,7 +62,10 @@ def test_evidence_distribution_renders_segments_with_counts():
     svg = charts.evidence_distribution(counts)
     assert "<svg" in svg
     assert "var(--green-bg)" in svg   # strong+medium share green
-    assert "var(--yellow-bg)" in svg  # weak
+    # weak reads neutral-grey, not warning-yellow: an observational finding is
+    # "directional", not "broken" (matches the report's tag palette).
+    assert "var(--neutral-bg)" in svg  # weak
+    assert "var(--yellow-bg)" not in svg
     assert "var(--red-bg)" in svg     # not_judgable
     assert "强 2" in svg and "中 3" in svg and "弱 1" in svg and "不可判断 4" in svg
 

@@ -1,9 +1,38 @@
+{#
+  Inline icon set — Phosphor/Radix-style, 1.75px stroke, currentColor.
+  NO xmlns attribute on purpose: the HTML5 parser handles inline SVG, and an
+  xmlns="http://…" would inject an http:// URL that the single-file / no-external
+  guarantee test forbids. Keep every icon self-contained and URL-free.
+#}
+{% macro ic(name) -%}
+{%- if name == 'spark' -%}
+<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="M8 15c3.5 0 6-2.5 6-6" /><circle cx="15.5" cy="15.5" r="1.4" fill="currentColor" stroke="none"/></svg>
+{%- elif name == 'target' -%}
+<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"/></svg>
+{%- elif name == 'steps' -%}
+<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11"/><path d="M9 12h11"/><path d="M9 18h11"/><circle cx="4.5" cy="6" r="1.3" fill="currentColor" stroke="none"/><circle cx="4.5" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="4.5" cy="18" r="1.3" fill="currentColor" stroke="none"/></svg>
+{%- elif name == 'gauge' -%}
+<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 16a8 8 0 0 1 16 0"/><path d="M12 16l4-4"/><circle cx="12" cy="16" r="1.3" fill="currentColor" stroke="none"/></svg>
+{%- elif name == 'pause' -%}
+<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="6" width="3.2" height="12" rx="1.2"/><rect x="13.8" y="6" width="3.2" height="12" rx="1.2"/></svg>
+{%- elif name == 'warn' -%}
+<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4.5l8 14H4z"/><path d="M12 10v4"/><circle cx="12" cy="16.4" r="1" fill="currentColor" stroke="none"/></svg>
+{%- elif name == 'info' -%}
+<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5"/><circle cx="12" cy="8" r="1" fill="currentColor" stroke="none"/></svg>
+{%- elif name == 'tag' -%}
+<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h7l9 9-7 7-9-9z"/><circle cx="8.5" cy="8.5" r="1.3" fill="currentColor" stroke="none"/></svg>
+{%- elif name == 'chevron' -%}
+<svg class="ic ic-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+{%- endif -%}
+{%- endmacro %}
 {% macro finding_card(finding) %}
 <article class="finding-card">
-  <span class="tag {{ finding.evidence_class }}">可信度 {{ finding.evidence }}</span>
-  {% if finding.reliability %}
-  <span class="tag reliability-{{ finding.reliability_class }}" title="{{ finding.reliability_help }}">描述可靠性 {{ finding.reliability }}</span>
-  {% endif %}
+  <div class="finding-tags">
+    <span class="tag {{ finding.evidence_class }}" title="{{ finding.help }}">可信度 {{ finding.evidence }}</span>
+    {% if finding.reliability %}
+    <a class="tag reliability-{{ finding.reliability_class }}" href="#appendix" title="{{ finding.reliability_help }}">描述可靠性 {{ finding.reliability }}</a>
+    {% endif %}
+  </div>
   <h3>{{ finding.title }}</h3>
   <p>{{ finding.body }}</p>
 
@@ -34,8 +63,8 @@
   {% endif %}
 
   {% if finding.confounders %}
-  <div class="notice">
-    <strong>可能的混淆因素</strong>
+  <div class="notice notice-warn">
+    <strong>{{ ic('warn') }} 可能的混淆因素</strong>
     <ul class="note-list">
       {% for confounder in finding.confounders %}
       <li>{{ confounder }}</li>
@@ -81,38 +110,95 @@
       --yellow-text: #956400;
       --red-bg: #FDEBEC;
       --red-text: #9F2F2D;
+      /* Neutral tier — the honest default for observational, low-causal-strength
+         findings. Grey, not alarm-yellow: a "低可信度" wall should read calm,
+         because it means "directional", not "broken". */
+      --neutral-bg: #F1F1EF;
+      --neutral-text: #787774;
+      --radius-card: 12px;
+      --radius-inner: 8px;
+      /* CJK-aware type. Latin glyphs resolve to Charter/Georgia (editorial serif),
+         CJK glyphs to Songti/思源宋体 — so a Chinese headline is genuinely serif,
+         something no base64-embedded Latin webfont could achieve. All system
+         fonts: keeps the single-file report offline and URL-free. */
+      --font-sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'SF Pro Text',
+        'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Hiragino Sans GB', system-ui, sans-serif;
+      --font-serif: 'Charter', 'Iowan Old Style', 'Palatino Linotype', Georgia,
+        'Songti SC', 'STSong', 'Source Han Serif SC', 'Noto Serif SC', 'SimSun', ui-serif, serif;
+      --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Cascadia Code',
+        Menlo, Consolas, 'Courier New', monospace;
     }
 
     * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
 
     body {
       margin: 0;
       background: var(--canvas);
       color: var(--ink);
-      font-family: 'SF Pro Display', 'Geist Sans', 'Helvetica Neue', 'Switzer', sans-serif;
+      font-family: var(--font-sans);
       line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
     }
 
-    body::before {
-      content: "";
+    /* Ambient depth: two warm/cool light spots + a faint dotted grid. Fixed,
+       non-interactive, sits behind the content shell so sections never read flat. */
+    .ambient {
       position: fixed;
       inset: 0;
+      z-index: 0;
       pointer-events: none;
-      opacity: 0.18;
-      border-left: 1px solid rgba(0,0,0,0.04);
-      border-right: 1px solid rgba(0,0,0,0.04);
-      width: min(1180px, calc(100% - 40px));
-      margin: 0 auto;
+      background:
+        radial-gradient(46rem 34rem at 12% -6%, rgba(203, 178, 140, 0.16), transparent 60%),
+        radial-gradient(42rem 34rem at 104% 4%, rgba(150, 178, 205, 0.13), transparent 58%),
+        radial-gradient(40rem 40rem at 50% 118%, rgba(190, 180, 205, 0.10), transparent 60%);
+    }
+
+    /* Faint dotted grid for texture. Kept very low-opacity and fading toward the
+       page bottom via a radial vignette mask (radial, not linear — the report
+       forbids gradient fills but permits soft radial light). */
+    .ambient::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background-image: radial-gradient(circle, rgba(17, 17, 17, 0.02) 1px, transparent 1px);
+      background-size: 24px 24px;
+      mask-image: radial-gradient(120% 90% at 50% 0%, rgba(0, 0, 0, 0.9), transparent 72%);
+      -webkit-mask-image: radial-gradient(120% 90% at 50% 0%, rgba(0, 0, 0, 0.9), transparent 72%);
     }
 
     a { color: inherit; text-decoration: none; }
 
+    .ic {
+      width: 1em;
+      height: 1em;
+      display: inline-block;
+      vertical-align: -0.125em;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.75;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      flex: none;
+    }
+
     .report-shell {
+      position: relative;
+      z-index: 1;
       width: min(1180px, calc(100% - 40px));
       margin: 0 auto;
-      padding: 32px 0 72px;
-      position: relative;
+      padding: 32px 0 112px;
     }
+
+    /* Reading measure: long-form copy is capped near ~68ch so lines stay legible
+       even though the shell itself is wide enough for bento grids. */
+    .hero-copy,
+    .section-lede,
+    .panel-header p,
+    .axis-note,
+    .empty-state { max-width: 68ch; }
 
     .topbar {
       display: flex;
@@ -127,31 +213,12 @@
     .brand {
       display: inline-flex;
       align-items: center;
-      gap: 10px;
+      gap: 9px;
       color: var(--ink-strong);
       font-weight: 700;
-      letter-spacing: 0;
     }
 
-    .brand-mark {
-      width: 18px;
-      height: 18px;
-      border: 2px solid var(--ink-strong);
-      border-radius: 4px;
-      display: inline-block;
-      position: relative;
-    }
-
-    .brand-mark::after {
-      content: "";
-      position: absolute;
-      width: 6px;
-      height: 6px;
-      right: 3px;
-      bottom: 3px;
-      background: var(--ink-strong);
-      border-radius: 2px;
-    }
+    .brand .ic { width: 20px; height: 20px; stroke-width: 1.9; }
 
     .toc {
       display: flex;
@@ -163,34 +230,51 @@
     .toc a {
       border-bottom: 1px solid transparent;
       padding-bottom: 2px;
+      transition: border-color 160ms ease, color 160ms ease;
     }
 
-    .toc a:hover { border-color: var(--ink-strong); }
+    .toc a:hover { border-color: var(--ink-strong); color: var(--ink-strong); }
 
     .hero {
+      position: relative;
       background: var(--surface);
-      border: 1px solid #EAEAEA;
-      border-radius: 12px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-card);
       padding: clamp(32px, 6vw, 72px);
       min-height: 420px;
       display: grid;
       grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
       gap: 48px;
       align-items: end;
+      overflow: hidden;
     }
+
+    /* Editorial glow inside the hero card so its large surface has depth. */
+    .hero::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background:
+        radial-gradient(30rem 22rem at 88% -20%, rgba(203, 178, 140, 0.14), transparent 62%),
+        radial-gradient(24rem 20rem at -8% 120%, rgba(150, 178, 205, 0.12), transparent 60%);
+    }
+
+    .hero > * { position: relative; }
 
     .eyebrow,
     .tag {
       display: inline-flex;
       align-items: center;
+      gap: 5px;
       width: fit-content;
       border-radius: 9999px;
-      padding: 5px 10px;
+      padding: 5px 11px;
       font-size: 11px;
       line-height: 1;
-      letter-spacing: 0;
+      letter-spacing: 0.04em;
       text-transform: uppercase;
-      font-family: 'Geist Mono', 'SF Mono', 'JetBrains Mono', monospace;
+      font-family: var(--font-mono);
       font-weight: 700;
     }
 
@@ -204,16 +288,15 @@
     .display {
       margin: 0;
       color: var(--ink-strong);
-      font-family: 'Lyon Text', 'Newsreader', 'Playfair Display', 'Instrument Serif', serif;
-      font-size: 72px;
-      line-height: 0.96;
-      letter-spacing: 0;
-      max-width: 880px;
+      font-family: var(--font-serif);
+      font-size: clamp(44px, 6vw, 76px);
+      line-height: 1.03;
+      letter-spacing: -0.01em;
+      max-width: 14ch;
     }
 
     .hero-copy {
       margin: 24px 0 0;
-      max-width: 680px;
       color: var(--muted);
       font-size: 18px;
     }
@@ -229,21 +312,21 @@
     .finding-card,
     .table-card {
       background: var(--surface);
-      border: 1px solid #EAEAEA;
-      border-radius: 12px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-card);
     }
 
     .metric-card {
-      padding: 20px;
+      padding: 20px 22px;
     }
 
     .metric-label,
     .meta-label {
       color: var(--muted);
       font-size: 12px;
-      letter-spacing: 0;
+      letter-spacing: 0.04em;
       text-transform: uppercase;
-      font-family: 'Geist Mono', 'SF Mono', 'JetBrains Mono', monospace;
+      font-family: var(--font-mono);
     }
 
     .metric-value {
@@ -252,33 +335,34 @@
       color: var(--ink-strong);
       font-size: 34px;
       line-height: 1;
-      font-weight: 760;
-      letter-spacing: 0;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
     }
 
     section {
-      padding: 72px 0 0;
+      padding: 104px 0 0;
     }
 
     .section-heading {
-      max-width: 820px;
-      margin-bottom: 28px;
+      max-width: 60ch;
+      margin-bottom: 32px;
     }
 
     h2 {
       margin: 0;
       color: var(--ink-strong);
-      font-size: 42px;
+      font-family: var(--font-serif);
+      font-size: clamp(30px, 3.6vw, 46px);
       line-height: 1.08;
-      letter-spacing: 0;
+      letter-spacing: -0.01em;
     }
 
     .section-kicker {
       margin: 0 0 12px;
       color: var(--muted);
-      font-family: 'Geist Mono', 'SF Mono', 'JetBrains Mono', monospace;
+      font-family: var(--font-mono);
       font-size: 12px;
-      letter-spacing: 0;
+      letter-spacing: 0.08em;
       text-transform: uppercase;
     }
 
@@ -286,7 +370,6 @@
       margin: 14px 0 0;
       color: var(--muted);
       font-size: 17px;
-      max-width: 760px;
     }
 
     .bento {
@@ -298,13 +381,16 @@
     .card,
     .finding-card {
       padding: 28px;
-      transition: transform 200ms ease, box-shadow 200ms ease;
+      transition: box-shadow 200ms ease, border-color 200ms ease;
     }
 
+    /* Hover lifts via shadow + border only (no transform): a filled scroll-reveal
+       animation retains its final transform and would otherwise override a hover
+       translate, so we keep the two concerns on separate properties. */
     .card:hover,
     .finding-card:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+      border-color: #E0E0DC;
     }
 
     .span-7 { grid-column: span 7; }
@@ -315,30 +401,55 @@
 
     .card h3,
     .finding-card h3 {
-      margin: 0;
+      margin: 14px 0 0;
       color: var(--ink-strong);
       font-size: 20px;
-      letter-spacing: 0;
-      line-height: 1.25;
+      letter-spacing: -0.005em;
+      line-height: 1.3;
     }
 
     .card p,
     .finding-card p {
-      margin: 14px 0 0;
+      margin: 12px 0 0;
       color: var(--ink);
     }
 
+    .finding-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    /* Causal-strength tag: solid fill. Green = usable, neutral grey = directional
+       (the honest common case), red = not judgable. Yellow is retired from this
+       axis so an all-observational report no longer reads as a wall of warnings. */
     .tag.medium,
     .tag.strong { background: var(--green-bg); color: var(--green-text); }
-    .tag.weak { background: var(--yellow-bg); color: var(--yellow-text); }
+    .tag.weak { background: var(--neutral-bg); color: var(--neutral-text); }
     .tag.not_judgable { background: var(--red-bg); color: var(--red-text); }
     .tag.info { background: var(--blue-bg); color: var(--blue-text); }
-    /* Reliability is the orthogonal axis — a distinct blue family so readers never
-       confuse it with the green/yellow/red causal-strength tag beside it. */
-    .tag.reliability-high { background: var(--blue-bg); color: var(--blue-text); }
-    .tag.reliability-medium { background: #EEF6FB; color: var(--blue-text); }
-    .tag.reliability-low,
-    .tag.reliability-not_applicable { background: #F1F1EF; color: var(--muted); }
+
+    /* Section label — its own quiet outline token, no longer sharing the blue
+       .info chip (which now means only "how to read"). */
+    .tag.section-label {
+      background: transparent;
+      border: 1px solid var(--line);
+      color: var(--muted);
+    }
+
+    /* Reliability = the orthogonal axis. Rendered as an OUTLINE chip (虚) so it
+       never visually competes with the solid causal chip (实) beside it. Links to
+       the appendix so the full "两把尺子" explanation is reachable on touch, not
+       hidden behind a hover-only tooltip. */
+    .tag[class*="reliability-"] {
+      background: transparent;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      transition: border-color 160ms ease;
+    }
+    .tag.reliability-high { border-color: #A9D4EE; color: var(--blue-text); }
+    .tag.reliability-medium { border-color: #CBE6F5; color: var(--blue-text); }
+    a.tag[class*="reliability-"]:hover { border-color: var(--blue-text); }
 
     .action-list {
       display: grid;
@@ -350,40 +461,50 @@
       grid-template-columns: 42px minmax(0, 1fr);
       gap: 16px;
       padding: 24px;
-      border: 1px solid #EAEAEA;
-      border-radius: 12px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-card);
       background: var(--surface);
+      transition: box-shadow 200ms ease, border-color 200ms ease;
+    }
+
+    .action-item:hover {
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+      border-color: #E0E0DC;
     }
 
     .action-item h3 {
-      margin: 10px 0 0;
+      margin: 12px 0 0;
       color: var(--ink-strong);
       font-size: 22px;
-      line-height: 1.25;
-      letter-spacing: 0;
+      line-height: 1.28;
+      letter-spacing: -0.005em;
     }
 
     .action-meta-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 12px;
-      margin-top: 16px;
+      margin-top: 18px;
     }
 
     .action-cell {
-      border: 1px solid #EAEAEA;
-      border-radius: 8px;
-      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-inner);
+      padding: 14px 16px;
       background: var(--surface-soft);
     }
 
     .action-cell span {
-      display: block;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
       color: var(--muted);
-      font-family: 'Geist Mono', 'SF Mono', 'JetBrains Mono', monospace;
+      font-family: var(--font-mono);
       font-size: 12px;
-      letter-spacing: 0;
+      letter-spacing: 0.03em;
     }
+
+    .action-cell .ic { color: var(--ink-strong); width: 14px; height: 14px; }
 
     .action-cell p {
       margin: 8px 0 0;
@@ -395,18 +516,17 @@
     .step-number {
       width: 42px;
       height: 42px;
-      border: 1px solid #EAEAEA;
-      border-radius: 8px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-inner);
       display: grid;
       place-items: center;
       color: var(--ink-strong);
-      font-family: 'Geist Mono', 'SF Mono', 'JetBrains Mono', monospace;
+      font-family: var(--font-mono);
       font-weight: 700;
       background: var(--surface-soft);
     }
 
     .section-panel {
-      padding: 0;
       overflow: hidden;
       margin-bottom: 18px;
     }
@@ -416,7 +536,7 @@
       grid-template-columns: minmax(0, 1fr) auto;
       gap: 18px;
       padding: 28px;
-      border-bottom: 1px solid #EAEAEA;
+      border-bottom: 1px solid var(--line);
       background: var(--surface-soft);
     }
 
@@ -424,13 +544,12 @@
       margin: 0;
       color: var(--ink-strong);
       font-size: 24px;
-      letter-spacing: 0;
+      letter-spacing: -0.005em;
     }
 
     .panel-header p {
       margin: 10px 0 0;
       color: var(--muted);
-      max-width: 760px;
     }
 
     .panel-body {
@@ -447,8 +566,8 @@
     }
 
     .chart {
-      border: 1px solid #EAEAEA;
-      border-radius: 12px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-card);
       padding: 28px;
       background: var(--surface);
       display: grid;
@@ -462,7 +581,7 @@
     }
     .chart-svg { width: 100%; height: auto; display: block; overflow: visible; }
     .chart-svg text {
-      font-family: 'SF Pro Display', 'Geist Sans', 'Helvetica Neue', sans-serif;
+      font-family: var(--font-sans);
       fill: var(--ink);
     }
     .chart-svg .ca-title,
@@ -479,6 +598,7 @@
       .chart-multiples { grid-template-columns: 1fr; }
     }
     @media print {
+      .ambient { display: none; }
       .chart, .chart-svg {
         print-color-adjust: exact;
         -webkit-print-color-adjust: exact;
@@ -489,7 +609,7 @@
       display: grid;
       gap: 16px;
       padding: 0 0 24px;
-      border-bottom: 1px solid #EAEAEA;
+      border-bottom: 1px solid var(--line);
     }
 
     .result-block:last-child {
@@ -508,38 +628,47 @@
       margin: 0;
       color: var(--ink-strong);
       font-size: 20px;
-      line-height: 1.25;
-      letter-spacing: 0;
+      line-height: 1.28;
+      letter-spacing: -0.005em;
     }
 
+    /* Notices default to a calm, neutral surface; the caution variant (.notice-warn)
+       is the only one wearing warning-yellow — reserved for data limits and
+       confounders, not for neutral informational blocks like named examples. */
     .notice {
-      border: 1px solid #EAEAEA;
-      border-radius: 8px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-inner);
       padding: 16px;
-      background: var(--yellow-bg);
-      color: var(--yellow-text);
+      background: var(--surface-soft);
+      color: var(--ink);
     }
 
     .notice strong {
-      color: var(--yellow-text);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--ink-strong);
     }
+
+    .notice .ic { width: 15px; height: 15px; }
+
+    .notice-warn {
+      background: var(--yellow-bg);
+      color: var(--yellow-text);
+      border-color: #F0E4C4;
+    }
+
+    .notice-warn strong { color: var(--yellow-text); }
 
     .finding-card {
       background: var(--surface);
     }
 
-    .finding-meta {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-top: 18px;
-    }
-
     .numbers {
       margin: 18px 0 0;
       padding: 16px;
-      border: 1px solid #EAEAEA;
-      border-radius: 8px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-inner);
       background: var(--surface-soft);
       display: grid;
       gap: 8px;
@@ -550,29 +679,29 @@
       justify-content: space-between;
       gap: 16px;
       color: var(--ink);
-      font-family: 'Geist Mono', 'SF Mono', 'JetBrains Mono', monospace;
+      font-family: var(--font-mono);
       font-size: 13px;
+      font-variant-numeric: tabular-nums;
     }
 
     .field-name {
       display: grid;
       gap: 4px;
-      font-family: 'SF Pro Display', 'Geist Sans', 'Helvetica Neue', 'Switzer', sans-serif;
+      font-family: var(--font-sans);
     }
 
     .field-name strong {
       color: var(--ink-strong);
       font-size: 13px;
-      letter-spacing: 0;
     }
 
     .field-name code,
     .field-code {
       width: fit-content;
-      font-family: 'Geist Mono', 'SF Mono', 'JetBrains Mono', monospace;
+      font-family: var(--font-mono);
       color: var(--muted);
       background: var(--canvas);
-      border: 1px solid #EAEAEA;
+      border: 1px solid var(--line);
       border-radius: 4px;
       padding: 2px 5px;
       font-size: 11px;
@@ -595,8 +724,26 @@
 
     .note-list li + li { margin-top: 6px; }
 
+    .axis-note {
+      margin: 18px 0 0;
+      color: var(--ink);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .empty-state {
+      margin: 0;
+      padding: 20px;
+      border: 1px dashed var(--line);
+      border-radius: var(--radius-inner);
+      background: var(--surface-soft);
+      color: var(--muted);
+      font-size: 14px;
+      text-align: center;
+    }
+
     details {
-      border-top: 1px solid #EAEAEA;
+      border-top: 1px solid var(--line);
       padding: 0;
     }
 
@@ -616,18 +763,18 @@
 
     summary::-webkit-details-marker { display: none; }
 
-    summary::after {
-      content: "+";
-      font-family: 'Geist Mono', 'SF Mono', 'JetBrains Mono', monospace;
+    .summary-toggle {
       color: var(--muted);
-      font-size: 18px;
+      transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1), color 160ms ease;
     }
 
-    details[open] summary::after { content: "-"; }
+    summary:hover .summary-toggle { color: var(--ink-strong); }
+
+    details[open] > summary .summary-toggle { transform: rotate(180deg); }
 
     .table-details {
-      border: 1px solid #EAEAEA;
-      border-radius: 8px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-inner);
       padding: 0 16px;
       background: var(--surface);
     }
@@ -651,7 +798,7 @@
     }
 
     .technical-details {
-      border-top: 1px solid #EAEAEA;
+      border-top: 1px solid var(--line);
       margin-top: 4px;
     }
 
@@ -661,43 +808,63 @@
     }
 
     .table-wrap {
+      position: relative;
       width: 100%;
       overflow-x: auto;
-      border: 1px solid #EAEAEA;
-      border-radius: 8px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-inner);
       margin-bottom: 18px;
+      background: var(--surface);
+      /* Thin custom scrollbar as the horizontal-overflow affordance. */
+      scrollbar-width: thin;
+      scrollbar-color: var(--line) transparent;
+    }
+
+    .table-wrap::-webkit-scrollbar { height: 8px; }
+    .table-wrap::-webkit-scrollbar-thumb {
+      background: var(--line);
+      border-radius: 9999px;
     }
 
     table {
       width: 100%;
       border-collapse: collapse;
-      min-width: 680px;
+      min-width: 560px;
       background: var(--surface);
     }
 
     th,
     td {
       padding: 12px 14px;
-      border-bottom: 1px solid #EAEAEA;
+      border-bottom: 1px solid var(--line);
       text-align: left;
       vertical-align: top;
       font-size: 13px;
     }
 
+    td { font-variant-numeric: tabular-nums; }
+
     th {
       color: var(--muted);
-      font-family: 'Geist Mono', 'SF Mono', 'JetBrains Mono', monospace;
+      font-family: var(--font-mono);
       font-weight: 700;
       background: var(--surface-soft);
+      white-space: nowrap;
     }
 
     td code,
     kbd {
-      font-family: 'Geist Mono', 'SF Mono', 'JetBrains Mono', monospace;
+      font-family: var(--font-mono);
       background: var(--canvas);
-      border: 1px solid #EAEAEA;
+      border: 1px solid var(--line);
       border-radius: 4px;
       padding: 2px 5px;
+    }
+
+    kbd {
+      box-shadow: inset 0 -1px 0 var(--line);
+      font-size: 12px;
+      color: var(--ink-strong);
     }
 
     .appendix-grid {
@@ -715,45 +882,85 @@
     }
 
     .codex-list li {
-      padding: 16px;
-      border: 1px solid #EAEAEA;
-      border-radius: 8px;
+      padding: 16px 18px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-inner);
       background: var(--surface);
-      font-weight: 650;
+      font-weight: 600;
       color: var(--ink-strong);
+      transition: border-color 200ms ease;
     }
 
+    .codex-list li:hover { border-color: #E0E0DC; }
+
+    /* Fallback reveal (browsers without scroll-driven timelines): a single gentle
+       entrance on load, staggered by --index. */
     .reveal {
       opacity: 0;
-      transform: translateY(12px);
-      animation: enter 600ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      transform: translateY(14px);
+      animation: enter 700ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
       animation-delay: calc(var(--index, 0) * 80ms);
     }
 
     @keyframes enter {
-      to {
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes fade {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    /* Progressive enhancement: where the browser supports scroll-driven animations,
+       elements reveal as they cross into the viewport — the IntersectionObserver
+       behaviour the design calls for, achieved with zero JavaScript so the report
+       stays a single self-contained file. Big blocks translate + fade; hover-able
+       cards fade opacity only, so their hover/active transforms stay free. */
+    @supports (animation-timeline: view()) {
+      .reveal {
         opacity: 1;
-        transform: translateY(0);
+        transform: none;
+        animation: enter linear both;
+        animation-delay: 0s;
+        animation-timeline: view();
+        animation-range: entry 0% entry 44%;
+      }
+      .card,
+      .action-item,
+      .finding-card,
+      .chart,
+      .section-panel,
+      .codex-list li {
+        animation: fade linear both;
+        animation-timeline: view();
+        animation-range: entry 2% cover 16%;
       }
     }
 
     @media (prefers-reduced-motion: reduce) {
-      .reveal {
+      .reveal,
+      .card,
+      .action-item,
+      .finding-card,
+      .chart,
+      .section-panel,
+      .codex-list li {
         opacity: 1;
         transform: none;
         animation: none;
       }
+      html { scroll-behavior: auto; }
       .card,
-      .finding-card { transition: none; }
+      .finding-card,
+      .action-item { transition: none; }
     }
 
     @media (max-width: 860px) {
       .report-shell { width: min(100% - 24px, 1180px); }
+      section { padding-top: 72px; }
       .topbar { align-items: flex-start; flex-direction: column; }
       .toc { justify-content: flex-start; }
       .hero { grid-template-columns: 1fr; min-height: auto; padding: 32px; }
-      h1 { font-size: 46px; line-height: 1.02; }
-      h2 { font-size: 32px; line-height: 1.12; }
       .action-item { grid-template-columns: 1fr; }
       .action-meta-grid { grid-template-columns: 1fr; }
       .bento,
@@ -769,9 +976,10 @@
   </style>
 </head>
 <body>
+  <div class="ambient" aria-hidden="true"></div>
   <main class="report-shell">
     <header class="topbar">
-      <div class="brand"><span class="brand-mark" aria-hidden="true"></span> 小红书经营分析</div>
+      <div class="brand">{{ ic('spark') }} 小红书经营分析</div>
       <nav class="toc" aria-label="报告目录">
         <a href="#guide">经营导读</a>
         <a href="#actions">行动计划</a>
@@ -823,7 +1031,7 @@
         </article>
         {% endfor %}
         <article class="card span-12">
-          <span class="tag info">How to read</span>
+          <span class="tag info">{{ ic('info') }} How to read</span>
           <h3>这份报告怎么读</h3>
           <p>可信度说明这条结论适合怎么用：直接决策、短期观察、转成实验，或先补数据。</p>
           <p class="meta-label">
@@ -867,19 +1075,19 @@
             <h3>{{ action.task }}：{{ action.target }}</h3>
             <div class="action-meta-grid">
               <div class="action-cell">
-                <span>为什么做</span>
+                <span>{{ ic('target') }} 为什么做</span>
                 <p>{{ action.why }}</p>
               </div>
               <div class="action-cell">
-                <span>怎么执行</span>
+                <span>{{ ic('steps') }} 怎么执行</span>
                 <p>{{ action.how }}</p>
               </div>
               <div class="action-cell">
-                <span>看什么指标</span>
+                <span>{{ ic('gauge') }} 看什么指标</span>
                 <p>{{ action.metric }}</p>
               </div>
               <div class="action-cell">
-                <span>什么时候暂停</span>
+                <span>{{ ic('pause') }} 什么时候暂停</span>
                 <p>{{ action.stop_rule }}</p>
               </div>
             </div>
@@ -911,13 +1119,13 @@
           {% for result in group.results %}
           <section class="result-block">
             <div class="result-heading">
-              <span class="tag info">{{ result.label }}</span>
+              <span class="tag section-label">{{ result.label }}</span>
               <h4>{{ result.title }}</h4>
             </div>
 
             {% if result.limitations %}
-            <div class="notice">
-              <strong>数据限制</strong>
+            <div class="notice notice-warn">
+              <strong>{{ ic('warn') }} 数据限制</strong>
               <ul class="note-list">
                 {% for limitation in result.limitations %}
                 <li>{{ limitation }}</li>
@@ -950,7 +1158,7 @@
 
             {% if result.named_examples %}
             <div class="notice">
-              <strong>命名示例</strong>
+              <strong>{{ ic('tag') }} 命名示例</strong>
               <ul class="note-list">
                 {% for example in result.named_examples %}
                 {% set _label = example.label or example.name %}
@@ -972,6 +1180,7 @@
                   {{ table.label }}
                   <span class="summary-meta">用户视图：{{ table.display_text }}</span>
                 </span>
+                {{ ic('chevron') }}
               </summary>
               {% if table.row_count %}
               <p class="table-caption">
@@ -1003,7 +1212,10 @@
                 </table>
               </div>
               <details class="technical-details">
-                <summary>技术追溯信息</summary>
+                <summary>
+                  <span>技术追溯信息</span>
+                  {{ ic('chevron') }}
+                </summary>
                 <p class="table-caption">
                   这里保留完整字段名，方便复查数据来源或继续让{{ report.assistant_name }}做二次分析。
                 </p>
@@ -1035,7 +1247,7 @@
                 </div>
               </details>
               {% else %}
-              <p class="section-lede">这个模块没有可展示的明细行。</p>
+              <p class="empty-state">这个模块没有可展示的明细行。</p>
               {% endif %}
             </details>
             {% endfor %}
