@@ -1,6 +1,7 @@
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding, Subsection
 from xhs_ceramics_analytics.evidence import DescriptiveReliability, EvidenceStrength
 from xhs_ceramics_analytics.reporting.html import (
+    _table_view,
     render_html,
     render_markdown_document_html,
 )
@@ -47,6 +48,16 @@ def test_markdown_renders_priority_table_ranked():
     assert "优先补详情页与承接内容。" in md
 
 
+def test_markdown_priority_table_uses_four_human_columns():
+    # B4: the priority table is 4 plain-language columns; no 预期影响/可行性/证据 grid,
+    # no statistical formula in the intro — just "从上到下就是本周先后顺序".
+    md = render_markdown(_priority_results())
+    assert "| 先动顺序 | 哪个环节 | 具体先做什么 | 为什么值得先做 |" in md
+    assert "从上到下就是本周先后顺序" in md
+    assert "预期影响 × 可行性" not in md
+    assert "| 预期影响 | 可行性 | 证据 |" not in md
+
+
 def test_markdown_omits_priority_table_when_nothing_actionable():
     result = AnalysisResult(
         task_id="core_business_diagnosis",
@@ -63,6 +74,51 @@ def test_markdown_omits_priority_table_when_nothing_actionable():
     assert "先动哪里" not in md
 
 
+def test_html_drops_technical_traceback_tier_and_meta_narrative():
+    # #12/#8: the "技术追溯信息" tier and the meta-narrative prose that talks about
+    # 程序模块/原始字段 are engineer-facing noise. HTML must not surface them; the
+    # user table itself must still render (raw column names remain in the markdown
+    # preview appendix, unaffected here).
+    html = render_html(
+        [
+            AnalysisResult(
+                task_id="core_business_diagnosis",
+                title="经营诊断",
+                findings=[
+                    Finding(
+                        title="店铺页转化漏斗诊断",
+                        conclusion="点击→支付是最弱环节。",
+                        evidence_strength=EvidenceStrength.WEAK,
+                        key_numbers={"weakest_stage": "点击→支付"},
+                        caveats=[],
+                    )
+                ],
+                tables={
+                    "shop_funnel_stages": [
+                        {"funnel_stage": "访问→点击", "rate": 0.3, "denominator": 1000},
+                        {"funnel_stage": "点击→支付", "rate": 0.1, "denominator": 300},
+                    ]
+                },
+            )
+        ]
+    )
+    assert "技术追溯" not in html
+    assert "这里按业务问题分组" not in html
+    assert "技术追溯信息里" not in html
+    # the user-facing table still renders its Chinese column label + values
+    assert "漏斗环节" in html
+    assert "访问→点击" in html
+
+
+def test_html_glossary_defines_new_and_returning_customers():
+    # #16: 报告频繁用「新客/老客」，术语表必须给出挂钩首购窗口的定义。
+    html = render_html(_priority_results())
+    assert "新客" in html
+    assert "老客" in html
+    # 定义须点明首购窗口口径（365 天），与 real-export rollup 说明一致。
+    assert "365" in html
+
+
 def test_html_renders_priority_table_section():
     html = render_html(_priority_results())
     assert 'id="priority"' in html
@@ -72,6 +128,29 @@ def test_html_renders_priority_table_section():
     start = html.index('id="priority"')
     section = html[start : html.index("</section>", start)]
     assert section.index("搜索承接是最弱环节") < section.index("基线稳定")
+
+
+def test_html_priority_table_uses_four_human_columns():
+    # B4: 4 plain-language columns, no 预期影响/可行性 grid columns, human intro.
+    html = render_html(_priority_results())
+    start = html.index('id="priority"')
+    section = html[start : html.index("</section>", start)]
+    assert "先动顺序" in section
+    assert "哪个环节" in section
+    assert "具体先做什么" in section
+    assert "为什么值得先做" in section
+    assert "<th>预期影响</th>" not in section
+    assert "<th>可行性</th>" not in section
+    assert "从上到下就是本周先后顺序" in section
+
+
+def test_html_promotes_how_to_read_to_first_class_section():
+    # B4 / #2: "这份报告怎么读" is a first-class section reachable from the nav, no
+    # longer a bento card buried inside 经营导读.
+    html = render_html(_priority_results())
+    assert 'id="how-to-read"' in html
+    assert 'href="#how-to-read"' in html
+    assert "这份报告怎么读" in html
 
 
 def _weak_but_reliable_finding():
@@ -85,31 +164,37 @@ def _weak_but_reliable_finding():
     )
 
 
-def test_markdown_renders_both_evidence_axes_when_reliability_present():
+def test_markdown_folds_two_axes_into_single_reader_confidence():
+    # Observational (causal WEAK) but large, precisely-measured sample → reliability
+    # drives the single reader-facing 置信度 up to 高; the two statistical axes are
+    # never shown side by side.
     md = render_markdown(
         [AnalysisResult(task_id="x", title="X", findings=[_weak_but_reliable_finding()])]
     )
-    assert "证据强度：弱" in md  # causal axis preserved
-    assert "描述可靠性：高" in md  # orthogonal reliability axis
+    assert "置信度：高" in md
+    assert "证据强度" not in md  # raw causal-axis label no longer surfaced
+    assert "描述可靠性" not in md  # raw reliability-axis label no longer surfaced
 
 
-def test_markdown_omits_reliability_axis_when_not_scored():
+def test_markdown_confidence_falls_back_to_softened_evidence_when_not_scored():
     finding = Finding(
         title="t",
         conclusion="c",
         evidence_strength=EvidenceStrength.WEAK,
     )
     md = render_markdown([AnalysisResult(task_id="x", title="X", findings=[finding])])
-    assert "证据强度：弱" in md
+    # No reliability estimate → WEAK causal softens to 低, not the old "弱".
+    assert "置信度：低" in md
+    assert "证据强度" not in md
     assert "描述可靠性" not in md
 
 
-def test_html_renders_descriptive_reliability_badge():
+def test_html_renders_single_confidence_chip_driven_by_reliability():
     html = render_html(
         [AnalysisResult(task_id="x", title="X", findings=[_weak_but_reliable_finding()])]
     )
-    assert "描述可靠性" in html
-    assert "高" in html
+    assert "置信度 高" in html
+    assert "描述可靠性" not in html
 
 
 def _full_finding():
@@ -127,15 +212,17 @@ def _full_finding():
     )
 
 
-def test_markdown_renders_seven_contract_elements_not_evidence_reason():
+def test_markdown_folds_evidence_reason_into_methodology_appendix():
     md = render_markdown([AnalysisResult(task_id="x", title="X", findings=[_full_finding()])])
     assert "可能的混淆因素：" in md
     assert "季节性退货高峰" in md
     assert "下一步验证：" in md
     assert "方法与附录：" in md
     assert "建议动作：" in md
-    # evidence_reason stays HTML-only:
-    assert "仅HTML应出现的原因。" not in md
+    # 病根 C: evidence_reason (methodology) now folds into 方法与附录 alongside appendix,
+    # in markdown too — the old "HTML-only" split is gone.
+    assert "仅HTML应出现的原因。" in md
+    assert "口径：退款率为支付时间口径。" in md
 
 
 def test_markdown_renders_subsections_and_named_examples():
@@ -191,7 +278,7 @@ def test_render_markdown_uses_chinese_report_labels():
         ]
     )
     assert "# 小红书账号分析报告" in report
-    assert "证据强度：强" in report
+    assert "置信度：高" in report
     assert "关键数字：" in report
     assert "建议动作：" in report
     assert "表格 `table_count`: 0 行" not in report
@@ -199,7 +286,32 @@ def test_render_markdown_uses_chinese_report_labels():
     assert "Proceed with analysis." in report
 
 
-def test_render_markdown_does_not_render_html_only_evidence_reason():
+def test_markdown_key_numbers_carry_field_help():
+    # #9/#18: markdown 与 HTML 对齐 —— 每个关键数字后跟中文口径说明，
+    # 让读者无需查术语表就懂这个数字是什么。
+    report = render_markdown(
+        [
+            AnalysisResult(
+                task_id="core_business_diagnosis",
+                title="经营诊断",
+                findings=[
+                    Finding(
+                        title="增长归因（GMV 桥）",
+                        conclusion="GMV 主要由流量拉动。",
+                        evidence_strength=EvidenceStrength.WEAK,
+                        key_numbers={"dominant_factor": "流量"},
+                        caveats=[],
+                    )
+                ],
+            )
+        ]
+    )
+    # dominant_factor 的 help 文本应出现在关键数字行里（括号内）。
+    assert "主导因子：流量（" in report
+    assert "贡献最大" in report
+
+
+def test_render_markdown_folds_evidence_reason_into_appendix():
     report = render_markdown(
         [
             AnalysisResult(
@@ -210,15 +322,17 @@ def test_render_markdown_does_not_render_html_only_evidence_reason():
                         title="SKU 机会已排序",
                         conclusion="青釉咖啡杯 单只适合继续测试。",
                         evidence_strength=EvidenceStrength.MEDIUM,
-                        evidence_reason="只给 HTML 报告展示的可信度原因。",
+                        evidence_reason="SKU 销售可用但缺显式关联，先做优先级判断。",
                     )
                 ],
             )
         ]
     )
 
+    # No inline "可信度原因" label anymore; methodology folds into 方法与附录.
     assert "可信度原因" not in report
-    assert "只给 HTML 报告展示的可信度原因" not in report
+    assert "方法与附录：" in report
+    assert "SKU 销售可用但缺显式关联，先做优先级判断。" in report
 
 
 def test_cli_keeps_markdown_when_html_rendering_fails(tmp_path, monkeypatch):
@@ -267,7 +381,7 @@ def test_render_markdown_uses_reader_friendly_sku_lift_title():
         ]
     )
 
-    assert "## SKU 销量响应" in report
+    assert "### SKU 销量响应" in report
     assert "反事实提升" not in report
 
 
@@ -416,8 +530,9 @@ def test_render_html_builds_reader_friendly_editorial_report():
     assert "Lucide" not in html
 
 
-def test_render_html_shows_evidence_reason_for_each_finding():
-    refused_heading = "不能" + "说明什么"
+def test_render_html_moves_evidence_reason_from_card_to_appendix():
+    # 病根 A + C: the analyst-vocabulary "可信度原因" inline line is gone from the card;
+    # the methodology text itself is not lost — it folds into 方法与附录 (appendix).
     html = render_html(
         [
             AnalysisResult(
@@ -438,9 +553,10 @@ def test_render_html_shows_evidence_reason_for_each_finding():
         ]
     )
 
-    assert "可信度原因" in html
+    assert "可信度原因" not in html  # inline analyst label gone
+    assert "方法与附录" in html  # methodology folds into the appendix instead
     assert "SKU 销售数据可用，但缺少显式 note-SKU 关联" in html
-    assert refused_heading not in html
+    assert "置信度 中" in html  # MEDIUM causal, no reliability → softened to 中
 
 
 def test_render_html_explains_all_evidence_levels_in_reader_guide():
@@ -462,14 +578,14 @@ def test_render_html_explains_all_evidence_levels_in_reader_guide():
     )
 
     assert "这份报告怎么读" in html
-    assert "高可信度" in html
-    assert "中可信度" in html
-    assert "低可信度" in html
-    assert "不可判断" in html
+    assert "高置信度" in html
+    assert "中置信度" in html
+    assert "低置信度" in html
+    assert "暂不下定论" in html
     assert refused_heading not in html
 
 
-def test_render_html_explains_machine_field_names_for_non_experts():
+def test_render_html_shows_chinese_labels_and_hides_machine_field_names():
     html = render_html(
         [
             AnalysisResult(
@@ -498,15 +614,17 @@ def test_render_html_explains_machine_field_names_for_non_experts():
         ]
     )
 
-    assert "SKU 编号" in html
-    assert "具体商品规格的内部编号" in html
-    assert "<code>sku_id</code>" in html
+    # #12: 读者视图只呈现中文列名与已翻译的取值；原始机器字段名(sku_id/
+    # opportunity_type)不再叠一层「技术追溯」，只在 markdown 表格预览附录里留证。
     assert "销售件数" in html
     assert "销售额" in html
     assert "机会类型" in html
-    assert "已有销售反馈" in html
-    assert "SKU 数量" in html
-    assert "<th>sku_id</th>" not in html
+    assert "已有销售反馈" in html  # opportunity_type 取值翻译成业务语言
+    assert "SKU 数量" in html  # key_numbers 字段标签
+    # 原始机器列名彻底不在 HTML 泄漏——不作表头，也不作技术追溯脚注。
+    assert "sku_id" not in html
+    assert "opportunity_type" not in html
+    assert "技术追溯" not in html
 
 
 def test_render_html_prioritizes_business_findings_over_data_quality():
@@ -608,16 +726,111 @@ def test_render_html_groups_analysis_by_business_question():
         ]
     )
 
-    assert "商品：卖什么" in html
-    assert "内容：发什么" in html
-    assert "用户需求：用户在问什么" in html
-    assert "实验：下周怎么验证" in html
-    assert "数据可信度" in html
+    # #19: 报告按 6 个业务主题域分组，域标题即 domains.DOMAINS 的标题（不含冒号副标）。
+    assert "商品结构" in html
+    assert "流量与内容" in html
+    assert "用户与需求" in html
+    assert "实验与下周行动" in html
     assert "Module 1" not in html
     assert "data_quality_check" not in html
 
 
-def test_render_html_uses_user_table_view_and_technical_details():
+def _two_refund_results():
+    return [
+        AnalysisResult(
+            task_id="refund_root_cause_diagnosis",
+            title="退款根因诊断",
+            findings=[
+                Finding(
+                    title="发货前退款为主漏点",
+                    conclusion="发货前退款占比 61.9%。",
+                    evidence_strength=EvidenceStrength.WEAK,
+                    descriptive_reliability=DescriptiveReliability.HIGH,
+                    recommended_action="核对发货时效与库存口径。",
+                )
+            ],
+        ),
+        AnalysisResult(
+            task_id="refund_structure_diagnosis",
+            title="退款结构诊断",
+            findings=[
+                Finding(
+                    title="退款集中在两个 SKU",
+                    conclusion="两个 SKU 贡献大部分退款。",
+                    evidence_strength=EvidenceStrength.WEAK,
+                    descriptive_reliability=DescriptiveReliability.LOW,
+                    recommended_action="复核这两个 SKU 的详情页与实物一致性。",
+                )
+            ],
+        ),
+    ]
+
+
+def test_render_html_places_both_refund_modules_under_one_domain():
+    # #19: 退款结构与退款根因合并进「退款与售后」同一个域，不再各自散落。
+    html = render_html(_two_refund_results())
+    # Scope to the analysis body — the hero copy also lists domain names in prose.
+    analysis = html.split('id="analysis"', 1)[1].split('id="appendix"', 1)[0]
+    assert "退款与售后" in analysis
+    # exactly one 退款与售后 domain panel heading, and both refund modules live inside it.
+    assert analysis.count("<h3>退款与售后</h3>") == 1
+    assert "退款根因诊断" in analysis
+    assert "退款结构诊断" in analysis
+
+
+def test_render_html_folds_secondary_domain_results_under_one_headline():
+    # #19/#2: 域内只留一条 headline 大卡，其余折进 <details class="domain-more">，
+    # 读者先看该域最该动的那条，展开才看其余。
+    html = render_html(_two_refund_results())
+    assert 'class="domain-more"' in html
+    # headline 大卡恰一条：域内第二个模块进折叠区。
+    assert html.count('class="result-block result-headline"') == 1
+
+
+def test_render_html_drops_reshoot_repost_highlight_card():
+    # #2: 重拍/重发是弱证据假设，不该被抬成经营导读的高亮大卡。
+    html = render_html(
+        [
+            AnalysisResult(
+                task_id="reshoot_repost_candidates",
+                title="重拍与重发候选",
+                findings=[
+                    Finding(
+                        title="高收藏笔记重拍候选已排序",
+                        conclusion="候选笔记已排序。",
+                        evidence_strength=EvidenceStrength.WEAK,
+                    )
+                ],
+                tables={
+                    "reshoot_candidates": [
+                        {
+                            "title": "青釉杯上手体验",
+                            "collect_rate": 0.05,
+                            "reason": "收藏率高但读量偏低",
+                        }
+                    ]
+                },
+            )
+        ]
+    )
+    assert "重拍机会：先复用「" not in html
+
+
+def test_timeseries_table_forced_collapsed_even_when_short():
+    # #17: 时序趋势表(表名 _trend 结尾,或首列是日期)读者要看的是折线图,不是逐行数字。
+    # 即便行数 <10,也强制折叠,让图表先行,不再默认展开一张长条趋势表。
+    trend_rows = [{"stage": "读", "rate": 0.5}, {"stage": "赞", "rate": 0.3}]
+    assert _table_view("refund_rate_trend", trend_rows)["open"] is False
+
+    dated_rows = [{"date": "2026-04-01", "gmv": 100.0}, {"date": "2026-04-02", "gmv": 120.0}]
+    assert _table_view("business_daily", dated_rows)["open"] is False
+
+    # 对照:普通短表照旧默认展开。
+    plain_rows = [{"carrier": "note", "gmv": 100.0}]
+    assert _table_view("carrier_structure", plain_rows)["open"] is True
+
+
+def test_render_html_user_table_view_omits_technical_columns_entirely():
     html = render_html(
         [
             AnalysisResult(
@@ -641,14 +854,17 @@ def test_render_html_uses_user_table_view_and_technical_details():
         ]
     )
 
-    user_view = html.split("技术追溯信息", maxsplit=1)[0]
+    # #12: HTML 只保留用户视图；技术列(experiment_seed 等机器标识)不再叠一层
+    # 「技术追溯信息」，在 HTML 里彻底不呈现，只在 markdown 表格预览附录里留证。
     assert "用户视图" in html
     assert "共 1 行，当前展示 1 行" in html
-    assert "技术追溯信息" in html
-    assert "青釉咖啡杯 单只" in user_view
-    assert "送礼角度" in user_view
-    assert "实验标识" not in user_view
-    assert "2026-07-01-09:00-s1-gift" in html
+    assert "技术追溯信息" not in html
+    # 业务列名与已翻译取值照常呈现
+    assert "青釉咖啡杯 单只" in html
+    assert "送礼角度" in html  # copy_angle=gift 翻译成业务语言
+    # 技术列的中文标签与原始 seed 值都不再进入 HTML
+    assert "实验标识" not in html
+    assert "2026-07-01-09:00-s1-gift" not in html
 
 
 def test_render_html_formats_numbers_for_business_readers():
@@ -804,7 +1020,7 @@ def test_render_html_labels_paid_traffic_fields():
     assert "增加预算" in html
 
 
-def test_evidence_chart_lands_in_guide_section():
+def test_evidence_chart_lands_in_how_to_read_section():
     html = render_html(
         [
             AnalysisResult(
@@ -828,9 +1044,10 @@ def test_evidence_chart_lands_in_guide_section():
             )
         ]
     )
-    guide = html.split('id="guide"', 1)[1].split('id="actions"', 1)[0]
-    assert 'class="chart"' in guide
-    assert "<svg" in guide
+    start = html.index('id="how-to-read"')
+    section = html[start : html.index("</section>", start)]
+    assert 'class="chart"' in section
+    assert "<svg" in section
 
 
 def test_task_charts_land_in_analysis_section():
@@ -931,7 +1148,7 @@ def test_section_keeps_table_when_a_chart_builder_raises(monkeypatch):
     assert '<details class="table-details"' in html
 
 
-def test_html_renders_all_eight_contract_elements():
+def test_html_renders_all_contract_elements():
     result = AnalysisResult(
         task_id="x",
         title="X",
@@ -940,8 +1157,9 @@ def test_html_renders_all_eight_contract_elements():
         named_examples=[{"label": "鱼盘12寸", "detail": "退款率0.18"}],
     )
     html = render_html([result])
-    assert "可信度原因：" in html          # evidence_reason (HTML-only, element 4)
-    assert "仅HTML应出现的原因。" in html
+    assert "置信度 中" in html               # single reader confidence chip (element 4)
+    assert "仅HTML应出现的原因。" in html     # evidence_reason folds into 方法与附录
+    assert "方法与附录" in html
     assert "可能的混淆因素" in html          # element 5
     assert "下一步验证：" in html            # element 7
     assert "方法与附录：" in html            # element 8
@@ -1008,16 +1226,80 @@ def test_data_quality_section_renders_last_in_markdown():
     # business diagnosis so the reader hits conclusions before the data appendix.
     dq, core = _dq_and_core()
     md = render_markdown([dq, core])
-    assert md.index("## 核心经营结构诊断") < md.index("## 数据质量检查")
+    # 模块降为 ###；数据质量落在末尾附录域，业务结论在前。
+    assert md.index("### 核心经营结构诊断") < md.index("### 数据质量检查")
+    assert md.index("## 生意大盘") < md.index("附录：数据质量与口径说明")
+
+
+def test_markdown_groups_modules_under_business_domains():
+    # #19: markdown 与 HTML 用同一份域分组——域标题是一级 ##，模块降为 ###，
+    # 退款两模块在「退款与售后」同一域下。
+    results = [
+        AnalysisResult(
+            task_id="refund_root_cause_diagnosis",
+            title="退款根因诊断",
+            findings=[
+                Finding(
+                    title="发货前退款为主漏点",
+                    conclusion="发货前退款占比高。",
+                    evidence_strength=EvidenceStrength.WEAK,
+                )
+            ],
+        ),
+        AnalysisResult(
+            task_id="refund_structure_diagnosis",
+            title="退款结构诊断",
+            findings=[
+                Finding(
+                    title="退款集中在两个 SKU",
+                    conclusion="两个 SKU 贡献大部分退款。",
+                    evidence_strength=EvidenceStrength.WEAK,
+                )
+            ],
+        ),
+        AnalysisResult(
+            task_id="core_business_diagnosis",
+            title="整体经营诊断",
+            findings=[
+                Finding(
+                    title="GMV 走势",
+                    conclusion="GMV 稳定。",
+                    evidence_strength=EvidenceStrength.MEDIUM,
+                )
+            ],
+        ),
+    ]
+    md = render_markdown(results)
+    assert "## 生意大盘" in md
+    assert "## 退款与售后" in md
+    # 生意大盘域排在退款域之前（DOMAINS 顺序）。
+    assert md.index("## 生意大盘") < md.index("## 退款与售后")
+    # 两个退款模块都在退款域标题之后、下一个域之前。
+    refund_start = md.index("## 退款与售后")
+    tail = md[refund_start:]
+    assert "### 退款根因诊断" in tail
+    assert "### 退款结构诊断" in tail
+    # 模块降为 ###，不再是一级 ## 标题（用换行锚定，避免 ### 命中 ## 子串）。
+    assert "\n## 退款根因诊断" not in md
+    assert "\n### 退款根因诊断" in md
 
 
 def test_data_quality_is_the_final_html_group_and_diagnosis_leads():
-    from xhs_ceramics_analytics.reporting.html import _analysis_groups
+    from xhs_ceramics_analytics.reporting.html import _analysis_groups, _result_view
 
-    views = [{"task_id": "data_quality_check"}, {"task_id": "core_business_diagnosis"}]
-    groups = _analysis_groups(views)
+    results = [
+        AnalysisResult(task_id="data_quality_check", title="数据质量检查", findings=[]),
+        AnalysisResult(task_id="core_business_diagnosis", title="整体经营诊断", findings=[]),
+    ]
+    views = [_result_view(result) for result in results]
+    groups = _analysis_groups(results, views)
     titles = [str(group["title"]) for group in groups]
-    assert titles[0].startswith("经营诊断")
+    # 业务域领先（生意大盘），数据质量附录收尾。
+    assert titles[0] == "生意大盘"
     assert titles[-1].startswith("附录")
-    assert any(v["task_id"] == "core_business_diagnosis" for v in groups[0]["results"])
-    assert any(v["task_id"] == "data_quality_check" for v in groups[-1]["results"])
+    # core_business 落在首个域的 headline，data_quality 落在附录组。
+    assert groups[0]["headline_result"]["task_id"] == "core_business_diagnosis"
+    appendix = groups[-1]
+    appendix_views = [appendix["headline_result"], *appendix["secondary_results"]]
+    appendix_ids = {v["task_id"] for v in appendix_views if v}
+    assert "data_quality_check" in appendix_ids

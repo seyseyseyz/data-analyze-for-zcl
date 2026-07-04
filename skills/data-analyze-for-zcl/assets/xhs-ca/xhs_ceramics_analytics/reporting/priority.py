@@ -22,6 +22,7 @@ Pure and never-raise; degrades to ``[]`` when nothing is actionable.
 """
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.evidence import EvidenceStrength
+from xhs_ceramics_analytics.reporting.confidence import reader_confidence
 from xhs_ceramics_analytics.reporting.section_order import APPENDIX_TASKS
 
 # 预期影响: curated per-module lever weight in [0, 1]. Same spirit as the report's
@@ -98,6 +99,19 @@ def _evidence_label(value: str) -> str:
     return _EVIDENCE_LABELS.get(value, value)
 
 
+# 面向读者的「为什么值得先做」一句话:把 impact 带位翻成生意语言,回答"凭什么排这么前"。
+# 统计口径(证据/可靠性)不进这句话——它折进随行的单一置信度标签(见 build_priority_table)。
+_WHY_BY_IMPACT: dict[str, str] = {
+    "高": "直接牵动整体生意,补齐后回报最快。",
+    "中": "对生意有明显带动,值得本周内推进。",
+    "低": "影响相对局部,可等更高优先级的动作落地后再做。",
+}
+
+
+def _why(impact_label: str) -> str:
+    return _WHY_BY_IMPACT.get(impact_label, _WHY_BY_IMPACT["中"])
+
+
 def _band(score: float) -> str:
     if score >= _HIGH_BAND:
         return "高"
@@ -136,6 +150,21 @@ def _best_actionable(result: AnalysisResult) -> Finding | None:
     return max(candidates, key=_feasibility)
 
 
+def result_priority(result: AnalysisResult) -> float:
+    """Per-result 预期影响 × 可行性 score, for cross-module ordering.
+
+    Reuses the module's most actionable finding (:func:`_best_actionable`). Modules
+    with no actionable finding score ``0.0`` so they sort after actionable ones while
+    keeping a stable relative order. Pure and never-raise — the single source of the
+    same ranking used by :func:`build_priority_table` and the domain grouping.
+    """
+    finding = _best_actionable(result)
+    if finding is None:
+        return 0.0
+    impact = LEVER_WEIGHTS.get(result.task_id, _DEFAULT_WEIGHT)
+    return impact * _feasibility(finding)
+
+
 def build_priority_table(
     results: list[AnalysisResult], max_rows: int = _MAX_ROWS
 ) -> list[dict[str, object]]:
@@ -155,6 +184,11 @@ def build_priority_table(
             continue
         impact = LEVER_WEIGHTS.get(result.task_id, _DEFAULT_WEIGHT)
         feasibility = _feasibility(finding)
+        impact_label = _band(impact)
+        # Single reader-facing 置信度 (same primitive as everywhere else), folded from
+        # the two statistical axes — it rides as one tag inside 「为什么值得先做」 rather
+        # than the old 预期影响/可行性/证据 three-column grid.
+        confidence = reader_confidence(finding)
         rows.append(
             {
                 "task_id": result.task_id,
@@ -162,8 +196,11 @@ def build_priority_table(
                 "weak_link": finding.title,
                 "detail": finding.conclusion,
                 "lever": finding.recommended_action,
+                "why": _why(impact_label),
+                "confidence_label": confidence.label,
+                "confidence_class": confidence.level,
                 "impact": impact,
-                "impact_label": _band(impact),
+                "impact_label": impact_label,
                 "feasibility": feasibility,
                 "feasibility_label": _band(feasibility),
                 "priority": impact * feasibility,

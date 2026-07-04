@@ -3,7 +3,16 @@ from html import escape
 
 from jinja2 import Environment, PackageLoader
 
+from xhs_ceramics_analytics.analysis.methodology import combined_methodology
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding, Subsection
+from xhs_ceramics_analytics.reporting import confidence as _confidence
+from xhs_ceramics_analytics.reporting.confidence import reader_confidence
+from xhs_ceramics_analytics.reporting.domains import (
+    APPENDIX_DOMAIN_INTRO,
+    APPENDIX_DOMAIN_TITLE,
+    DOMAINS,
+    group_by_domain,
+)
 from xhs_ceramics_analytics.reporting.markdown import render_markdown
 from xhs_ceramics_analytics.reporting.priority import build_priority_table
 from xhs_ceramics_analytics.reporting.section_order import APPENDIX_TASKS
@@ -11,41 +20,11 @@ from xhs_ceramics_analytics.reporting.formatting import (
     field_help as _field_help,
     field_label as _field_label,
     format_scalar as _format_scalar,
+    is_timeseries_table as _is_timeseries_table,
     should_render_table as _should_render_table,
 )
 from xhs_ceramics_analytics.reporting import charts
 
-
-_EVIDENCE_LABELS = {
-    "strong": "高",
-    "medium": "中",
-    "weak": "低",
-    "not_judgable": "不可判断",
-}
-
-_EVIDENCE_HELP = {
-    "strong": "数据较充分，可以直接作为经营依据。",
-    "medium": "可以用于本周决策，但建议继续观察。",
-    "weak": "适合作为实验方向，暂不适合直接下定论。",
-    "not_judgable": "当前数据不足，需要先补齐导入或埋点。",
-}
-
-# Orthogonal to 可信度 (causal). 可信度 asks "can this prove cause"; 描述可靠性 asks
-# "how precisely is the number measured". A large, tightly-measured but purely
-# observational finding is 可信度低 yet 描述可靠性高 — both true at once.
-_RELIABILITY_LABELS = {
-    "high": "高",
-    "medium": "中",
-    "low": "低",
-    "not_applicable": "不适用",
-}
-
-_RELIABILITY_HELP = {
-    "high": "样本量大、置信区间窄，这个数字对本期是精确的描述。",
-    "medium": "样本量中等，数字方向可靠但精度一般。",
-    "low": "样本量小或区间较宽，数字仅供参考。",
-    "not_applicable": "该结论没有可量化的估计，不评描述精度。",
-}
 
 _MAX_TABLE_ROWS = 20
 
@@ -61,82 +40,24 @@ _MAX_OPEN_TABLE_ROWS = 10
 # name the reader didn't choose.
 _DEFAULT_ASSISTANT_NAME = "分析助手"
 
+# 经营导读的高亮大卡候选。重拍/重发是弱证据假设(#2)——它属于「流量与内容」域里的一条
+# 可选线索,不该被抬成导读大卡,故不在此列。
 _BUSINESS_HIGHLIGHT_TASKS = (
     "product_opportunity_matrix",
     "copy_angle_effect",
     "content_portfolio_optimization",
     "comment_demand_mining",
-    "reshoot_repost_candidates",
     "weekly_experiment_matrix",
 )
 
-_ANALYSIS_GROUPS = (
-    {
-        "title": "经营诊断：生意怎么样",
-        "description": (
-            "先看整体经营结构、搜索承接效率、人群结构和退款结构，"
-            "锁定这一阶段最该动的环节，再往下看内容和商品细节。"
-        ),
-        "tasks": (
-            "core_business_diagnosis",
-            "demand_funnel_diagnosis",
-            "search_efficiency_diagnosis",
-            "channel_structure_diagnosis",
-            "audience_structure_diagnosis",
-            "refund_structure_diagnosis",
-            "refund_root_cause_diagnosis",
-        ),
-    },
-    {
-        "title": "商品：卖什么",
-        "description": "先看 SKU 的 GMV/退款结构与销售反馈，哪些商品还需要继续补内容或补销售数据。",
-        "tasks": (
-            "sku_structure_diagnosis",
-            "product_opportunity_matrix",
-            "sku_counterfactual_lift",
-            "content_response_curve",
-        ),
-    },
-    {
-        "title": "内容：发什么",
-        "description": "先看笔记的商业效能（GMV/转化/引流/退款），再把封面、文案角度和内容组合拆开看，避免只凭单篇爆款做判断。",
-        "tasks": (
-            "note_commercial_diagnosis",
-            "cover_style_effect",
-            "copy_angle_effect",
-            "product_content_interaction",
-            "content_portfolio_optimization",
-        ),
-    },
-    {
-        "title": "用户需求：用户在问什么",
-        "description": "从评论里提炼价格、容量、购买入口和送礼等真实疑问，反推内容和详情页要补什么。",
-        "tasks": ("comment_demand_mining",),
-    },
-    {
-        "title": "实验：下周怎么验证",
-        "description": "把当前结论转成可以执行的一周计划，并标出适合重拍或重发的候选笔记。",
-        "tasks": (
-            "weekly_experiment_matrix",
-            "reshoot_repost_candidates",
-            "hypothesis_knowledge_base",
-        ),
-    },
-    {
-        "title": "基础参考：账号与漏斗",
-        "description": "账号基线、笔记漏斗和周复盘作为背景参照，帮助判断哪些结论能直接用、哪些只能当实验线索。",
-        "tasks": (
-            "account_baseline",
-            "note_funnel",
-            "weekly_business_review",
-        ),
-    },
-)
+# 业务主题域(域标题/导语/归属 task)与域内优先级排序统一由 reporting.domains 定义,
+# md / html 两个 compositor 共用同一份分组,不再各自手写(见 domains.group_by_domain)。
 
 # Data-quality sections close the report as an appendix — see reporting.section_order.
+# Title/intro live in reporting.domains so md 与 html 用同一份文案。
 _APPENDIX_GROUP = {
-    "title": "附录：数据质量与口径说明",
-    "description": "数据导入、口径与完整度说明，为上面所有结论标注可信度；阻断性问题在建库阶段已处置，这里只作透明留证。",
+    "title": APPENDIX_DOMAIN_TITLE,
+    "description": APPENDIX_DOMAIN_INTRO,
 }
 
 _TABLE_LABELS = {
@@ -402,7 +323,6 @@ def render_html(
         loader=PackageLoader("xhs_ceramics_analytics.reporting", "templates"),
         autoescape=True,
     )
-    env.filters["evidence_label"] = _evidence_label
     env.filters["field_label"] = _field_label
     env.filters["field_help"] = _field_help
     env.filters["display_value"] = _display_value
@@ -759,14 +679,14 @@ def _build_report_context(
         "highlights": _business_highlights(results),
         "priority_table": _priority_table_view(results),
         "actions": _business_actions(results, findings),
-        "analysis_groups": _analysis_groups(result_views),
+        "analysis_groups": _analysis_groups(results, result_views),
         "evidence_counts": _evidence_counts(findings),
         "evidence_chart_svg": charts.evidence_distribution(_evidence_counts(findings)),
         "assistant_questions": _codex_questions(results),
         "glossary": [
             {
-                "term": "可信度",
-                "definition": "说明这条结论能被多大程度用于经营决策，不代表结论有没有价值。",
+                "term": "置信度",
+                "definition": "说明这条结论能被多大程度用于经营决策，主要看样本量和口径是否清晰；不代表结论有没有价值。",
             },
             {
                 "term": "弱归因",
@@ -783,6 +703,14 @@ def _build_report_context(
             {
                 "term": "个百分点",
                 "definition": "两个百分比之间的差，例如从 5% 到 7% 是涨了 2 个百分点，而不是涨了 2%。",
+            },
+            {
+                "term": "新客",
+                "definition": "按平台首购窗口（365 天）口径，近 365 天内首次在本店成交的买家。",
+            },
+            {
+                "term": "老客",
+                "definition": "首次成交在 365 天以前、本期又回购的买家；新客/老客口径与平台首购窗口一致。",
             },
             {
                 "term": "多重比较校正 (BH-FDR)",
@@ -826,12 +754,11 @@ def _finding_view(finding: Finding) -> dict[str, object]:
             }
             for key, value in finding.key_numbers.items()
         ],
-        "caveats": finding.caveats,
+        "caveats": _caveats_with_causal(finding),
         "recommended_action": finding.recommended_action,
-        "evidence_reason": finding.evidence_reason,
         "confounders": finding.confounders,
         "next_test": finding.next_test,
-        "appendix": finding.appendix,
+        "appendix": combined_methodology(finding),
     }
 
 
@@ -863,13 +790,16 @@ def _table_view(table_name: str, rows: list[dict[str, object]]) -> dict[str, obj
         "showing_count": showing_count,
         # Short tables (< 10 rows) open by default — readable at a glance, so the
         # collapsed shell just adds a needless click. Longer tables stay collapsed
-        # to keep the page scannable.
-        "open": len(rows) < _MAX_OPEN_TABLE_ROWS,
+        # to keep the page scannable. Time-series trend tables (#17) are the one
+        # exception: their chart carries the story, so the raw per-period grid stays
+        # folded regardless of length instead of pushing the chart below the fold.
+        "open": len(rows) < _MAX_OPEN_TABLE_ROWS
+        and not _is_timeseries_table(table_name, all_columns),
         "display_text": display_text,
+        # 只保留用户视图；原始机器列名在 markdown 表格预览(附录)里留证，HTML 不再
+        # 叠一层「技术追溯」制造工程噪音(#12)。
         "user_columns": [_column_view(column) for column in user_columns],
-        "technical_columns": [_column_view(column) for column in all_columns],
         "user_rows": [_row_cells(row, user_columns) for row in rows[:_MAX_TABLE_ROWS]],
-        "technical_rows": [_row_cells(row, all_columns) for row in rows[:_MAX_TABLE_ROWS]],
     }
 
 
@@ -891,58 +821,70 @@ def _row_cells(row: dict[str, object], columns: list[str]) -> list[dict[str, str
     ]
 
 
-def _analysis_groups(result_views: list[dict[str, object]]) -> list[dict[str, object]]:
+def _domain_group_view(
+    title: str, intro: str, views: list[dict[str, object]]
+) -> dict[str, object]:
+    """Two-level shape: one headline result (rendered as a big card) + the rest folded.
+
+    The domain's results arrive already priority-sorted (from ``group_by_domain`` or
+    ``APPENDIX_TASKS`` order), so the first is the one the reader should act on first;
+    the rest fold into a ``<details>`` so the domain reads as "here's the lever, expand
+    for the supporting modules" rather than an undifferentiated pile (#2/#19).
+    """
+    return {
+        "title": title,
+        "intro": intro,
+        "headline_result": views[0] if views else None,
+        "secondary_results": views[1:],
+    }
+
+
+def _analysis_groups(
+    results: list[AnalysisResult], result_views: list[dict[str, object]]
+) -> list[dict[str, object]]:
+    """Domain-driven two-level structure for the deep-dive section.
+
+    Domain assignment and within-domain priority ordering are owned by
+    :func:`reporting.domains.group_by_domain` (shared with the markdown compositor);
+    here we only map its ``AnalysisResult`` groups back to their rendered views and
+    split each into headline + folded secondaries. The data-quality appendix is
+    appended last, outside the business domains.
+    """
     views_by_task = {str(view["task_id"]): view for view in result_views}
     grouped: list[dict[str, object]] = []
-    used: set[str] = set()
-    for group in _ANALYSIS_GROUPS:
-        views = [views_by_task[task_id] for task_id in group["tasks"] if task_id in views_by_task]
+
+    for domain in group_by_domain(results):
+        views = [
+            views_by_task[result.task_id]
+            for result in domain.results
+            if result.task_id in views_by_task
+        ]
         if not views:
             continue
-        used.update(str(view["task_id"]) for view in views)
-        grouped.append(
-            {
-                "title": group["title"],
-                "description": group["description"],
-                "results": views,
-            }
-        )
+        grouped.append(_domain_group_view(domain.title, domain.intro, views))
 
     appendix_views = [
         views_by_task[task_id] for task_id in APPENDIX_TASKS if task_id in views_by_task
     ]
-    used.update(str(view["task_id"]) for view in appendix_views)
-
-    remaining = [view for view in result_views if str(view["task_id"]) not in used]
-    if remaining:
-        grouped.append(
-            {
-                "title": "其他分析",
-                "description": "这些模块暂时没有归入固定经营问题，但仍保留结论和明细，方便继续扩展。",
-                "results": remaining,
-            }
-        )
-
-    # Appendix always closes the report, after 其他分析.
     if appendix_views:
         grouped.append(
-            {
-                "title": _APPENDIX_GROUP["title"],
-                "description": _APPENDIX_GROUP["description"],
-                "results": appendix_views,
-            }
+            _domain_group_view(
+                str(_APPENDIX_GROUP["title"]),
+                str(_APPENDIX_GROUP["description"]),
+                appendix_views,
+            )
         )
     return grouped
 
 
 def _priority_table_view(results: list[AnalysisResult]) -> list[dict[str, object]]:
-    """Reader-facing rows for the cross-module 「最弱环节 × 最高杠杆」 priority table.
+    """Reader-facing rows for the cross-module priority table, in 4 plain columns.
 
-    Each row already carries 高/中/低 impact/feasibility bands, a 强/中/弱 evidence
-    label, and an evidence class from the pure :func:`build_priority_table` primitive;
-    here we only attach the display rank so the template stays logic-free. The
-    evidence label is taken verbatim from the primitive so the markdown and HTML
-    reports render the identical word for the same finding.
+    The pure :func:`build_priority_table` primitive still orders rows by 预期影响 ×
+    可行性 internally, but the reader only meets 先动顺序 / 哪个环节 / 具体先做什么 /
+    为什么值得先做. Here we attach the display rank and carry the single folded 置信度
+    (label + level class) so it renders as one tag inside the last column — no separate
+    impact/feasibility/evidence grid.
     """
     rows = build_priority_table(results)
     views: list[dict[str, object]] = []
@@ -950,13 +892,11 @@ def _priority_table_view(results: list[AnalysisResult]) -> list[dict[str, object
         views.append(
             {
                 "rank": index,
-                "module": row.get("module"),
                 "weak_link": row.get("weak_link"),
                 "lever": row.get("lever"),
-                "impact_label": row.get("impact_label"),
-                "feasibility_label": row.get("feasibility_label"),
-                "evidence": row.get("evidence_label"),
-                "evidence_class": row.get("evidence_class"),
+                "why": row.get("why"),
+                "confidence": row.get("confidence_label"),
+                "confidence_class": row.get("confidence_class"),
             }
         )
     return views
@@ -969,9 +909,7 @@ def _highlights(findings: list[Finding]) -> list[dict[str, str]]:
             {
                 "title": "暂无可读结论",
                 "body": "当前数据还不足以生成经营判断，请先完成数据导入。",
-                "evidence": "不可判断",
-                "evidence_class": "not_judgable",
-                "help": _EVIDENCE_HELP["not_judgable"],
+                **_confidence_chip(_confidence.NOT_JUDGABLE),
             }
         ]
     return [_finding_summary(finding) for finding in highlighted]
@@ -1052,21 +990,6 @@ def _highlight_for_result(result: AnalysisResult) -> dict[str, str] | None:
             )
         return _highlight_from_primary_finding(result, "用户需求")
 
-    if result.task_id == "reshoot_repost_candidates":
-        row = _first_row(result, "reshoot_candidates")
-        if row:
-            title = str(row.get("title") or row.get("note_id") or "队首候选")
-            return _highlight(
-                result,
-                f"重拍机会：先复用「{title}」",
-                (
-                    f"这篇笔记收藏率 {_display_cell('collect_rate', row.get('collect_rate'))}，"
-                    f"入选原因是{_display_cell('reason', row.get('reason'))}。"
-                    "建议保留核心商品和角度，只改开场画面或封面做对照。"
-                ),
-            )
-        return _highlight_from_primary_finding(result, "重拍机会")
-
     if result.task_id == "weekly_experiment_matrix":
         row_count = len(result.tables.get("experiment_plan", []))
         return _highlight(
@@ -1082,13 +1005,10 @@ def _highlight_for_result(result: AnalysisResult) -> dict[str, str] | None:
 
 
 def _highlight(result: AnalysisResult, title: str, body: str) -> dict[str, str]:
-    evidence_value = _primary_evidence_value(result)
     return {
         "title": title,
         "body": body,
-        "evidence": _EVIDENCE_LABELS.get(evidence_value, evidence_value),
-        "evidence_class": evidence_value,
-        "help": _EVIDENCE_HELP.get(evidence_value, "请结合数据限制一起阅读。"),
+        **_confidence_chip(_primary_confidence(result)),
     }
 
 
@@ -1107,10 +1027,7 @@ def _recommended_actions(findings: list[Finding]) -> list[dict[str, str]]:
         {
             "title": finding.title,
             "body": finding.recommended_action,
-            "evidence": _EVIDENCE_LABELS.get(
-                finding.evidence_strength.value, finding.evidence_strength.value
-            ),
-            "evidence_class": finding.evidence_strength.value,
+            **_confidence_chip(reader_confidence(finding)),
         }
         for finding in findings
         if finding.recommended_action
@@ -1121,8 +1038,7 @@ def _recommended_actions(findings: list[Finding]) -> list[dict[str, str]]:
         {
             "title": "先补齐关键数据",
             "body": "当前报告没有足够的建议动作。优先补齐笔记、SKU、订单和评论数据后再重新生成。",
-            "evidence": "不可判断",
-            "evidence_class": "not_judgable",
+            **_confidence_chip(_confidence.NOT_JUDGABLE),
         }
     ]
 
@@ -1249,8 +1165,9 @@ def _business_actions(
             "how": "补齐笔记、SKU、订单、内容特征和评论后重新生成报告。",
             "metric": "下一次报告中可判断的模块数量。",
             "stop_rule": "如果核心表仍为空，先不要解读趋势。",
-            "evidence": action["evidence"],
-            "evidence_class": action.get("evidence_class", "not_judgable"),
+            "confidence": action["confidence"],
+            "confidence_class": action.get("confidence_class", "not_judgable"),
+            "confidence_help": action.get("confidence_help", ""),
         }
         for action in fallback
     ]
@@ -1265,7 +1182,6 @@ def _action(
     metric: str,
     stop_rule: str,
 ) -> dict[str, str]:
-    evidence_value = _primary_evidence_value(result) if result else "not_judgable"
     return {
         "task": task,
         "target": target,
@@ -1273,45 +1189,64 @@ def _action(
         "how": how,
         "metric": metric,
         "stop_rule": stop_rule,
-        "evidence": _EVIDENCE_LABELS.get(evidence_value, evidence_value),
-        "evidence_class": evidence_value,
+        **_confidence_chip(_primary_confidence(result)),
     }
 
 
 def _evidence_counts(findings: list[Finding]) -> list[dict[str, object]]:
-    counts = {key: 0 for key in _EVIDENCE_LABELS}
+    # Distribution over the single reader-facing 置信度 level, not causal strength —
+    # so the summary reads 高/中/低/暂不下定论, matching every chip in the report.
+    counts = {level: 0 for level in _confidence.LEVELS}
     for finding in findings:
-        counts[finding.evidence_strength.value] = counts.get(finding.evidence_strength.value, 0) + 1
+        level = reader_confidence(finding).level
+        counts[level] = counts.get(level, 0) + 1
     return [
         {
-            "value": value,
-            "label": _EVIDENCE_LABELS[value],
-            "count": counts[value],
-            "help": _EVIDENCE_HELP[value],
+            "value": level,
+            "label": _confidence.LEVEL_LABELS[level],
+            "count": counts[level],
+            "help": _confidence.LEVEL_HELP[level],
         }
-        for value in ("strong", "medium", "weak", "not_judgable")
+        for level in _confidence.LEVELS
     ]
 
 
 def _finding_summary(finding: Finding) -> dict[str, str]:
-    evidence_value = finding.evidence_strength.value
-    reliability = finding.descriptive_reliability
-    reliability_value = reliability.value if reliability is not None else None
+    # Single reader-facing 置信度 (see reporting.confidence): 描述可靠性 drives it,
+    # causal strength is a caveat, so a large-sample observational fact no longer
+    # reads as "低". The two-chip (证据/可靠性) layout is gone.
+    rc = reader_confidence(finding)
     return {
         "title": finding.title,
         "body": finding.conclusion,
-        "evidence": _EVIDENCE_LABELS.get(evidence_value, evidence_value),
-        "evidence_class": evidence_value,
-        "help": _EVIDENCE_HELP.get(evidence_value, "请结合数据限制一起阅读。"),
-        # Second, orthogonal axis. None keys let the template skip the tag entirely.
-        "reliability": _RELIABILITY_LABELS.get(reliability_value) if reliability_value else None,
-        "reliability_class": reliability_value,
-        "reliability_help": _RELIABILITY_HELP.get(reliability_value) if reliability_value else None,
+        "confidence": rc.label,
+        "confidence_class": rc.level,
+        "confidence_help": rc.help,
     }
 
 
-def _evidence_label(value: str) -> str:
-    return _EVIDENCE_LABELS.get(value, value)
+def _confidence_chip(rc) -> dict[str, str]:
+    """Reader-facing confidence fields for a highlight/action/priority chip."""
+    return {
+        "confidence": rc.label,
+        "confidence_class": rc.level,
+        "confidence_help": rc.help,
+    }
+
+
+def _primary_confidence(result: AnalysisResult | None):
+    if result is None or not result.findings:
+        return _confidence.NOT_JUDGABLE
+    return reader_confidence(result.findings[0])
+
+
+def _caveats_with_causal(finding: Finding) -> list[str]:
+    """Finding caveats plus the one-line causal footnote (was a separate chip)."""
+    rc = reader_confidence(finding)
+    caveats = list(finding.caveats)
+    if rc.causal_caveat and rc.causal_caveat not in caveats:
+        caveats.append(rc.causal_caveat)
+    return caveats
 
 
 def _display_cell(field_name: str, value: object) -> str:
@@ -1326,12 +1261,6 @@ def _display_cell_filter(value: object, field_name: str) -> str:
     return _format_scalar(field_name, value)
 
 
-def _primary_evidence_value(result: AnalysisResult | None) -> str:
-    if result is None or not result.findings:
-        return "not_judgable"
-    return result.findings[0].evidence_strength.value
-
-
 def _first_row(result: AnalysisResult | None, table_name: str) -> dict[str, object] | None:
     if result is None:
         return None
@@ -1340,9 +1269,15 @@ def _first_row(result: AnalysisResult | None, table_name: str) -> dict[str, obje
 
 
 def _result_label(task_id: str, title: str) -> str:
-    for group in _ANALYSIS_GROUPS:
-        if task_id in group["tasks"]:
-            return str(group["title"]).split("：", maxsplit=1)[0]
+    """The business-domain label shown as the small tag above each result block.
+
+    Sourced from the shared :data:`domains.DOMAINS` registry so the tag always
+    matches the domain header the block renders under; falls back to the module
+    title for any task not yet assigned to a domain.
+    """
+    for domain_title, _intro, tasks in DOMAINS:
+        if task_id in tasks:
+            return domain_title
     return title
 
 

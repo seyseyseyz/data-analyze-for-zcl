@@ -9,6 +9,7 @@ Design: docs/superpowers/specs/2026-07-03-core-business-diagnosis-design.md
 from pathlib import Path
 
 from xhs_ceramics_analytics.analytics.numeric import to_finite_float
+from xhs_ceramics_analytics.analysis import methodology as M
 from xhs_ceramics_analytics.analysis.funnel_scope import normalize_funnel_rows
 from xhs_ceramics_analytics.analysis.prose import cn_date, money, pp, qty
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
@@ -143,7 +144,8 @@ def _snapshot_finding(
     conclusion = _snapshot_conclusion(
         total_gmv, total_buyers, aov, pay_conv, direction, decomp
     )
-    caveats = ["观察性快照，非因果；聚合口径仅反映方向与规模。"]
+    caveats = [M.causal_disclaimer("促销节奏、季节性、流量结构变化")]
+    method_notes: list[str] = [M.METHOD_OBSERVATIONAL]
     if aov_source == "column":
         caveats.append("客单价用 aov 列均值（paid_buyers 缺失或为零，无法反推）。")
     if conv_source == "column":
@@ -152,25 +154,24 @@ def _snapshot_finding(
         caveats.append("缺 product_visitors 与 pay_conversion_uv，无法给出支付转化率。")
     if decomp.get("changepoint_date") or decomp.get("peak_dow"):
         dow_note = "已去趋势" if decomp.get("detrended_dow") else "未去趋势（序列过短）"
-        caveats.append(
+        method_notes.append(
             f"周对比按 ISO 日历周（非行数）；周内节律{dow_note}后取残差均值；"
             "结构性变化点为递归多变点分解，均为观察性，仅提示何时移动，非因果。"
         )
     if summary and summary.get("n"):
-        caveats.append(
-            "趋势方向按逐日 GMV 的最小二乘斜率判定（非首末两点），日度数据波动较大，"
-            "逐期环比见趋势表。"
-        )
+        method_notes.append(M.METHOD_TREND_SLOPE)
+        caveats.append("日度数据波动较大，逐期环比见趋势表。")
     if decomp.get("anomaly_count"):
         sample = "、".join(cn_date(d) for d in decomp.get("anomaly_dates", [])[:3])
         caveats.append(
-            f"已标记 {decomp['anomaly_count']} 个异常日（去趋势后 GMV 偏离 ±2σ，如 {sample}），"
-            "多为大促/断货/数据缺口所致，是观察性提示而非因果。"
+            f"已标记 {decomp['anomaly_count']} 个异常日（如 {sample}），"
+            "多为大促/断货/数据缺口所致，提醒关注、非因果。"
         )
+        method_notes.append("异常日按去趋势后 GMV 偏离 ±2σ 判定。")
     if decomp.get("projected_gmv") is not None:
         caveats.append(
-            f"末尾的 {decomp.get('projection_horizon')} 日 GMV 外推为显著趋势线的线性延伸，"
-            "是观察性提示、非预测承诺，活动或季节变化会使其失真。"
+            f"末尾的 {decomp.get('projection_horizon')} 日 GMV 外推为趋势线的线性延伸，"
+            "仅供参考、非预测承诺，活动或季节变化会使其失真。"
         )
 
     snapshot_row = {
@@ -205,7 +206,9 @@ def _snapshot_finding(
             "projected_gmv_next": decomp.get("projected_gmv"),
         },
         caveats=caveats,
-        evidence_reason="经营规模为聚合快照，趋势为逐期 GMV 走势，均为观察性描述。",
+        evidence_reason=M.methodology_note(
+            "经营规模为聚合快照，趋势为逐期 GMV 走势。", *method_notes
+        ),
         confounders=_SNAPSHOT_CONFOUNDERS,
         appendix=(
             "趋势方向用最小二乘斜率判定；逐期环比（delta/pct）见 business_trend 表；"
@@ -321,11 +324,11 @@ def _benchmark_finding(con, limitations: list[str]):
     n_weeks = max(r["periods"] for r in bench_rows)
     conclusion = (
         f"以近 {n_weeks} 个 ISO 周为自身基准，最新一周"
-        f"「{headline['metric']}」处于 {headline['percentile_label']} 分位"
+        f"「{headline['metric']}」处于自身历史较高水平（{headline['percentile_label']}）"
     )
     if worst["metric"] != headline["metric"]:
         conclusion += (
-            f"，而「{worst['metric']}」仅 {worst['percentile_label']} 分位、相对偏弱。"
+            f"，而「{worst['metric']}」仅处于较低水平（{worst['percentile_label']}）、相对偏弱。"
         )
     else:
         conclusion += "。"
@@ -345,7 +348,7 @@ def _benchmark_finding(con, limitations: list[str]):
                 "weak_percentile": worst["percentile_label"],
             },
             caveats=[
-                "分位是相对自身历史的排名，非绝对好坏；周期越少越易受单周波动影响。",
+                "这是相对自身历史的排名，不代表绝对好坏；周期越少越容易受单周波动影响。",
                 "GMV 按周求和、转化率按周内日均聚合；促销周天然偏高，读数需结合活动节奏。",
             ],
             recommended_action=(
@@ -586,7 +589,7 @@ def _snapshot_conclusion(total_gmv, total_buyers, aov, pay_conv, direction, deco
     if direction is None:
         tail = "，趋势数据不足。"
     elif direction == "趋势不明":
-        tail = "，GMV 趋势不明（日度斜率未过显著性门槛）。"
+        tail = "，GMV 日度波动较大，还看不出明确趋势。"
     else:
         tail = f"，GMV 趋势{direction}。"
     extras: list[str] = []
@@ -648,11 +651,14 @@ def _growth_attribution_finding(
     factor_zh = bridge.get("dominant_factor_zh")
 
     caveats = [
-        "GMV = 访客数 × 支付转化率 × 客单价 的 LMDI 确定性分解，三项贡献之和≈ΔGMV，非因果。",
         f"前后各取半程聚合：前段 {dated[0][0]}–{dated[mid - 1][0]}，后段 {dated[mid][0]}–{dated[-1][0]}。",
     ]
+    bridge_method_notes = [
+        "GMV = 访客数 × 支付转化率 × 客单价 的 LMDI 确定性分解，三项贡献之和≈ΔGMV，非因果。",
+    ]
     if bridge.get("partial"):
-        caveats.append("部分因子缺失或非正（如某段访客/买家为零），分解降级，未拆部分计入残差。")
+        caveats.append("部分因子缺失或非正（如某段访客/买家为零），分解降级。")
+        bridge_method_notes.append("未拆分部分计入残差。")
 
     sample_size = int(p0["buyers"] + p1["buyers"])
     finding = Finding(
@@ -662,8 +668,9 @@ def _growth_attribution_finding(
         descriptive_reliability=score_reliability(sample_size),
         key_numbers={
             "delta_gmv": bridge.get("delta_gmv"),
-            "dominant_factor": bridge.get("dominant_factor"),
-            "dominant_factor_zh": factor_zh,
+            # 读者面只留中文枚举值（"流量"/"转化"/"客单价"），英文枚举仅在 bridge
+            # 内部作字典键；不再同时输出 dominant_factor + _zh 造成重复标签。
+            "dominant_factor": factor_zh,
             "contrib_traffic": bridge.get("contrib_traffic"),
             "contrib_conversion": bridge.get("contrib_conversion"),
             "contrib_aov": bridge.get("contrib_aov"),
@@ -672,7 +679,10 @@ def _growth_attribution_finding(
         },
         caveats=caveats,
         recommended_action=_FACTOR_LEVER.get(bridge.get("dominant_factor")),
-        evidence_reason="用 LMDI 把 ΔGMV 完全可加地拆到流量/转化/客单三因子，确定性分解、观察性。",
+        evidence_reason=M.methodology_note(
+            "用 LMDI 把 ΔGMV 完全可加地拆到流量/转化/客单三因子，确定性分解、观察性。",
+            *bridge_method_notes,
+        ),
         confounders=_BRIDGE_CONFOUNDERS,
     )
     return finding, {"gmv_bridge": bridge_rows}
@@ -685,7 +695,7 @@ def _bridge_rows(bridge: dict) -> list[dict]:
         contrib = bridge.get(f"contrib_{factor}")
         out.append(
             {
-                "factor": factor,
+                # 表格行只呈现中文因子名；英文 `factor` 仅用于内部 is_dominant 比较。
                 "factor_zh": zh,
                 "contribution": contrib,
                 "share": (contrib / delta) if (contrib is not None and delta) else None,
@@ -695,14 +705,33 @@ def _bridge_rows(bridge: dict) -> list[dict]:
     return out
 
 
+# 三因子英文键 → 读者面中文名,抵消句里点名反向拖累的因子时复用。
+_FACTOR_ZH = {"traffic": "流量", "conversion": "转化", "aov": "客单价"}
+
+# 口径句:GMV 桥比较的是窗口前后两段之间的变化,不是单点绝对值——读者过去看不懂
+# "前段/后段"从哪来,这里在结论开头一句话交代清楚。
+_BRIDGE_CALIBER = "把统计窗口分成前半程和后半程两段对比，下面是两段之间的变化："
+
+
+def _offsetting_factors_zh(bridge: dict, delta: float) -> str:
+    """点名与净变化反向的因子(它们把主因子的推动抵消掉了),按中文名拼接。"""
+    names = []
+    for factor, zh in _FACTOR_ZH.items():
+        contrib = bridge.get(f"contrib_{factor}")
+        if contrib is not None and contrib != 0 and (contrib > 0) != (delta > 0):
+            names.append(zh)
+    return "、".join(names)
+
+
 def _bridge_conclusion(bridge: dict, p0: dict, p1: dict) -> str:
     delta = bridge.get("delta_gmv")
     if delta is None:
-        return "增长归因数据不足，无法分解 ΔGMV。"
+        return _BRIDGE_CALIBER + "增长归因数据不足，无法分解 ΔGMV。"
     move = "增长" if delta > 0 else ("下滑" if delta < 0 else "持平")
     head = (
-        f"GMV 从 {money(p0['gmv'])} 元{move}至 {money(p1['gmv'])} 元"
-        f"（Δ {money(delta)} 元）"
+        _BRIDGE_CALIBER
+        + f"GMV 从 {money(p0['gmv'])} 元{move}至 {money(p1['gmv'])} 元"
+        + f"（Δ {money(delta)} 元）"
     )
     zh = bridge.get("dominant_factor_zh")
     if zh is None:
@@ -715,6 +744,16 @@ def _bridge_conclusion(bridge: dict, p0: dict, p1: dict) -> str:
             f"，其中{zh}变动最大（贡献 {money(contrib)} 元，方向与净变化相反，"
             "被其他因子抵消）。"
         )
+    # Same direction as the net change, but its magnitude dwarfs the net move: the
+    # push was real yet largely eaten by opposing factors — spell out which ones,
+    # so a small net delta doesn't read as "traffic barely moved".
+    if contrib is not None and delta != 0 and abs(contrib) > abs(delta):
+        draggers = _offsetting_factors_zh(bridge, delta)
+        if draggers:
+            return head + (
+                f"，{zh}在{move}（贡献 {money(contrib)} 元），"
+                f"但大部分被{draggers}的反向变化抵消，所以整体只{move} {money(delta)} 元。"
+            )
     return head + f"，主要由{zh}拉动（贡献 {money(contrib)} 元）。"
 
 
@@ -734,7 +773,11 @@ def _structure_finding(
     tables: dict[str, list[dict]] = {}
     key_numbers: dict[str, object] = {}
     parts: list[str] = []
-    caveats = ["观察性拆解，非因果；份额为聚合快照。"]
+    caveats = [
+        M.causal_disclaimer("渠道流量结构、客群差异、投放节奏不同"),
+        "份额为聚合快照。",
+    ]
+    structure_method_notes: list[str] = []
     sample_size = 1
 
     if carrier_rows is not None:
@@ -773,7 +816,7 @@ def _structure_finding(
             parts.append(
                 f"{a['channel']} 与 {b['channel']} 支付转化率相差 {pp(diff)}（{verdict}）"
             )
-            caveats.append("渠道显著性用两样本比例检验，并结合效应量（差值）判断。")
+            structure_method_notes.append(M.METHOD_PROPORTION_TEST)
             if mde_caveat:
                 caveats.append(mde_caveat)
         else:
@@ -790,7 +833,9 @@ def _structure_finding(
         key_numbers=key_numbers,
         caveats=caveats,
         recommended_action=_CARRIER_LEVER if carrier_rows is not None else None,
-        evidence_reason="载体为 note/card 列的 GMV 份额拆解；渠道转化差异用两样本比例检验，观察性。",
+        evidence_reason=M.methodology_note(
+            "载体为 note/card 列的 GMV 份额拆解，观察性。", *structure_method_notes
+        ),
         confounders=_STRUCTURE_CONFOUNDERS,
     )
     return finding, tables
@@ -926,7 +971,11 @@ def _funnel_finding(
     if aud_rows is not None:
         tables["audience_conversion"] = aud_rows
 
-    caveats = ["观察性漏斗，非因果；各阶段率为聚合快照。"]
+    caveats = [
+        M.causal_disclaimer("客群构成、流量质量、详情页与价格不同"),
+        "各阶段率为聚合快照。",
+    ]
+    funnel_method_notes: list[str] = [M.METHOD_WILSON]
     if fallback:
         caveats.append("缺 product_click_users，访问→点击/点击→支付用比率列均值。")
     if canonical_cycle is not None:
@@ -934,7 +983,8 @@ def _funnel_finding(
             f"首购周期为累计窗口，固定取 {canonical_cycle} 避免 180/365 天窗口重复计数。"
         )
     key_numbers: dict[str, object] = {
-        "weakest_stage": weakest,
+        # 读者面存中文环节名；内部 weakest（英文键）仍用于杠杆/结论查表。
+        "weakest_stage": _STAGE_ZH.get(weakest) if weakest else None,
         "visit_click_rate": visit_click,
         "click_pay_rate": click_pay,
         "visit_pay_rate": visit_pay,
@@ -950,7 +1000,7 @@ def _funnel_finding(
         )
         key_numbers["audience_rel_lift"] = lift
         key_numbers["audience_mde"] = mde
-        caveats.append("客群转化差异用两样本比例检验，并结合效应量判断。")
+        funnel_method_notes.append(M.METHOD_PROPORTION_TEST)
         if mde_caveat:
             caveats.append(mde_caveat)
 
@@ -965,7 +1015,10 @@ def _funnel_finding(
         key_numbers=key_numbers,
         caveats=caveats,
         recommended_action=_STAGE_LEVERS.get(weakest) if weakest else None,
-        evidence_reason="各阶段转化优先用真实计数，弱阶段用 Wilson 区间守卫小样本；差异用两样本比例检验。",
+        evidence_reason=M.methodology_note(
+            "各阶段转化优先用真实计数，弱阶段用小样本区间守卫辅助判断。",
+            *funnel_method_notes,
+        ),
         confounders=_FUNNEL_CONFOUNDERS,
     )
     return finding, tables
@@ -983,8 +1036,9 @@ def _stage_rows(stage_rates: dict, stage_denoms: dict) -> list[dict]:
             band = None
         rows.append(
             {
-                "stage": stage,
-                "stage_zh": _STAGE_ZH[stage],
+                # 专属列名 funnel_stage，避免与退款模块的 stage/stage_zh 标签碰撞；
+                # 值直接存中文，无需 stage_zh 冗余列。
+                "funnel_stage": _STAGE_ZH[stage],
                 "rate": rate,
                 "denominator": n,
                 "ci_low": lo,

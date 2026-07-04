@@ -10,6 +10,7 @@ and ``shop_payers``, so audience/cycle conversion uses ``k = Σ shop_payers`` an
 from pathlib import Path
 
 from xhs_ceramics_analytics.analytics.numeric import to_finite_float
+from xhs_ceramics_analytics.analysis import methodology as M
 from xhs_ceramics_analytics.analysis.funnel_scope import (
     ROLLUP as _ROLLUP,
     normalize_funnel_rows,
@@ -125,7 +126,7 @@ def _conversion_finding(con, limitations: list[str]) -> tuple[Finding, list[dict
             conclusion="shop_page_funnel 缺少访客/支付人数列，无法计算人群转化，需补充真实计数列。",
             evidence_strength=EvidenceStrength.NOT_JUDGABLE,
             key_numbers={"group_count": 0, "overall_conversion": None},
-            caveats=["观察性诊断，非因果；缺少真实计数列。"],
+            caveats=[M.causal_disclaimer("人群之间的流量结构和客群成熟度不同"), "缺少真实计数列。"],
             confounders=list(_CONV_CONFOUNDERS),
             evidence_reason="缺少 shop_visitors/shop_payers，无法基于真实计数计算转化。",
         )
@@ -197,7 +198,8 @@ def _conversion_finding(con, limitations: list[str]) -> tuple[Finding, list[dict
             retention_note += f"、老客转化为新客的 {round(repeat_conversion_premium + 1, 1)} 倍"
         retention_note += "。"
 
-    caveats = ["观察性对比，非因果——人群转化差异可能由流量结构与客群成熟度驱动。", _DEDUP_CAVEAT]
+    caveats = [M.causal_disclaimer("人群之间的流量结构和客群成熟度不同"), _DEDUP_CAVEAT]
+    conv_methodology = False
 
     if has_audience and len(valid) >= 2:
         a, b = valid[0], valid[1]
@@ -227,7 +229,7 @@ def _conversion_finding(con, limitations: list[str]) -> tuple[Finding, list[dict
             "new_customer_dependence": new_customer_dependence,
             "repeat_conversion_premium": repeat_conversion_premium,
         }
-        caveats.append("显著性用两样本比例 z 检验，辅以 Wilson 区间重叠与效应量门槛。")
+        conv_methodology = True
     else:
         if has_audience:
             limitations.append("shop_page_funnel 人群维度不足两组，回退到整体转化，跳过人群对比。")
@@ -257,6 +259,12 @@ def _conversion_finding(con, limitations: list[str]) -> tuple[Finding, list[dict
             }
         ]
 
+    evidence_reason = "转化率用真实 shop_payers/shop_visitors 计数，人群差异为观察性两样本比例检验。"
+    if conv_methodology:
+        evidence_reason = M.methodology_note(
+            evidence_reason, M.METHOD_PROPORTION_TEST, M.METHOD_WILSON
+        )
+
     finding = Finding(
         title="人群转化对比",
         conclusion=conclusion,
@@ -265,7 +273,7 @@ def _conversion_finding(con, limitations: list[str]) -> tuple[Finding, list[dict
         key_numbers=key_numbers,
         caveats=caveats,
         recommended_action=_LEVER_AUDIENCE,
-        evidence_reason="转化率用真实 shop_payers/shop_visitors 计数，人群差异为观察性两样本比例检验。",
+        evidence_reason=evidence_reason,
         confounders=list(_CONV_CONFOUNDERS),
     )
     return finding, comparison_rows
@@ -322,17 +330,22 @@ def _cycle_finding(con, limitations: list[str]) -> tuple[Finding | None, list[di
     weakest_cycle = weakest["first_purchase_cycle"] if weakest else None
 
     caveats = [
-        "观察性漏斗，非因果；小样本周期未做 Wilson 守卫。",
+        M.causal_disclaimer("各周期之间的活动节奏和客群成熟度不同"),
         "首购周期为累计窗口（180天 ⊂ 365天），各窗口访客/支付存在重叠，仅作漏斗对比不可相加。",
         _DEDUP_CAVEAT,
     ]
+    evidence_reason_parts = [
+        "各周期转化用真实计数聚合，最弱周期以 Wilson 下界排序，观察性。",
+        M.METHOD_WILSON,
+    ]
     if weakest_cycle:
-        cycle_note = f"最弱周期为 {weakest_cycle}（Wilson 下界最低）。"
+        cycle_note = f"最弱周期为 {weakest_cycle}（转化明显偏低）。"
     elif gap is not None and not windows_differ:
         cycle_note = "各累计窗口转化无有效差异（差异低于阈值，视为同一窗口）。"
     else:
         cycle_note = "各周期样本量不足，暂无稳健最弱周期。"
-        caveats.append("各周期样本量均不足 30，转化率未做置信区间判定。")
+        caveats.append("各周期样本量均不足 30，转化率结果仅供参考。")
+        evidence_reason_parts.append("样本量不足 30 的周期未做置信区间判定。")
     conclusion = (
         f"共 {len(cycle_rows)} 个首购周期。"
         + cycle_note
@@ -351,7 +364,7 @@ def _cycle_finding(con, limitations: list[str]) -> tuple[Finding | None, list[di
         },
         caveats=caveats,
         recommended_action=_LEVER_CYCLE,
-        evidence_reason="各周期转化用真实计数聚合，最弱周期以 Wilson 下界排序，观察性。",
+        evidence_reason=M.methodology_note(*evidence_reason_parts),
         confounders=list(_CYCLE_CONFOUNDERS),
     )
     return finding, cycle_rows
@@ -419,7 +432,7 @@ def _source_finding(con, limitations: list[str]) -> tuple[Finding | None, list[d
                 optimize_source = r["source_page"]
                 break
 
-    caveats = ["观察性来源结构，非因果；支付人数由 rate×访客估计，非真实计数。", _DEDUP_CAVEAT]
+    caveats = [M.causal_disclaimer("各来源之间的访客意图和承接页不同"), _DEDUP_CAVEAT]
     conclusion = (
         f"共 {len(source_rows)} 个进店来源，最大流量来源为 {top_source}"
         f"（访客占比 {round((source_rows[0]['visitor_share'] or 0) * 100)}%）。"
@@ -438,7 +451,10 @@ def _source_finding(con, limitations: list[str]) -> tuple[Finding | None, list[d
         },
         caveats=caveats,
         recommended_action=_LEVER_SOURCE,
-        evidence_reason="来源支付数=bounded_rate(enter_pay_rate)×访客估计；份额与转化为观察性描述。",
+        evidence_reason=M.methodology_note(
+            "来源支付数=bounded_rate(enter_pay_rate)×访客估计；份额与转化为观察性描述。",
+            "支付人数由 rate×访客估计，非真实计数。",
+        ),
         confounders=list(_SOURCE_CONFOUNDERS),
     )
     return finding, source_rows
@@ -538,7 +554,7 @@ def _customer_value_finding(con, limitations: list[str]) -> tuple[Finding | None
         )
 
     caveats = [
-        "观察性 GMV 结构，非因果——贡献与集中度可能由活动、券与流量结构驱动。",
+        M.causal_disclaimer("活动、券与流量结构不同"),
         "集中度按进店来源 (source_page) 计算，是来源层面而非顾客个体层面——聚合导出无顾客粒度，"
         "不可读作少数大客户贡献。",
         _DEDUP_CAVEAT,
@@ -625,7 +641,7 @@ def _composition_finding(con, limitations: list[str]) -> tuple[Finding, list[dic
             "top_segment": top_segment,
             "top_gmv_share": top["gmv_share"] if top else None,
         },
-        caveats=["观察性构成快照，非因果；份额为手工录入，口径需自校。"],
+        caveats=[M.causal_disclaimer("人群定义口径不同"), "份额为手工录入，口径需自校。"],
         # 手工录入快照 → 描述可靠性固定为 LOW，与其他计算型 finding 一样显式给出该正交轴。
         descriptive_reliability=DescriptiveReliability.LOW,
         recommended_action=_LEVER_COMPOSITION,

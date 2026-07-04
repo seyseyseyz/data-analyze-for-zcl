@@ -130,6 +130,22 @@ def test_row_shape_carries_reader_facing_fields():
     assert row["feasibility_label"] in {"高", "中", "低"}
 
 
+def test_row_carries_reader_why_and_confidence_label():
+    # B4: the reader-facing table shows a plain "为什么值得先做" reason plus a single
+    # 置信度 tag — the two statistical axes are folded, no 预期影响/可行性/证据 grid.
+    results = [
+        _result(
+            "core_business_diagnosis",
+            "整体经营诊断",
+            [_finding("经营结构", EvidenceStrength.MEDIUM)],
+        ),
+    ]
+    row = build_priority_table(results)[0]
+    assert isinstance(row["why"], str) and row["why"]
+    assert row["confidence_label"] in {"高", "中", "低", "暂不下定论"}
+    assert row["confidence_class"] in {"high", "medium", "low", "not_judgable"}
+
+
 def test_caps_rows_and_degrades_empty():
     assert build_priority_table([]) == []
     # Nothing actionable → empty, never raises.

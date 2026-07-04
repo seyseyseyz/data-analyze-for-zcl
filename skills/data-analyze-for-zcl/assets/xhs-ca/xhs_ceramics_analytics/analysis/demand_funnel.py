@@ -14,6 +14,7 @@ from pathlib import Path
 from xhs_ceramics_analytics.analytics.numeric import to_finite_float
 from xhs_ceramics_analytics.analysis.prose import cn_date, qty
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
+from xhs_ceramics_analytics.analysis import methodology as M
 from xhs_ceramics_analytics.analytics.confidence import min_n_guard, rate_band, wilson_interval
 from xhs_ceramics_analytics.analytics.trends import trend_summary
 from xhs_ceramics_analytics.db.duck import connect
@@ -91,7 +92,7 @@ def _funnel_finding(
             ),
             evidence_strength=EvidenceStrength.NOT_JUDGABLE,
             key_numbers={"total_add_to_cart_users": None, "total_paid_buyers": None},
-            caveats=["观察性诊断，非因果；缺少加购/支付买家列。"],
+            caveats=["加购人数/支付买家列缺失应视为导入缺口。"],
             confounders=list(_CONFOUNDERS),
             evidence_reason="缺少 add_to_cart_users/paid_buyers 列，无法计算加购→成交转化。",
         )
@@ -151,11 +152,9 @@ def _funnel_finding(
     )
 
     caveats = [
-        "观察性诊断，非因果——加购→成交比受流量质量、活动折扣与客群共同影响。",
+        M.causal_disclaimer("流量质量、活动折扣和客群不同"),
         "比值口径而非严格漏斗：部分成交未先加购，比值可能接近或超过 100%，趋势比绝对值更可读。",
     ]
-    if ci_band is not None:
-        caveats.append("加购→成交比的 95% 置信区间见 ci_low/ci_high。")
 
     key_numbers: dict[str, object] = {
         "total_add_to_cart_users": total_cart,
@@ -176,9 +175,10 @@ def _funnel_finding(
         key_numbers=key_numbers,
         caveats=caveats,
         recommended_action=_LEVER_FUNNEL,
-        evidence_reason=(
+        evidence_reason=M.methodology_note(
             "加购与支付买家为 business_overview_daily 真实列聚合，"
-            "趋势按逐日加购→成交比的最小二乘斜率判定；观察性描述，非因果。"
+            "趋势按逐日加购→成交比的最小二乘斜率判定；观察性描述，非因果。",
+            "加购→成交比的 95% 置信区间见 ci_low/ci_high。" if ci_band is not None else None,
         ),
         confounders=list(_CONFOUNDERS),
     )
@@ -244,7 +244,7 @@ def _wishlist_finding(
         descriptive_reliability=score_reliability(len(series) or 1),
         key_numbers=key_numbers,
         caveats=[
-            "观察性诊断，非因果——心愿单为延迟需求信号，转化受上新/提醒/权益节奏影响。",
+            "心愿单是延迟需求信号。" + M.causal_disclaimer("上新、提醒和权益节奏不同"),
             "心愿单与加购为两种意向强度，不可相加；心愿单/加购仅作蓄水深度参考。",
         ],
         recommended_action=_LEVER_WISHLIST,
