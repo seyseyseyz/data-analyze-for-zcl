@@ -8,6 +8,8 @@ with no causal claim. Pure stdlib; missing/zero factors degrade to ``partial``.
 """
 import math
 
+from xhs_ceramics_analytics.analytics.numeric import is_finite_number, to_finite_float
+
 _EPS = 1e-12
 _FACTOR_ZH = {"traffic": "流量", "conversion": "转化", "aov": "客单价"}
 
@@ -16,22 +18,23 @@ def _factors(period: dict) -> tuple[float, float, float] | None:
     """Normalise a period dict to (visitors, conversion, aov).
 
     Accepts either explicit {visitors, conversion, aov} or {gmv, visitors, buyers}
-    (conversion and aov reverse-derived). Returns None if under-specified.
+    (conversion and aov reverse-derived). Non-finite/uncoercible cells and an
+    under-specified period return None so the caller degrades to ``partial``.
     """
     if period is None:
         return None
-    v = period.get("visitors")
+    v = to_finite_float(period.get("visitors"))
     if v is None:
         return None
-    v = float(v)
-    if period.get("conversion") is not None and period.get("aov") is not None:
-        return v, float(period["conversion"]), float(period["aov"])
-    gmv = period.get("gmv")
-    buyers = period.get("buyers")
+    conversion = to_finite_float(period.get("conversion"))
+    aov = to_finite_float(period.get("aov"))
+    if conversion is not None and aov is not None:
+        return v, conversion, aov
+    gmv = to_finite_float(period.get("gmv"))
+    buyers = to_finite_float(period.get("buyers"))
     if gmv is not None and buyers is not None:
-        buyers = float(buyers)
         conversion = (buyers / v) if v else 0.0
-        aov = (float(gmv) / buyers) if buyers else 0.0
+        aov = (gmv / buyers) if buyers else 0.0
         return v, conversion, aov
     return None
 
@@ -64,8 +67,10 @@ def gmv_bridge(period_0: dict, period_1: dict) -> dict:
     v1, c1, a1 = f1
     gmv0, gmv1 = v0 * c0 * a0, v1 * c1 * a1
     delta = gmv1 - gmv0
-    # Any non-positive factor makes ln() undefined — report a partial bridge.
-    if min(v0, c0, a0, v1, c1, a1) <= 0:
+    # Any non-positive or non-finite factor makes ln() undefined — report a
+    # partial bridge. A plain ``min(...) <= 0`` would let a NaN slip through
+    # (``nan <= 0`` is False), so check finiteness AND positivity per factor.
+    if not all(is_finite_number(x) and x > 0 for x in (v0, c0, a0, v1, c1, a1)):
         partial_result["delta_gmv"] = delta
         partial_result["residual"] = delta
         return partial_result

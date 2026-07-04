@@ -90,7 +90,7 @@ def _render_priority_table(results: list[AnalysisResult]) -> list[str]:
         lines.append(
             f"| {index} | {module} | {weak_link} | {lever} | "
             f"{row.get('impact_label')} | {row.get('feasibility_label')} | "
-            f"{_evidence_label(str(row.get('evidence')))} |"
+            f"{row.get('evidence_label')} |"
         )
     lines.append("")
     return lines

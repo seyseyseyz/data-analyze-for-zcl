@@ -8,6 +8,7 @@ attribution (SKU-level GMV/退款/转化 mix reflects品类、价格带与流量
 import math
 from pathlib import Path
 
+from xhs_ceramics_analytics.analytics.numeric import to_finite_float
 from xhs_ceramics_analytics.analysis.prose import money, qty
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.analytics.concentration import gini, hhi
@@ -214,7 +215,8 @@ def _pareto_finding(
         descriptive_reliability=score_reliability(sku_count),
         key_numbers=key_numbers,
         caveats=["观察性诊断，非因果——GMV 集中度可能由品类结构、价格带与活动节奏共同驱动。"],
-        recommended_action=_LEVER_PARETO,
+        # No positive-GMV SKU →集中度不可计算，此时不给出加投动作（避免无数据支撑的建议）。
+        recommended_action=_LEVER_PARETO if valid else None,
         evidence_reason="GMV 集中度基于真实 gmv 列排序聚合，观察性描述，非因果。",
         confounders=list(_CONFOUNDERS),
     )
@@ -753,7 +755,7 @@ def _category_l2_finding(
 # Shared helpers (ported from audience_structure/refund_diagnosis)
 # --------------------------------------------------------------------------- #
 def _num(value) -> float:
-    return float(value) if value is not None else 0.0
+    return to_finite_float(value, 0.0)
 
 
 def _median(values: list[float]) -> float:

@@ -11,6 +11,7 @@ Real counts available for 笔记/商卡: the daily table carries genuine per-car
 """
 from pathlib import Path
 
+from xhs_ceramics_analytics.analytics.numeric import to_finite_float
 from xhs_ceramics_analytics.analysis.prose import money, pp
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.analytics.confidence import (
@@ -515,7 +516,7 @@ def _column_mean_rate(rows: list[dict], col: str) -> float | None:
 # Shared helpers (ported from audience_structure / refund_diagnosis)
 # --------------------------------------------------------------------------- #
 def _num(value) -> float:
-    return float(value) if value is not None else 0.0
+    return to_finite_float(value, 0.0)
 
 
 def _fetch_all(con, table: str) -> list[dict]:

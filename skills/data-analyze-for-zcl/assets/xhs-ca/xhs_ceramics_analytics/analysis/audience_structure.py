@@ -9,6 +9,7 @@ and ``shop_payers``, so audience/cycle conversion uses ``k = Σ shop_payers`` an
 """
 from pathlib import Path
 
+from xhs_ceramics_analytics.analytics.numeric import to_finite_float
 from xhs_ceramics_analytics.analysis.funnel_scope import (
     ROLLUP as _ROLLUP,
     normalize_funnel_rows,
@@ -24,7 +25,12 @@ from xhs_ceramics_analytics.analytics.confidence import (
     wilson_interval,
 )
 from xhs_ceramics_analytics.db.duck import connect
-from xhs_ceramics_analytics.evidence import EvidenceStrength, score_evidence, score_reliability
+from xhs_ceramics_analytics.evidence import (
+    DescriptiveReliability,
+    EvidenceStrength,
+    score_evidence,
+    score_reliability,
+)
 
 TASK_ID = "audience_structure_diagnosis"
 TITLE = "人群结构诊断"
@@ -42,7 +48,10 @@ _DEDUP_CAVEAT = (
 _LEVER_AUDIENCE = "低转化人群：针对该人群做承接内容与利益点定制（人群包 + 定向笔记）。"
 _LEVER_CYCLE = "薄弱首购周期：首购人群补券/信任状；复购人群做召回与复购提醒。"
 _LEVER_SOURCE = "高流量低转化来源：优化该来源承接页的相关性与首屏转化。"
-_LEVER_COMPOSITION = "人群构成倾斜：向高 GMV 贡献人群加投，低效人群缩量或换承接。"
+_LEVER_COMPOSITION = (
+    "人群构成倾斜：向高 GMV 贡献人群加投，低效人群缩量或换承接——"
+    "份额为手工录入，先核对录入口径，再小步对照测试确认增量后固化。"
+)
 _LEVER_VALUE = (
     "高贡献人群与高集中来源倾斜加投；复购贡献偏低时加强会员召回与复购提醒，"
     "降低对单一来源的 GMV 依赖。"
@@ -617,6 +626,8 @@ def _composition_finding(con, limitations: list[str]) -> tuple[Finding, list[dic
             "top_gmv_share": top["gmv_share"] if top else None,
         },
         caveats=["观察性构成快照，非因果；份额为手工录入，口径需自校。"],
+        # 手工录入快照 → 描述可靠性固定为 LOW，与其他计算型 finding 一样显式给出该正交轴。
+        descriptive_reliability=DescriptiveReliability.LOW,
         recommended_action=_LEVER_COMPOSITION,
         evidence_reason="人群构成为手工录入的份额/GMV 快照，仅作结构描述，无统计推断。",
         confounders=[],
@@ -644,7 +655,7 @@ def _composition_gap_finding(conclusion: str) -> Finding:
 # Shared helpers (ported from refund_diagnosis)
 # --------------------------------------------------------------------------- #
 def _num(value) -> float:
-    return float(value) if value is not None else 0.0
+    return to_finite_float(value, 0.0)
 
 
 def _fetch_all(con, table: str) -> list[dict]:

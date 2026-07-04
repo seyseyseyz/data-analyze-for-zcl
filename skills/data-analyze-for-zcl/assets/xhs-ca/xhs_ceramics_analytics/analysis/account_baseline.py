@@ -38,22 +38,28 @@ def run(db_path: Path) -> AnalysisResult:
         if "publish_time" not in columns:
             return _missing_result("notes 表缺少 publish_time 字段。")
         reads_expr = "AVG(CAST(reads AS DOUBLE))" if "reads" in columns else "NULL"
-        result = con.sql(
-            f"""
-            SELECT
-              CAST(CAST(publish_time AS DATE) AS VARCHAR) AS date,
-              COUNT(*) AS posts,
-              {reads_expr} AS avg_reads
-            FROM notes
-            WHERE publish_time IS NOT NULL
-            GROUP BY 1
-            ORDER BY 1
-            """
-        )
-        daily_posts = [
-            {"date": date, "posts": posts, "avg_reads": avg_reads}
-            for date, posts, avg_reads in result.fetchall()
-        ]
+        # The date/reads CASTs raise on a non-date publish_time or non-numeric
+        # reads cell; degrade to an empty baseline (mirrors _fetch_publish_performance)
+        # so a dirty export yields a NOT_JUDGABLE finding rather than an exception.
+        try:
+            result = con.sql(
+                f"""
+                SELECT
+                  CAST(CAST(publish_time AS DATE) AS VARCHAR) AS date,
+                  COUNT(*) AS posts,
+                  {reads_expr} AS avg_reads
+                FROM notes
+                WHERE publish_time IS NOT NULL
+                GROUP BY 1
+                ORDER BY 1
+                """
+            )
+            daily_posts = [
+                {"date": date, "posts": posts, "avg_reads": avg_reads}
+                for date, posts, avg_reads in result.fetchall()
+            ]
+        except Exception:
+            daily_posts = []
         window_finding, window_rows = _posting_window_finding(con, columns)
     finally:
         con.close()

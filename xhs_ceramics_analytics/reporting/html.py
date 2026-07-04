@@ -938,14 +938,15 @@ def _analysis_groups(result_views: list[dict[str, object]]) -> list[dict[str, ob
 def _priority_table_view(results: list[AnalysisResult]) -> list[dict[str, object]]:
     """Reader-facing rows for the cross-module 「最弱环节 × 最高杠杆」 priority table.
 
-    Each row already carries 高/中/低 bands and an evidence class from the pure
-    :func:`build_priority_table` primitive; here we only attach the display rank and
-    the evidence label so the template stays logic-free.
+    Each row already carries 高/中/低 impact/feasibility bands, a 强/中/弱 evidence
+    label, and an evidence class from the pure :func:`build_priority_table` primitive;
+    here we only attach the display rank so the template stays logic-free. The
+    evidence label is taken verbatim from the primitive so the markdown and HTML
+    reports render the identical word for the same finding.
     """
     rows = build_priority_table(results)
     views: list[dict[str, object]] = []
     for index, row in enumerate(rows, start=1):
-        evidence_value = str(row.get("evidence"))
         views.append(
             {
                 "rank": index,
@@ -954,8 +955,8 @@ def _priority_table_view(results: list[AnalysisResult]) -> list[dict[str, object
                 "lever": row.get("lever"),
                 "impact_label": row.get("impact_label"),
                 "feasibility_label": row.get("feasibility_label"),
-                "evidence": _EVIDENCE_LABELS.get(evidence_value, evidence_value),
-                "evidence_class": evidence_value,
+                "evidence": row.get("evidence_label"),
+                "evidence_class": row.get("evidence_class"),
             }
         )
     return views

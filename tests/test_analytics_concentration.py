@@ -59,3 +59,13 @@ def test_concentration_trend_per_period():
     assert len(trend) == 2
     by_period = {r["period"]: r for r in trend}
     assert by_period["2026-05"]["gini"] > by_period["2026-04"]["gini"]
+
+
+def test_gini_and_hhi_ignore_nan_instead_of_returning_nan():
+    assert gini([1.0, 2.0, float("nan"), 3.0]) == gini([1.0, 2.0, 3.0])
+    assert hhi([1.0, float("inf"), 1.0]) == hhi([1.0, 1.0])
+
+
+def test_gini_is_order_independent_with_dirty_entries():
+    # NaN dropped before sorted() → result cannot depend on input order.
+    assert gini([3.0, 1.0, float("nan"), 2.0]) == gini([1.0, 2.0, 3.0, float("nan")])

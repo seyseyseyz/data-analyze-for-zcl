@@ -5,6 +5,8 @@ Feeds ``evidence.py`` rather than duplicating its enum. Below
 """
 import math
 
+from xhs_ceramics_analytics.analytics.numeric import to_finite_float
+
 MIN_ORDERS_FOR_RATE = 30
 
 
@@ -38,9 +40,9 @@ def bounded_rate(r: float | None) -> float | None:
     100; reject negatives and anything still above 1 (e.g. 150) as dirty. A bare
     1.0 is read as 100% (fraction convention), matching the rest of the pipeline.
     """
+    r = to_finite_float(r)
     if r is None:
         return None
-    r = float(r)
     if r < 0:
         return None
     if r > 1:
@@ -101,10 +103,17 @@ def stratified_two_proportion(strata: list[dict]) -> dict:
     diff_num = diff_den = 0.0
     used = 0
     for s in strata:
-        n1 = float(s.get("n1", 0) or 0)
-        n2 = float(s.get("n2", 0) or 0)
-        k1 = min(max(float(s.get("k1", 0) or 0), 0.0), n1)
-        k2 = min(max(float(s.get("k2", 0) or 0), 0.0), n2)
+        # A non-finite cell means the count is unknown, not zero — skip the whole
+        # stratum rather than coercing to 0 (which would bias the pooled estimate)
+        # or letting NaN poison the CMH statistic.
+        n1 = to_finite_float(s.get("n1"))
+        n2 = to_finite_float(s.get("n2"))
+        k1_raw = to_finite_float(s.get("k1"))
+        k2_raw = to_finite_float(s.get("k2"))
+        if n1 is None or n2 is None or k1_raw is None or k2_raw is None:
+            continue
+        k1 = min(max(k1_raw, 0.0), n1)
+        k2 = min(max(k2_raw, 0.0), n2)
         total = n1 + n2
         if total <= 1 or n1 <= 0 or n2 <= 0:
             continue

@@ -131,3 +131,20 @@ def test_trend_extrapolation_non_negative_floor():
     assert out is not None
     assert out["projected_value"] == 0.0
     assert out["direction"] == "下降"
+
+
+def test_trend_extrapolation_anchors_on_fitted_line_not_noisy_endpoint():
+    # Clean upward line with a single depressed final point. A raw-last-value anchor
+    # would project from the dip; the fitted-line anchor projects from the trend.
+    series = [("d1", 10.0), ("d2", 20.0), ("d3", 30.0), ("d4", 40.0), ("d5", 30.0)]
+    result = trend_extrapolation(series, horizon=1)
+    assert result is not None
+    # last_value is the raw dip (30), but the projection sits above it, on the trend.
+    assert result["last_value"] == 30.0
+    assert result["projected_value"] > 30.0
+
+
+def test_trend_summary_reports_fitted_last():
+    summary = trend_summary([("d1", 0.0), ("d2", 10.0), ("d3", 20.0)])
+    # Perfect line → fitted_last equals the raw last value.
+    assert summary["fitted_last"] == 20.0

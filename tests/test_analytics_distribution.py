@@ -120,3 +120,10 @@ def test_band_of_left_closed_matches_histogram():
 
 def test_band_of_empty_edges_returns_none():
     assert band_of(10.0, []) is None
+
+
+def test_describe_and_quantiles_drop_nan_instead_of_poisoning():
+    stats = describe([1.0, 2.0, 3.0, float("nan")])
+    assert stats["mean"] == 2.0
+    q = quantiles([3.0, 1.0, float("nan"), 2.0])
+    assert q[0.5] == 2.0

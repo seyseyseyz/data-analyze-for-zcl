@@ -83,6 +83,20 @@ _HIGH_BAND = 0.75
 _MID_BAND = 0.5
 _MAX_ROWS = 8
 
+# Reader-facing causal-evidence label, emitted once here so both the markdown and
+# HTML compositors render the identical word. Kept as 强/中/弱 (distinct from the
+# 高/中/低 impact/feasibility bands) so the three columns never read ambiguously.
+_EVIDENCE_LABELS: dict[str, str] = {
+    "strong": "强",
+    "medium": "中",
+    "weak": "弱",
+    "not_judgable": "不可判断",
+}
+
+
+def _evidence_label(value: str) -> str:
+    return _EVIDENCE_LABELS.get(value, value)
+
 
 def _band(score: float) -> str:
     if score >= _HIGH_BAND:
@@ -154,6 +168,7 @@ def build_priority_table(
                 "feasibility_label": _band(feasibility),
                 "priority": impact * feasibility,
                 "evidence": finding.evidence_strength.value,
+                "evidence_label": _evidence_label(finding.evidence_strength.value),
                 "evidence_class": finding.evidence_strength.value,
             }
         )

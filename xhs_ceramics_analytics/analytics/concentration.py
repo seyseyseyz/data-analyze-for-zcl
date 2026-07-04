@@ -3,8 +3,14 @@
 Pareto head-share answers "how much do the top few hold" but is not a single
 comparable number and carries no time direction. Gini/HHI collapse a whole
 distribution to one figure so "this month is more concentrated than last" becomes
-checkable. Pure stdlib; negative or empty bases degrade to None.
+checkable. Pure stdlib; negative, non-finite, or empty bases degrade to None.
 """
+from xhs_ceramics_analytics.analytics.numeric import to_finite_float
+
+
+def _clean(values: list[float]) -> list[float]:
+    """Drop None/non-finite entries; keeps NaN out of ``sorted`` (determinism)."""
+    return [x for x in (to_finite_float(v) for v in values) if x is not None]
 
 
 def gini(values: list[float]) -> float | None:
@@ -13,7 +19,7 @@ def gini(values: list[float]) -> float | None:
     Requires non-negative values with a positive total. A single element is fully
     even → 0.0.
     """
-    clean = [float(v) for v in values if v is not None]
+    clean = _clean(values)
     if not clean or any(v < 0 for v in clean):
         return None
     total = sum(clean)
@@ -29,7 +35,7 @@ def gini(values: list[float]) -> float | None:
 
 def hhi(values: list[float]) -> float | None:
     """Herfindahl–Hirschman index — Σ share² in [1/n, 1]. None on empty/zero total."""
-    clean = [float(v) for v in values if v is not None]
+    clean = _clean(values)
     if not clean or any(v < 0 for v in clean):
         return None
     total = sum(clean)
@@ -40,7 +46,7 @@ def hhi(values: list[float]) -> float | None:
 
 def top_share(values: list[float], k_frac: float = 0.2) -> float:
     """Share of the total held by the top ``k_frac`` of holders (Pareto head)."""
-    clean = [float(v) for v in values if v is not None and v >= 0]
+    clean = [v for v in _clean(values) if v >= 0]
     total = sum(clean)
     if not clean or total <= 0:
         return 0.0

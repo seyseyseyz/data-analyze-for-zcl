@@ -1,3 +1,5 @@
+import math
+
 import pytest
 
 from xhs_ceramics_analytics.analytics.confidence import (
@@ -143,3 +145,21 @@ def test_min_detectable_effect_shrinks_with_sample():
 def test_min_detectable_effect_degrades():
     assert min_detectable_effect(0, 100, 0.2) is None
     assert min_detectable_effect(100, 100, 0.0) is None
+
+
+def test_bounded_rate_coerces_percent_string_and_rejects_nan():
+    assert bounded_rate("12%") == 0.12
+    assert bounded_rate("0.2") == 0.2
+    assert bounded_rate(float("nan")) is None
+    assert bounded_rate("—") is None
+
+
+def test_stratified_two_proportion_survives_nan_cells():
+    result = stratified_two_proportion(
+        [{"k1": float("nan"), "n1": 100, "k2": 10, "n2": 100},
+         {"k1": 20, "n1": 100, "k2": 5, "n2": 100}]
+    )
+    # The NaN-poisoned stratum is skipped, the clean one is used — no NaN escapes.
+    assert result["n_strata"] == 1
+    assert result["mh_chi2"] is not None
+    assert math.isfinite(result["mh_chi2"])

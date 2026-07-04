@@ -9,6 +9,7 @@ the false-discovery rate across many simultaneous "above baseline" checks.
 """
 from pathlib import Path
 
+from xhs_ceramics_analytics.analytics.numeric import to_finite_float
 from xhs_ceramics_analytics.analysis.prose import qty
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.analytics.confidence import (
@@ -252,7 +253,8 @@ def _category_finding(
     )
     top = category_rows[0] if category_rows else None
 
-    if top is not None and top["refund_rate"] is not None:
+    has_category = top is not None and top["refund_rate"] is not None
+    if has_category:
         conclusion = (
             f"最高退款品类为 {top['category_l1']}（退款率 {round(top['refund_rate'] * 100, 1)}%）；"
             f"{qty(fdr_count)} 个品类显著高于大盘（BH-FDR 5%，预计假阳性约 {round(exp_fp, 1)} 个）。"
@@ -276,7 +278,8 @@ def _category_finding(
             "观察性诊断，非因果——品类退款率差异可能由品类内价格带、尺寸与季节活动共同驱动。",
             "BH-FDR 控制多重比较下的预计假阳性数，非逐类因果证明。",
         ],
-        recommended_action=_LEVER_CATEGORY,
+        # 品类不可判断时不给出跟进动作（避免无数据支撑的建议）。
+        recommended_action=_LEVER_CATEGORY if has_category else None,
         evidence_reason=(
             "品类退款率用真实 paid_orders 加权聚合基线，显著性用单侧二项检验 + BH-FDR 控制多重比较，观察性。"
         ),
@@ -399,7 +402,7 @@ def _refund_orders(r: dict, has_refund_orders: bool) -> float:
 
 
 def _num(value) -> float:
-    return float(value) if value is not None else 0.0
+    return to_finite_float(value, 0.0)
 
 
 def _fetch_all(con, table: str) -> list[dict]:

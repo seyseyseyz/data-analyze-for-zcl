@@ -74,3 +74,20 @@ def test_ignores_non_finite_and_nonpositive_spend():
     curve = spend_response_curve(obs, bins=4)
     # dirty rows dropped → same clean 16-object binning
     assert sum(r["n"] for r in curve) == 16
+
+
+def test_spend_response_curve_coerces_dirty_strings_without_raising():
+    curve = spend_response_curve(
+        [("1,200", "5000"), (300.0, 900.0), (450.0, 1200.0), (700.0, 1500.0)]
+    )
+    # No ValueError on the comma-formatted cell; all four rows survive coercion.
+    assert sum(row["n"] for row in curve) == 4
+
+
+def test_spend_response_curve_drops_non_numeric_and_non_positive():
+    curve = spend_response_curve(
+        [("N/A", 5000.0), (0.0, 100.0), (300.0, 900.0), (450.0, 1200.0),
+         (600.0, 1400.0), (700.0, 1500.0)]
+    )
+    # "N/A" and the zero-spend row are dropped; the four valid rows remain.
+    assert sum(row["n"] for row in curve) == 4

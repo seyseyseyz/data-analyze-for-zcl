@@ -6,7 +6,7 @@ never-raise primitives optionally remove a linear age trend before grouping, and
 guard every bucket with a minimum sample count so a single lucky post never crowns
 a window. No numpy/pandas — stdlib only.
 """
-import math
+from xhs_ceramics_analytics.analytics.numeric import is_finite_number as _is_finite
 
 _EPS = 1e-9
 
@@ -109,7 +109,3 @@ def _sort_key(group):
     return str(group)
 
 
-def _is_finite(value) -> bool:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        return False
-    return math.isfinite(value)

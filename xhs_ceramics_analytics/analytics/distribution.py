@@ -7,10 +7,17 @@ to None/empty.
 """
 import math
 
+from xhs_ceramics_analytics.analytics.numeric import to_finite_float
+
+
+def _clean(values: list[float]) -> list[float]:
+    """Drop None/non-finite entries so NaN never poisons stats or ``sorted`` order."""
+    return [x for x in (to_finite_float(v) for v in values) if x is not None]
+
 
 def quantiles(values: list[float], qs: tuple[float, ...] = (0.25, 0.5, 0.75)) -> dict:
     """Linear-interpolated quantiles. Empty input → each q maps to None."""
-    clean = sorted(v for v in values if v is not None)
+    clean = sorted(_clean(values))
     if not clean:
         return {q: None for q in qs}
     n = len(clean)
@@ -32,7 +39,7 @@ def quantiles(values: list[float], qs: tuple[float, ...] = (0.25, 0.5, 0.75)) ->
 
 def describe(values: list[float]) -> dict:
     """Summary stats with spread. Empty input → all-None (n=0). Never raises."""
-    clean = [float(v) for v in values if v is not None]
+    clean = _clean(values)
     n = len(clean)
     if n == 0:
         return {
@@ -62,7 +69,7 @@ def histogram(values: list[float], bins: object) -> list[dict]:
     edges (last bin extends to +inf). Values below the first edge fall in bin 0.
     Empty values → bins with zero counts (or [] when no bins can be formed).
     """
-    clean = [float(v) for v in values if v is not None]
+    clean = _clean(values)
     edges = _resolve_edges(clean, bins)
     if not edges:
         return []
@@ -101,7 +108,7 @@ def quantile_edges(values: list[float], n: int = 4) -> list[float]:
     bands). Edges are non-decreasing; ties (concentrated data) collapse a band to
     zero width rather than dropping it, so the band count is always exactly ``n``.
     """
-    clean = sorted(float(v) for v in values if v is not None)
+    clean = sorted(_clean(values))
     if n < 1 or len(clean) < n:
         return []
     qs = tuple(i / n for i in range(1, n))
@@ -148,7 +155,7 @@ def bimodality_coefficient(values: list[float]) -> float | None:
     b = (skew² + 1) / kurtosis, with the SAS sample corrections. Needs ≥4 points
     and non-zero variance; otherwise None.
     """
-    clean = [float(v) for v in values if v is not None]
+    clean = _clean(values)
     n = len(clean)
     if n < 4:
         return None

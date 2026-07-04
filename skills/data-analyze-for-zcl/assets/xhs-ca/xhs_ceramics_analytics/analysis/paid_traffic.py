@@ -274,31 +274,39 @@ def _efficiency_rows(con, source: str) -> list[dict[str, object]]:
     clicks_expr = numeric_expr(columns, "clicks")
     gmv_expr = numeric_expr(columns, "gmv_optional")
 
-    result = con.sql(
-        f"""
-        SELECT
-          {select_dimensions}
-          COUNT(DISTINCT CAST(date AS DATE)) AS paid_active_days,
-          SUM({spend_expr}) AS spend,
-          SUM({impressions_expr}) AS impressions,
-          SUM({clicks_expr}) AS clicks,
-          SUM({gmv_expr}) AS gmv_optional,
-          CASE WHEN SUM({spend_expr}) > 0
-            THEN SUM({gmv_expr}) * 1.0 / SUM({spend_expr})
-          END AS roas_calc,
-          CASE WHEN SUM({impressions_expr}) > 0
-            THEN SUM({clicks_expr}) * 1.0 / SUM({impressions_expr})
-          END AS ctr_calc,
-          CASE WHEN SUM({clicks_expr}) > 0
-            THEN SUM({spend_expr}) * 1.0 / SUM({clicks_expr})
-          END AS cpc_calc
-        FROM {source}
-        {group_clause}
-        ORDER BY roas_calc DESC NULLS LAST, spend DESC NULLS LAST
-        LIMIT 20
-        """
-    )
-    return [_clean_row(dict(zip(result.columns, row, strict=True))) for row in result.fetchall()]
+    # The numeric_expr CASTs raise a DuckDB Conversion Error on a dirty VARCHAR
+    # cell ("1,234", "—"); guard exactly like the sibling _spend_gmv_observations
+    # so a messy export degrades to an empty efficiency table, never a raise.
+    try:
+        result = con.sql(
+            f"""
+            SELECT
+              {select_dimensions}
+              COUNT(DISTINCT CAST(date AS DATE)) AS paid_active_days,
+              SUM({spend_expr}) AS spend,
+              SUM({impressions_expr}) AS impressions,
+              SUM({clicks_expr}) AS clicks,
+              SUM({gmv_expr}) AS gmv_optional,
+              CASE WHEN SUM({spend_expr}) > 0
+                THEN SUM({gmv_expr}) * 1.0 / SUM({spend_expr})
+              END AS roas_calc,
+              CASE WHEN SUM({impressions_expr}) > 0
+                THEN SUM({clicks_expr}) * 1.0 / SUM({impressions_expr})
+              END AS ctr_calc,
+              CASE WHEN SUM({clicks_expr}) > 0
+                THEN SUM({spend_expr}) * 1.0 / SUM({clicks_expr})
+              END AS cpc_calc
+            FROM {source}
+            {group_clause}
+            ORDER BY roas_calc DESC NULLS LAST, spend DESC NULLS LAST
+            LIMIT 20
+            """
+        )
+        rows = result.fetchall()
+        columns = result.columns
+    except Exception:
+        return []
+    return [_clean_row(dict(zip(columns, row, strict=True))) for row in rows]
 
 
 def _clean_row(row: dict[str, object]) -> dict[str, object]:

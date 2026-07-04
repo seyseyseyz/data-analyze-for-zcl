@@ -78,3 +78,29 @@ def test_gmv_bridge_series_chains_adjacent_periods():
 def test_gmv_bridge_series_short_input():
     assert gmv_bridge_series([]) == []
     assert gmv_bridge_series([_period(1.0, 0.1, 10.0)]) == []
+
+
+def test_gmv_bridge_degrades_on_nan_factor_without_raising():
+    # A NaN factor must not slip past the positivity guard into math.log — a plain
+    # min(...) <= 0 check would ( nan <= 0 is False ), so this is the regression.
+    result = gmv_bridge(
+        {"visitors": float("nan"), "conversion": 1.0, "aov": 1.0},
+        {"visitors": 100.0, "conversion": 1.0, "aov": 1.0},
+    )
+    assert result["partial"] is True
+    assert result["contrib_traffic"] == 0.0
+
+
+def test_gmv_bridge_degrades_on_negative_and_string_factors():
+    neg = gmv_bridge(
+        {"visitors": 100.0, "conversion": 1.0, "aov": 1.0},
+        {"visitors": -5.0, "conversion": 1.0, "aov": 1.0},
+    )
+    assert neg["partial"] is True
+    dirty = gmv_bridge(
+        {"visitors": "1,000", "conversion": 0.02, "aov": 50.0},
+        {"visitors": "1,200", "conversion": 0.02, "aov": 50.0},
+    )
+    # Comma-formatted strings are coerced, so the bridge is computable, not partial.
+    assert dirty["partial"] is False
+    assert dirty["dominant_factor"] == "traffic"

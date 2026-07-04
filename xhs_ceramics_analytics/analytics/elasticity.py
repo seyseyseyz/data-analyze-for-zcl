@@ -13,6 +13,7 @@ to replace hand-set ROAS thresholds with a data-driven turning point, but does n
 license causal claims. Pure, stdlib-only, never-raise — no numpy/pandas.
 """
 from xhs_ceramics_analytics.analytics.distribution import band_of, quantile_edges
+from xhs_ceramics_analytics.analytics.numeric import to_finite_float
 
 # Marginal ROAS below this means the last increment of spend lost money.
 BREAK_EVEN_ROAS = 1.0
@@ -29,15 +30,13 @@ def spend_response_curve(observations, bins: int = 4) -> list[dict]:
     for the first bin). Returns ``[]`` when fewer than ``bins`` finite spend values
     exist. Never raises.
     """
-    clean = [
-        (float(s), float(g))
-        for s, g in observations
-        if s is not None
-        and g is not None
-        and _is_finite(s)
-        and _is_finite(g)
-        and float(s) > 0.0
-    ]
+    clean: list[tuple[float, float]] = []
+    for s, g in observations:
+        spend = to_finite_float(s)
+        gmv = to_finite_float(g)
+        if spend is None or gmv is None or spend <= 0.0:
+            continue
+        clean.append((spend, gmv))
     spends = [s for s, _ in clean]
     edges = quantile_edges(spends, bins)
     if not edges:
@@ -112,7 +111,3 @@ def saturation_point(curve: list[dict]) -> dict:
         "break_even_spend": break_even_spend,
         "diminishing": diminishing,
     }
-
-
-def _is_finite(value) -> bool:
-    return value == value and value not in (float("inf"), float("-inf"))

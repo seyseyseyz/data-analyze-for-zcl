@@ -7,7 +7,7 @@ category does. These pure-stdlib helpers turn a raw value + history into a
 percentile anchor. Degenerate input (empty history, NaN, None) degrades to None
 rather than raising.
 """
-import math
+from xhs_ceramics_analytics.analytics.numeric import is_finite_number as _is_finite
 
 
 def self_percentile(value: float | None, history: list[float | None]) -> float | None:
@@ -42,10 +42,3 @@ def percentile_label(percentile: float | None) -> str | None:
         return None
     pct = max(0, min(100, round(percentile * 100)))
     return f"P{pct}"
-
-
-def _is_finite(value) -> bool:
-    """True only for a real, finite number (rejects None, bool, NaN, inf)."""
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        return False
-    return math.isfinite(value)

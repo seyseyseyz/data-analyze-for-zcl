@@ -46,7 +46,8 @@ def trend_summary(series: list[tuple[str, float]]) -> dict:
     if n == 0:
         return {
             "direction": "持平", "slope": 0.0, "first_value": None,
-            "last_value": None, "start_period": None, "end_period": None, "n": 0,
+            "last_value": None, "fitted_last": None,
+            "start_period": None, "end_period": None, "n": 0,
             "slope_se": None, "t_stat": None, "significant": False, "rel_slope": None,
         }
     values = [v for _, v in series]
@@ -64,11 +65,16 @@ def trend_summary(series: list[tuple[str, float]]) -> dict:
     slope_se, t_stat, significant = _slope_significance(values, slope, var_x, n)
     # Dimension-free whole-window change: slope spans (n-1) steps, scaled by level.
     rel_slope = (slope * (n - 1) / mean_y) if mean_y else None
+    # Fitted value at the last index (intercept + slope·(n-1)); with mean_x=(n-1)/2
+    # this reduces to mean_y + slope·(n-1)/2. Extrapolation anchors on this, not the
+    # raw last observation, so one noisy endpoint cannot drive the projection.
+    fitted_last = mean_y + slope * (n - 1) / 2.0
     return {
         "direction": direction_label(slope),
         "slope": slope,
         "first_value": first_value,
         "last_value": last_value,
+        "fitted_last": fitted_last,
         "start_period": start_period,
         "end_period": end_period,
         "n": n,
@@ -128,7 +134,13 @@ def trend_extrapolation(
     last_value = summary.get("last_value")
     if last_value is None:
         return None
-    projected = last_value + slope * horizon
+    # Project from the fitted trend line's endpoint, not the raw last observation,
+    # so a single noisy endpoint cannot swing the projected level (only the slope,
+    # which is already robust, carries the trend forward).
+    anchor = summary.get("fitted_last")
+    if anchor is None:
+        anchor = last_value
+    projected = anchor + slope * horizon
     if non_negative and projected < 0:
         projected = 0.0
     return {
