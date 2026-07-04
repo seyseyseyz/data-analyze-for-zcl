@@ -674,6 +674,15 @@
       padding: 28px;
       display: grid;
       gap: 18px;
+      /* Grid items default to min-width:auto and refuse to shrink below their
+         content — a wide table then blows the panel wider than the page instead
+         of scrolling inside .table-wrap (#13). Pinning both the grid and its
+         tracks to min-width:0 lets the overflow live in the scroll container. */
+      min-width: 0;
+    }
+
+    .panel-body > * {
+      min-width: 0;
     }
 
     /* 域内次要模块折叠区：headline 大卡之后收起,展开才看其余分析。 */
@@ -851,6 +860,9 @@
       line-height: 1.45;
       font-weight: 400;
       max-width: 220px;
+      /* Wrap long help text instead of forcing a wide table cell that can't
+         scroll back (#13). */
+      white-space: normal;
     }
 
     .note-list {
