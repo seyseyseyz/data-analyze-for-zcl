@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "fact",
+  "description": "L2 immutable fact — the only source of a number string. Mirrors facts.json entries.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["fact_id", "rendered", "metric_key", "unit"],
+  "properties": {
+    "fact_id": {"type": "string"},
+    "value": {"type": ["number", "null"], "description": "Raw float for computation; NEVER rendered into prose."},
+    "rendered": {"type": "string", "description": "Python-owned display string; the writer copies it verbatim."},
+    "metric_key": {"type": "string"},
+    "unit": {"type": "string"},
+    "caliber": {"type": ["string", "null"]},
+    "denominator": {"type": ["string", "null"]},
+    "evidence_strength": {"enum": ["strong", "medium", "weak", "not_judgable"]},
+    "descriptive_reliability": {"enum": ["high", "medium", "low", "not_applicable", null]},
+    "entity_type": {"type": ["string", "null"]},
+    "direction": {"enum": ["up", "down", "flat", null]},
+    "pool_id": {"type": ["string", "null"]},
+    "assumption": {"type": ["string", "null"]}
+  }
+}

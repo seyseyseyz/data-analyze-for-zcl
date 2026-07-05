@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "gate_report",
+  "description": "factcheck_gate output. HARD blocks render; WARN annotates; capped logs confidence caps.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status", "hard_failures", "warnings", "capped_claims"],
+  "properties": {
+    "status": {"enum": ["PASS", "FAIL"]},
+    "hard_failures": {"type": "array", "items": {"$ref": "#/$defs/finding"}},
+    "warnings": {"type": "array", "items": {"$ref": "#/$defs/finding"}},
+    "capped_claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["claim_id", "from", "to"],
+        "properties": {
+          "claim_id": {"type": ["string", "null"]},
+          "from": {"enum": ["强", "中", "弱"]},
+          "to": {"enum": ["强", "中", "弱"]}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "detail"],
+      "properties": {
+        "code": {"type": "string"},
+        "claim_id": {"type": ["string", "null"]},
+        "detail": {"type": "string"}
+      }
+    }
+  }
+}

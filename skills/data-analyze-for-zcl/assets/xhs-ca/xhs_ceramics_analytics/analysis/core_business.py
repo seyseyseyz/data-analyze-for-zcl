@@ -24,6 +24,7 @@ from xhs_ceramics_analytics.analytics.confidence import (
 )
 from xhs_ceramics_analytics.analytics.benchmark import percentile_label, self_percentile
 from xhs_ceramics_analytics.analytics.decomposition import gmv_bridge
+from xhs_ceramics_analytics.analytics.periods import to_period_month
 from xhs_ceramics_analytics.analytics.timeseries import (
     anomaly_days,
     changepoints,
@@ -695,10 +696,11 @@ def _growth_attribution_finding(
 ) -> tuple[Finding | None, dict[str, list[dict]]]:
     """Decompose the window's ΔGMV into traffic × conversion × AOV (LMDI bridge).
 
-    Splits the dated series into an early and a late half, aggregates each into
-    (gmv, visitors, buyers), and runs :func:`gmv_bridge`. Needs product_visitors +
+    Aggregates the dated series by calendar month, then runs :func:`gmv_bridge`
+    between the earliest and latest whole month. Needs product_visitors +
     paid_buyers to reverse-derive conversion and AOV; missing either → degrade with
-    a limitation. Deterministic attribution, not causal.
+    a limitation. Fewer than two calendar months also degrades. Deterministic
+    attribution, not causal.
     """
     cols = _table_columns(con, "business_overview_daily")
     if not {"date", "gmv", "paid_buyers", "product_visitors"} <= cols:
@@ -707,29 +709,27 @@ def _growth_attribution_finding(
         )
         return None, {}
     rows = _fetch_all(con, "business_overview_daily")
-    dated = [(str(r.get("date")), r) for r in rows if r.get("date") is not None]
-    if len(dated) < 4:
-        limitations.append("business_overview_daily 日期行不足四期，跳过增长归因（GMV 桥）。")
+    by_month: dict[str, dict] = {}
+    for r in rows:
+        month = to_period_month(r.get("date"))
+        if month is None:
+            continue
+        agg = by_month.setdefault(month, {"gmv": 0.0, "visitors": 0.0, "buyers": 0.0})
+        agg["gmv"] += _num(r.get("gmv"))
+        agg["visitors"] += _num(r.get("product_visitors"))
+        agg["buyers"] += _num(r.get("paid_buyers"))
+    months = sorted(by_month)
+    if len(months) < 2:
+        limitations.append("business_overview_daily 不足两个日历月，跳过增长归因（GMV 桥）。")
         return None, {}
-    dated.sort(key=lambda t: t[0])
-    mid = len(dated) // 2
-    early = [r for _, r in dated[:mid]]
-    late = [r for _, r in dated[mid:]]
-
-    def _aggregate(part: list[dict]) -> dict:
-        return {
-            "gmv": sum(_num(r.get("gmv")) for r in part),
-            "visitors": sum(_num(r.get("product_visitors")) for r in part),
-            "buyers": sum(_num(r.get("paid_buyers")) for r in part),
-        }
-
-    p0, p1 = _aggregate(early), _aggregate(late)
+    first_month, last_month = months[0], months[-1]
+    p0, p1 = by_month[first_month], by_month[last_month]
     bridge = gmv_bridge(p0, p1)
     bridge_rows = _bridge_rows(bridge)
     factor_zh = bridge.get("dominant_factor_zh")
 
     caveats = [
-        f"把整段时间前后对半分：前段 {dated[0][0]}–{dated[mid - 1][0]}，后段 {dated[mid][0]}–{dated[-1][0]}。",
+        f"按日历月聚合，比较 {first_month} 与 {last_month} 两个整月之间的变化。",
     ]
     bridge_method_notes = [
         "GMV = 访客数 × 支付转化率 × 客单价 的 LMDI 确定性分解，三项贡献之和≈ΔGMV，非因果。",
@@ -741,7 +741,7 @@ def _growth_attribution_finding(
     sample_size = int(p0["buyers"] + p1["buyers"])
     finding = Finding(
         title="增长归因（GMV 桥）",
-        conclusion=_bridge_conclusion(bridge, p0, p1),
+        conclusion=_bridge_conclusion(bridge, p0, p1, first_month, last_month),
         evidence_strength=score_evidence(sample_size, has_controls=False, confounder_count=1),
         descriptive_reliability=score_reliability(sample_size),
         key_numbers={
@@ -790,9 +790,9 @@ def _bridge_rows(bridge: dict) -> list[dict]:
 # 三因子英文键 → 读者面中文名,抵消句里点名反向拖累的因子时复用。
 _FACTOR_ZH = {"traffic": "流量", "conversion": "转化", "aov": "客单价"}
 
-# 口径句:GMV 桥比较的是窗口前后两段之间的变化,不是单点绝对值——读者过去看不懂
-# "前段/后段"从哪来,这里在结论开头一句话交代清楚。
-_BRIDGE_CALIBER = "把这段时间分成前半程和后半程两段来对比，下面是两段之间的变化："
+# 口径句:GMV 桥比较的是两个整日历月之间的变化,不是单点绝对值——读者过去看不懂
+# "前段/后段"从哪来,现在直接点名两个月份,在结论开头一句话交代清楚。
+_BRIDGE_CALIBER = "按日历月对比，下面是两个整月之间的变化："
 
 
 def _offsetting_factors_zh(bridge: dict, delta: float) -> str:
@@ -805,15 +805,17 @@ def _offsetting_factors_zh(bridge: dict, delta: float) -> str:
     return "、".join(names)
 
 
-def _bridge_conclusion(bridge: dict, p0: dict, p1: dict) -> str:
+def _bridge_conclusion(
+    bridge: dict, p0: dict, p1: dict, first_month: str, last_month: str
+) -> str:
     delta = bridge.get("delta_gmv")
     if delta is None:
         return _BRIDGE_CALIBER + "增长归因数据不足，无法分解 ΔGMV。"
     move = "增长" if delta > 0 else ("下滑" if delta < 0 else "持平")
     head = (
         _BRIDGE_CALIBER
-        + f"GMV 从 {money(p0['gmv'])} 元{move}至 {money(p1['gmv'])} 元"
-        + f"（Δ {money(delta)} 元）"
+        + f"{first_month} 的 GMV {money(p0['gmv'])} 元{move}至 {last_month} 的 "
+        + f"{money(p1['gmv'])} 元（Δ {money(delta)} 元）"
     )
     zh = bridge.get("dominant_factor_zh")
     if zh is None:

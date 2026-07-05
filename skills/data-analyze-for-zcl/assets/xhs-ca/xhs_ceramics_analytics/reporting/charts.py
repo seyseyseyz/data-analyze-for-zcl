@@ -281,6 +281,58 @@ def _vbar(
     return _frame("".join(body), width, height)
 
 
+def _waterfall(
+    cats: list[str],
+    values: list[float | None],
+    value_texts: list[str],
+    *,
+    title: str,
+    de_emphasize: bool,
+) -> str:
+    """Floating-bar waterfall: components stack top-down as a descent from the whole.
+
+    Each segment (发货前 / 发货后 …) is placed at its cumulative base so the bars read
+    as slices of one total rather than independent columns. Only computable segments
+    are drawn; ``None`` values are skipped. Never raises — empty input frames an
+    empty state. Reuses the _vbar geometry and hatch/opacity de-emphasis convention.
+    """
+    width, height = 308, 300
+    pad_t, pad_b, pad_x = 56, 64, 20
+    plot_h = height - pad_t - pad_b
+    top_y = pad_t
+    plotted = [
+        (c, v, t) for c, v, t in zip(cats, values, value_texts) if v is not None
+    ]
+    if not plotted:
+        return _frame(_title(title) + _empty_state(width, height), width, height)
+    total = sum(v for _, v, _ in plotted) or 1.0
+    slot = (width - 2 * pad_x) / len(plotted)
+    bw = min(slot * 0.6, 64)
+    fill = "url(#ca-hatch)" if de_emphasize else "var(--ink-strong)"
+    opacity = "0.55" if de_emphasize else "1"
+    body = [_title(title)]
+    running = 0.0
+    for i, (cat, value, text) in enumerate(plotted):
+        cx = pad_x + slot * (i + 0.5)
+        seg_h = (value / total) * plot_h
+        y = top_y + (running / total) * plot_h  # floats on the cumulative base
+        running += value
+        body.append(
+            f'<rect x="{_num(cx - bw / 2)}" y="{_num(y)}" '
+            f'width="{_num(bw)}" height="{_num(seg_h)}" rx="4" fill="{fill}" '
+            f'fill-opacity="{opacity}"><title>{_esc(cat)}：{_esc(text)}</title></rect>'
+        )
+        body.append(
+            f'<text x="{_num(cx)}" y="{_num(y + seg_h / 2)}" text-anchor="middle" '
+            f'class="ca-num">{_esc(text)}</text>'
+        )
+        body.append(
+            f'<text x="{_num(cx)}" y="{_num(top_y + plot_h + 20)}" text-anchor="middle" '
+            f'class="ca-cat">{_esc(cat)}</text>'
+        )
+    return _frame("".join(body), width, height)
+
+
 def _measure_panel(cats, rows, key, de_emphasize) -> str:
     values = [row.get(key) for row in rows]
     texts = [
@@ -358,6 +410,7 @@ def _line(
     x_labels: list[str],
     *,
     de_emphasize: bool,
+    suppress_aggregate: bool = False,
 ) -> str:
     width, height = _VIEW_W, 320
     pad_l, pad_r, pad_t, pad_b = 48, 24, 40, 56
@@ -402,7 +455,7 @@ def _line(
     dash = ' stroke-dasharray="4 3"' if de_emphasize else ""
     for name, ys in series:
         draw(ys, color="var(--muted)", opacity=line_opacity, dash=dash)
-    if len(series) > 1:  # bold aggregate = mean of non-null values at each x
+    if len(series) > 1 and not suppress_aggregate:  # bold aggregate = mean at each x
         agg: list[float | None] = []
         for i in range(n_x):
             col = [ys[i] for _, ys in series if ys[i] is not None]

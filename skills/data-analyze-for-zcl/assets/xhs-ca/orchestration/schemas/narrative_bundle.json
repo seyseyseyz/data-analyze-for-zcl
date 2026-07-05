@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "narrative_bundle",
+  "description": "Synthesizer output — what the gate validates and freezes.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["facts_hash", "headline", "first_screen", "spine_final", "sections", "cannot_say"],
+  "properties": {
+    "facts_hash": {"type": "string"},
+    "headline": {"type": "string", "description": "Opaque {tN} allowed; NO bare digits."},
+    "first_screen": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["spine", "panel", "actions"],
+      "properties": {
+        "spine": {"type": "array", "items": {"$ref": "claim.json"}},
+        "panel": {"type": "array", "items": {"$ref": "claim.json"}},
+        "actions": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "spine_final": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["backbone"],
+      "properties": {
+        "backbone": {"type": "array", "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["link_id", "from", "to", "anchor_fact_ids", "relation"],
+          "properties": {
+            "link_id": {"type": "string"},
+            "from": {"type": "string"},
+            "to": {"type": "string"},
+            "anchor_fact_ids": {"type": "array", "items": {"type": "string"}},
+            "relation": {"enum": ["accounting_identity", "weak_causal_overlay"]}
+          }
+        }}
+      }
+    },
+    "sections": {"type": "array", "items": {"$ref": "section_bundle.json"}},
+    "cannot_say": {"type": "array", "items": {"type": "string"}}
+  }
+}
