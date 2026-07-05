@@ -182,6 +182,43 @@ def run(
 
 
 @app.command()
+def facts(
+    tasks: Annotated[
+        list[str] | None,
+        typer.Argument(help="Task ids, or 'auto' for the producible set. Emits facts.json."),
+    ] = None,
+    db: Annotated[Path | None, typer.Option(help="Override DuckDB file path.")] = None,
+    project_root: Annotated[
+        Path | None, typer.Option(help="Override local state/output root.")
+    ] = None,
+) -> None:
+    """Build the deterministic FactBook and write outputs/facts.json (0 agents)."""
+    from xhs_ceramics_analytics.analysis.coverage import producible_task_ids
+    from xhs_ceramics_analytics.analysis.registry import TASKS, run_task
+    from xhs_ceramics_analytics.reporting.facts_export import (
+        build_factbook,
+        facts_hash,
+        factbook_to_json,
+    )
+
+    db_path = db or state_dir(project_root) / "analytics.duckdb"
+    requested = list(tasks) if tasks else ["auto"]
+    if requested == ["auto"]:
+        task_ids = list(producible_task_ids(db_path))
+    elif requested == ["all"]:
+        task_ids = list(TASKS)
+    else:
+        task_ids = [t for t in requested if t in TASKS]
+    results = [run_task(task_id, db_path) for task_id in task_ids]
+    blocked = tuple(t for t in TASKS if t not in task_ids)
+    book = build_factbook(results, blocked_modules=blocked)
+    out = outputs_dir(project_root) / "facts.json"
+    out.write_text(factbook_to_json(book), encoding="utf-8")
+    typer.echo(f"Wrote facts: {out}")
+    typer.echo(f"facts_hash: {facts_hash(book)}")
+
+
+@app.command()
 def coverage(
     db: Annotated[Path | None, typer.Option(help="Override DuckDB file path.")] = None,
     project_root: Annotated[
