@@ -37,6 +37,19 @@ def test_rate_band_reads_as_percent_range():
     assert rate_band(0.2366, 0.7634) == "约 24%–76%"
 
 
+def test_rate_band_adds_precision_when_whole_percent_collapses():
+    # 0.078 and 0.083 both round to 8% — the old formatter printed a degenerate
+    # "约 8%–8%". Adaptive precision must keep the two bounds distinguishable.
+    band = rate_band(0.078, 0.083)
+    assert band != "约 8%–8%"
+    assert band == "约 7.8%–8.3%"
+
+
+def test_rate_band_collapses_to_single_point_when_bounds_equal():
+    # genuinely identical bounds (huge n) read as one value, not "约 8%–8%".
+    assert rate_band(0.08, 0.08) == "约 8%"
+
+
 def test_two_proportion_significant_non_overlapping():
     r = two_proportion(30, 100, 5, 100)
     assert r["diff"] == pytest.approx(0.25, abs=0.001)

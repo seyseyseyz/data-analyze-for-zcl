@@ -146,6 +146,28 @@ def test_row_carries_reader_why_and_confidence_label():
     assert row["confidence_class"] in {"high", "medium", "low", "not_judgable"}
 
 
+def test_why_differentiates_by_feasibility_not_just_impact():
+    # The old _why keyed only off the impact band, which is 高 for almost every core
+    # module — so all 8 rows printed an identical "为什么值得先做", a dead column. Two
+    # equally high-impact modules with different evidence strength must now read
+    # differently (one act-now, one verify-first).
+    results = [
+        _result(
+            "core_business_diagnosis",
+            "整体经营诊断",
+            [_finding("扎实结论", EvidenceStrength.STRONG)],
+        ),
+        _result(
+            "refund_root_cause_diagnosis",
+            "退款根因诊断",
+            [_finding("薄弱结论", EvidenceStrength.WEAK)],
+        ),
+    ]
+    table = build_priority_table(results)
+    whys = {row["task_id"]: row["why"] for row in table}
+    assert whys["core_business_diagnosis"] != whys["refund_root_cause_diagnosis"]
+
+
 def test_caps_rows_and_degrades_empty():
     assert build_priority_table([]) == []
     # Nothing actionable → empty, never raises.

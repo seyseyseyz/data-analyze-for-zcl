@@ -280,6 +280,45 @@ _BENCHMARK_MIN_WEEKS = 4
 _BENCHMARK_CONFOUNDERS = ["促销与活动节奏", "季节性", "流量结构变化"]
 
 
+def _percentile_phrase(pct: float) -> str:
+    """Reader-facing descriptor for a self-percentile — driven by the *value*.
+
+    The old prose hardcoded 「较高水平」 for the headline metric regardless of where
+    it actually sat, so a latest week at P4 (historic low) still read as "处于自身历史
+    较高水平" — the sign was backwards and actively misled the merchant. This maps the
+    real percentile to an honest band.
+    """
+    if pct >= 0.75:
+        return "自身历史较高水平"
+    if pct >= 0.5:
+        return "自身历史中位偏上"
+    if pct >= 0.25:
+        return "自身历史中位偏下"
+    return "自身历史较低水平"
+
+
+def _benchmark_conclusion(headline: dict, worst: dict, n_weeks: int) -> str:
+    """One-line self-benchmark conclusion, descriptor derived from real percentiles.
+
+    Leads with the strongest metric's *actual* standing (never a hardcoded 「较高」),
+    and only appends the contrast clause when a genuinely distinct second metric
+    exists — a single-metric account no longer emits a self-contradicting 「而…」.
+    """
+    conclusion = (
+        f"以近 {n_weeks} 个 ISO 周为自身基准，最新一周"
+        f"「{headline['metric']}」处于{_percentile_phrase(headline['self_percentile'])}"
+        f"（{headline['percentile_label']}）"
+    )
+    if worst["metric"] != headline["metric"]:
+        conclusion += (
+            f"，而「{worst['metric']}」处于{_percentile_phrase(worst['self_percentile'])}"
+            f"（{worst['percentile_label']}）。"
+        )
+    else:
+        conclusion += "。"
+    return conclusion
+
+
 def _benchmark_finding(con, limitations: list[str]):
     """Anchor the latest ISO week's GMV / 支付转化 to the shop's own history.
 
@@ -322,16 +361,18 @@ def _benchmark_finding(con, limitations: list[str]):
     headline = max(bench_rows, key=lambda r: r["self_percentile"])
     worst = min(bench_rows, key=lambda r: r["self_percentile"])
     n_weeks = max(r["periods"] for r in bench_rows)
-    conclusion = (
-        f"以近 {n_weeks} 个 ISO 周为自身基准，最新一周"
-        f"「{headline['metric']}」处于自身历史较高水平（{headline['percentile_label']}）"
-    )
+    conclusion = _benchmark_conclusion(headline, worst, n_weeks)
+
+    # 只有一个指标合格时 headline 与 worst 是同一行,不能再摆出「最强/最弱」两栏
+    # (会出现「最强 周GMV P4 / 最弱 周GMV P4」这种自相矛盾读数);只留被锚定指标本身。
+    key_numbers: dict[str, object] = {
+        "periods": n_weeks,
+        "top_metric": headline["metric"],
+        "top_percentile": headline["percentile_label"],
+    }
     if worst["metric"] != headline["metric"]:
-        conclusion += (
-            f"，而「{worst['metric']}」仅处于较低水平（{worst['percentile_label']}）、相对偏弱。"
-        )
-    else:
-        conclusion += "。"
+        key_numbers["weak_metric"] = worst["metric"]
+        key_numbers["weak_percentile"] = worst["percentile_label"]
 
     n = n_weeks
     return (
@@ -340,13 +381,7 @@ def _benchmark_finding(con, limitations: list[str]):
             conclusion=conclusion,
             evidence_strength=score_evidence(n, has_controls=False, confounder_count=2),
             descriptive_reliability=score_reliability(n),
-            key_numbers={
-                "periods": n_weeks,
-                "top_metric": headline["metric"],
-                "top_percentile": headline["percentile_label"],
-                "weak_metric": worst["metric"],
-                "weak_percentile": worst["percentile_label"],
-            },
+            key_numbers=key_numbers,
             caveats=[
                 "这是相对自身历史的排名，不代表绝对好坏；周期越少越容易受单周波动影响。",
                 "GMV 按周求和、转化率按周内日均聚合；促销周天然偏高，读数需结合活动节奏。",
@@ -355,7 +390,7 @@ def _benchmark_finding(con, limitations: list[str]):
                 "把最新周处于低分位的指标列为本周重点，对照高分位周的动作复盘差异。"
             ),
             evidence_reason=(
-                "用 analytics.benchmark.self_percentile 把最新周放进自身周度分布的中位秩分位，"
+                "把最新一周放进该账号自身周度分布里求中位秩分位（P__），"
                 "为观察性相对定位，无外部对照。"
             ),
             confounders=_BENCHMARK_CONFOUNDERS,
@@ -370,6 +405,21 @@ _BENCHMARK_LABELS = {
 }
 
 
+def _partial_trailing_week(days_by_week: dict[str, set]) -> str | None:
+    """The chronologically-last ISO week iff it is only partially observed.
+
+    "Full" is the widest day-span actually seen in the data (capped implicitly by a
+    7-day ISO week), so genuinely sparse exports (every week 5 days) are not falsely
+    flagged — only a trailing week shorter than its peers is dropped. Returns ``None``
+    when there is nothing to trim (single week, or the last week is already full).
+    """
+    if len(days_by_week) < 2:
+        return None
+    last = max(days_by_week)
+    full = max(len(days) for days in days_by_week.values())
+    return last if len(days_by_week[last]) < full else None
+
+
 def _weekly_metric_series(cols, rows) -> dict[str, list[tuple[str, float]]]:
     """ISO-week series per benchmarkable metric.
 
@@ -380,18 +430,29 @@ def _weekly_metric_series(cols, rows) -> dict[str, list[tuple[str, float]]]:
     """
     gmv_by_week: dict[str, float] = {}
     conv_by_week: dict[str, list[float]] = {}
+    days_by_week: dict[str, set] = {}
     has_gmv = "gmv" in cols
     has_conv = "pay_conversion_uv" in cols
     for r in rows:
         week = iso_week(r.get("date"))
         if week is None:
             continue
+        days_by_week.setdefault(week, set()).add(r.get("date"))
         if has_gmv:
             gmv_by_week[week] = gmv_by_week.get(week, 0.0) + _num(r.get("gmv"))
         if has_conv:
             rate = bounded_rate(r.get("pay_conversion_uv"))
             if rate is not None:
                 conv_by_week.setdefault(week, []).append(rate)
+
+    # Drop a partial trailing ISO week: a 2-day stub week summed against full 7-day
+    # weeks understates the latest GMV and mislabels its percentile as a historic low
+    # (and drags the WoW headline). Comparing a stub against full weeks is apples-to-
+    # oranges, so exclude it from the self-benchmark entirely.
+    stub = _partial_trailing_week(days_by_week)
+    if stub is not None:
+        gmv_by_week.pop(stub, None)
+        conv_by_week.pop(stub, None)
 
     series: dict[str, list[tuple[str, float]]] = {}
     if gmv_by_week:
@@ -512,8 +573,8 @@ def _event_lift_finding(con, limitations: list[str]):
                 "转化差异不显著时优先复盘承接页而非加大让利。"
             ),
             evidence_reason=(
-                "按 calendar_events 日期切分活动/平销两组，GMV 取日均相对差、"
-                "转化用 analytics.confidence.two_proportion 做两比例检验；观察性对比、无随机对照。"
+                "按活动日历切分活动/平销两组，GMV 取日均相对差、"
+                "转化用两比例检验判显著；观察性对比、无随机对照。"
             ),
             confounders=_EVENT_CONFOUNDERS,
         ),
@@ -689,16 +750,20 @@ def _growth_attribution_finding(
 
 
 def _bridge_rows(bridge: dict) -> list[dict]:
-    delta = bridge.get("delta_gmv")
+    factors = (("traffic", "流量"), ("conversion", "转化"), ("aov", "客单价"))
+    # Share of *gross* factor movement, not of ΔGMV. contrib/ΔGMV explodes to 608%
+    # when large factors offset into a near-zero net delta; dividing by the total
+    # absolute movement keeps every share a signed slice in [-1, 1] that sums to 100%.
+    gross = sum(abs(bridge.get(f"contrib_{f}") or 0.0) for f, _ in factors)
     out: list[dict] = []
-    for factor, zh in (("traffic", "流量"), ("conversion", "转化"), ("aov", "客单价")):
+    for factor, zh in factors:
         contrib = bridge.get(f"contrib_{factor}")
         out.append(
             {
                 # 表格行只呈现中文因子名；英文 `factor` 仅用于内部 is_dominant 比较。
                 "factor_zh": zh,
                 "contribution": contrib,
-                "share": (contrib / delta) if (contrib is not None and delta) else None,
+                "movement_share": (contrib / gross) if (contrib is not None and gross) else None,
                 "is_dominant": factor == bridge.get("dominant_factor"),
             }
         )

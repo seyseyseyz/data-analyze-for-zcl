@@ -30,6 +30,16 @@ def test_data_quality_task_runs(tmp_path, fixture_dir):
     assert result.findings
 
 
+def test_data_quality_excludes_internal_aux_tables(tmp_path, fixture_dir):
+    # needs_data / data_quality / build_manifest / mapping_diagnostics are internal
+    # build scaffolding — an empty one is normal (no diagnostics = good), not a data
+    # gap. Listing them as 「空表」 to the merchant is misleading noise; exclude them.
+    result = run_task("data_quality_check", _db(tmp_path, fixture_dir))
+    conclusion = result.findings[0].conclusion
+    for aux in ("needs_data", "data_quality", "build_manifest", "mapping_diagnostics"):
+        assert aux not in conclusion
+
+
 def test_account_baseline_task_reports_post_count(tmp_path, fixture_dir):
     result = run_task("account_baseline", _db(tmp_path, fixture_dir))
     assert result.tables["daily_posts"][0]["posts"] >= 1
