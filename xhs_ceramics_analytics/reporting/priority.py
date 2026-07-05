@@ -99,17 +99,26 @@ def _evidence_label(value: str) -> str:
     return _EVIDENCE_LABELS.get(value, value)
 
 
-# 面向读者的「为什么值得先做」一句话:把 impact 带位翻成生意语言,回答"凭什么排这么前"。
-# 统计口径(证据/可靠性)不进这句话——它折进随行的单一置信度标签(见 build_priority_table)。
-_WHY_BY_IMPACT: dict[str, str] = {
-    "高": "直接牵动整体生意,补齐后回报最快。",
-    "中": "对生意有明显带动,值得本周内推进。",
-    "低": "影响相对局部,可等更高优先级的动作落地后再做。",
+# 面向读者的「为什么值得先做」一句话,回答"凭什么排这么前"。它拼两半:
+# 影响面 (impact) + 可动手程度 (feasibility)。旧版只看 impact,而核心模块 impact
+# 几乎全是「高」→ 八行文案完全一致、成了废列;现在两轴一起决定措辞,同为高影响但
+# 证据强弱不同的两行会读出「本周直接落地」vs「先小样本验证」的差别。
+_IMPACT_CLAUSE: dict[str, str] = {
+    "高": "影响面大、直接牵动整体生意",
+    "中": "对生意有明显带动",
+    "低": "影响相对局部",
+}
+_READY_CLAUSE: dict[str, str] = {
+    "高": "证据扎实、本周可直接落地,回报最快",
+    "中": "证据中等,建议小步推进、边做边看",
+    "低": "证据偏薄,先小样本验证再放大",
 }
 
 
-def _why(impact_label: str) -> str:
-    return _WHY_BY_IMPACT.get(impact_label, _WHY_BY_IMPACT["中"])
+def _why(impact_label: str, feasibility_label: str) -> str:
+    impact = _IMPACT_CLAUSE.get(impact_label, _IMPACT_CLAUSE["中"])
+    ready = _READY_CLAUSE.get(feasibility_label, _READY_CLAUSE["中"])
+    return f"{impact},{ready}。"
 
 
 def _band(score: float) -> str:
@@ -185,6 +194,7 @@ def build_priority_table(
         impact = LEVER_WEIGHTS.get(result.task_id, _DEFAULT_WEIGHT)
         feasibility = _feasibility(finding)
         impact_label = _band(impact)
+        feasibility_label = _band(feasibility)
         # Single reader-facing 置信度 (same primitive as everywhere else), folded from
         # the two statistical axes — it rides as one tag inside 「为什么值得先做」 rather
         # than the old 预期影响/可行性/证据 three-column grid.
@@ -196,13 +206,13 @@ def build_priority_table(
                 "weak_link": finding.title,
                 "detail": finding.conclusion,
                 "lever": finding.recommended_action,
-                "why": _why(impact_label),
+                "why": _why(impact_label, feasibility_label),
                 "confidence_label": confidence.label,
                 "confidence_class": confidence.level,
                 "impact": impact,
                 "impact_label": impact_label,
                 "feasibility": feasibility,
-                "feasibility_label": _band(feasibility),
+                "feasibility_label": feasibility_label,
                 "priority": impact * feasibility,
                 "evidence": finding.evidence_strength.value,
                 "evidence_label": _evidence_label(finding.evidence_strength.value),
