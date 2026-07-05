@@ -1,0 +1,13 @@
+xhs_ceramics_analytics/reporting/facts_export.py
+  ai_agent 1-187
+tests/test_facts_hash_golden.py
+  ai_agent 1-63
+tests/test_facts_export_assembly.py
+  ai_agent 1-67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.28-trip",
+  "base_commit_sha": "7c531e235cf8b06d81bc37e0e1a6a0e74f08dc05",
+  "prompts": {}
+}
