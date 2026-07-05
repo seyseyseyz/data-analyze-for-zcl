@@ -1,0 +1,121 @@
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/analytics/concentration.py
+  ai_agent 65-92
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/reporting/first_screen.py
+  ai_agent 1-46
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_analytics_mean_diff.py
+  ai_agent 1-40
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/reporting/facts_export.py
+  ai_agent 1-187
+skills/data-analyze-for-zcl/assets/xhs-ca/orchestration/prompts/continuity.md
+  s_6bd2349b4ebd4d::t_3e79622d00a628 1-15
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/reporting/guardrails.py
+  ai_agent 1-34
+skills/data-analyze-for-zcl/assets/xhs-ca/orchestration/schemas/spine_brief.json
+  ai_agent 1-38
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_core_business.py
+  ai_agent 245-246,248-251,279-280,282-285,291
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_facts_hash_golden.py
+  ai_agent 1-63
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_charts_suppress_aggregate.py
+  ai_agent 1-22
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/reporting/narrative_render.py
+  ai_agent 1-131
+skills/data-analyze-for-zcl/assets/xhs-ca/orchestration/schemas/gate_report.json
+  ai_agent 1-38
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/cli.py
+  ai_agent 163-177,199-414
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/reporting/charts.py
+  ai_agent 284-335,413,458
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_orchestration_schemas.py
+  ai_agent 1-59
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_reporting_money.py
+  ai_agent 1-40
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/analytics/confidence.py
+  ai_agent 197-247
+skills/data-analyze-for-zcl/assets/xhs-ca/orchestration/schemas/continuity_edit.json
+  ai_agent 1-16
+skills/data-analyze-for-zcl/assets/xhs-ca/orchestration/schemas/fact.json
+  ai_agent 1-23
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_cli_facts.py
+  ai_agent 1-44
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_orchestration_prompts.py
+  ai_agent 1-48
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_reporting_first_screen.py
+  ai_agent 1-35
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_reporting_frozen_narrative.py
+  ai_agent 1-50
+skills/data-analyze-for-zcl/assets/xhs-ca/orchestration/prompts/seed.md
+  s_6bd2349b4ebd4d::t_3e79622d00a628 1-19
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_reporting_money_ledger.py
+  ai_agent 1-27
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_reporting_report_telemetry.py
+  ai_agent 1-54
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_analytics_cumulative_curve.py
+  ai_agent 1-33
+skills/data-analyze-for-zcl/assets/xhs-ca/orchestration/schemas/narrative_bundle.json
+  ai_agent 1-43
+skills/data-analyze-for-zcl/assets/xhs-ca/orchestration/prompts/synthesizer.md
+  s_6bd2349b4ebd4d::t_3e79622d00a628 1-18
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_reporting_trust_routing.py
+  ai_agent 1-34
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_report_writer_workflow.py
+  ai_agent 1-34
+skills/data-analyze-for-zcl/assets/xhs-ca/orchestration/prompts/patch.md
+  s_6bd2349b4ebd4d::t_3e79622d00a628 1-18
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_core_business_calendar_bridge.py
+  ai_agent 1-62
+skills/data-analyze-for-zcl/assets/xhs-ca/orchestration/schemas/claim.json
+  ai_agent 1-42
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/analysis/core_business.py
+  ai_agent 27,699-700,702-703,712-723,725-726,732,744,793-795,808-810,817-818
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_reporting_guardrails.py
+  ai_agent 1-19
+skills/data-analyze-for-zcl/assets/xhs-ca/orchestration/schemas/section_bundle.json
+  ai_agent 1-18
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_facts_export_assembly.py
+  ai_agent 1-67
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_reporting_factcheck_gate.py
+  ai_agent 1-210
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/reporting/frozen_narrative.py
+  ai_agent 1-78
+skills/data-analyze-for-zcl/assets/xhs-ca/orchestration/dag.md
+  s_6bd2349b4ebd4d::t_3e79622d00a628 1-55
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/reporting/money_ledger.py
+  ai_agent 1-29
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_cli_narrative.py
+  ai_agent 1-68
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/reporting/factcheck_gate.py
+  ai_agent 1-202
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/reporting/report_telemetry.py
+  ai_agent 1-57
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/reporting/trust_routing.py
+  ai_agent 1-29
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_cli_run_facts_telemetry.py
+  ai_agent 1-46
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/reporting/money.py
+  ai_agent 1-52
+skills/data-analyze-for-zcl/assets/xhs-ca/orchestration/prompts/writer.md
+  s_6bd2349b4ebd4d::t_3e79622d00a628 1-19
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_charts_waterfall.py
+  ai_agent 1-33
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_reporting_narrative_render.py
+  ai_agent 1-110
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_skill_wiring.py
+  ai_agent 1-25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.28-trip",
+  "base_commit_sha": "a061e796bf227225d01e48bda452ef3155add0f6",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
