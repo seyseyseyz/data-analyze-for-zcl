@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "section_bundle",
+  "description": "Writer → synthesizer. One report section's claims plus its spine alignment.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["section_id", "title", "claims", "spine_callbacks"],
+  "properties": {
+    "section_id": {"type": "string"},
+    "title": {"type": "string"},
+    "claims": {"type": "array", "items": {"$ref": "claim.json"}},
+    "table_ref": {"type": ["string", "null"], "description": "Points at an L1/L2 artifact; never recomputed."},
+    "chart_ref": {"type": ["string", "null"]},
+    "spine_callbacks": {"type": "array", "items": {"type": "string"}},
+    "spine_alignment": {"type": ["string", "null"]},
+    "spine_dissent": {"type": ["string", "null"], "description": "Bottom-up honesty valve; may be null."}
+  }
+}

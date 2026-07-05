@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "spine_brief",
+  "description": "Seed → writers+synthesizer. Accounting backbone (arithmetic identities) + broadcast set.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["decomposition_backbone", "headline_candidate", "section_callbacks", "broadcast_facts"],
+  "properties": {
+    "decomposition_backbone": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["link_id", "from", "to", "anchor_fact_ids", "relation"],
+        "properties": {
+          "link_id": {"type": "string"},
+          "from": {"type": "string"},
+          "to": {"type": "string"},
+          "anchor_fact_ids": {"type": "array", "items": {"type": "string"}},
+          "relation": {"enum": ["accounting_identity", "weak_causal_overlay"]}
+        }
+      }
+    },
+    "headline_candidate": {"type": "string", "description": "Opaque {tN} allowed; NO bare digits."},
+    "section_callbacks": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "must_connect_to": {"type": "string"},
+          "angle_hint": {"type": "string"}
+        }
+      }
+    },
+    "broadcast_facts": {"type": "array", "items": {"type": "string"}, "maxItems": 8}
+  }
+}
