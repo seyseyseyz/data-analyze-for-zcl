@@ -1,0 +1,13 @@
+xhs_ceramics_analytics/analysis/core_business.py
+  ai_agent 27,699-700,702-703,712-723,725-726,732,744,793-795,808-810,817-818
+tests/test_core_business.py
+  ai_agent 245-246,248-251,279-280,282-285,291
+tests/test_core_business_calendar_bridge.py
+  ai_agent 1-62
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.28-trip",
+  "base_commit_sha": "ef12e8f41e4a777c50d81769e8eeb811e7085dce",
+  "prompts": {}
+}
