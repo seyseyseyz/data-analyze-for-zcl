@@ -25,6 +25,18 @@ Use this skill when the user provides Xiaohongshu (小红书 / 千帆) exported 
 
 7. **Run selected task(s) — ONE integrated report, exactly TWO artifacts** — the simplest correct path is `scripts/xhs-ca run auto --name <表意名称>`: `auto` runs exactly the producible set from step 4's coverage (including `data_quality_check`) in one shot, so the report is as deep as the data allows without hand-listing slugs. To curate, instead pass every confirmed slug plus `data_quality_check` to a **single** `scripts/xhs-ca run <slug1> <slug2> … data_quality_check --name <表意名称>` invocation. Either way this composes ONE integrated report written as exactly two files — `<name>.md` + `<name>.html` — under `.xhs-ceramics-analytics/outputs/`. **Section order is enforced by the compositor, not by argument order:** business modules lead (executive summary → 经营诊断 → 商品/内容/用户需求/实验 → 基础参考), and `data_quality_check`/`ad_data_quality_check` always sink to the end as the **附录：数据质量与口径说明** — the reader meets conclusions first and the data caveats close the report. Always pass a meaningful `--name` (e.g. `--name 千帆经营诊断报告`); without it the combined default is `经营诊断报告`. Do NOT run one slug at a time — that fragments the deliverable into a file per task, which is exactly what to avoid. Before summarizing, read each module's `assets/xhs-ca/task_templates/<slug>.md` and `assets/xhs-ca/references/cheatsheet.md` for metric definitions, evidence rules, and report structure.
 
+7b. **(可选) 商家叙事编排 — Compose merchant narrative** — step 7 已 0-agent 产出确定性报告与
+`facts.json`。若要把它升级为「读物级」商家叙事,按 `assets/xhs-ca/orchestration/dag.md` 跑 L3 多 agent
+写手管线(host 中立):先用 `facts.json` 做缓存校验 `(facts_hash, narrative_schema_version,
+renderer_version)`——命中即 `xhs-ca render-frozen`(0 agent)。未命中则**用你所在 host 的 subagent
+机制** fan out 同一份 DAG(**Claude Code**: 可选 `.xhs-ceramics-analytics/report_writer_workflow.js`
+或 Task 工具;**Codex**: 其自带 subagent;**无 subagent 的 host**: 顺序 in-session role-pass),读取
+`orchestration/prompts/*.md` 与 `schemas/*.json` 作为唯一契约 → `xhs-ca gate` → 硬失败时 0–2 个定向
+补丁 agent → `xhs-ca render-draft` → 一个 Continuity agent 全篇连读 → `xhs-ca finalize`。任一环节耗尽
+预算 → `xhs-ca skeleton` 确定性骨架兜底。模型选择一律「判断层/起草层 + reasoning effort」,不绑定任何
+模型 id。每次运行都会向 `.xhs-ceramics-analytics/report_runs.jsonl` 追加一条计数记录(降级率/命中/骨架
+兜底/硬失败计数),在 step 9 交付说明里如实汇报,避免骨架成为静默默认值。仍然是**恰好两份产物**。
+
 8. **Custom integrated reports** — only when you need a report outside the built-in task registry (non-standard sheets a task does not cover): write the Markdown report first, then immediately run `scripts/xhs-ca render-html <report.md>` or `scripts/xhs-ca render-html <report.md> --output <report.html>`. For any combination of built-in tasks, prefer the single multi-slug `run` in step 7 over hand-authoring. Keep any Excel/CSV companion tables, but they do not replace the HTML report.
 
 9. **Delivery verification (REQUIRED)** — the user must receive exactly TWO artifacts: the integrated `<name>.md` and its matching single-file `<name>.html`. Before the final response, confirm both exist under `.xhs-ceramics-analytics/outputs/` and that no stray per-slug `data_quality_check.md`/`.html` were delivered. If HTML rendering fails, keep the Markdown report, report the error path/message, and do not imply HTML was delivered.
