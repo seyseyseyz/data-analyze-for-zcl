@@ -1,0 +1,13 @@
+xhs_ceramics_analytics/cli.py
+  ai_agent 163-177,210,230,350-362,397-414
+tests/test_cli_facts.py
+  ai_agent 30,41,43
+tests/test_cli_run_facts_telemetry.py
+  ai_agent 1-46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.28-trip",
+  "base_commit_sha": "5ee8cd168960f01d29f88c696ec5fbf79b2d0400",
+  "prompts": {}
+}
