@@ -343,6 +343,21 @@ FIELD_LABELS = {
     "first_purchase_cycle": ("首购周期", "用户完成首次购买所处的周期。"),
     "cycle_count": ("购买周期数", "参与对比的购买周期数量。"),
     "weakest_cycle": ("最弱周期", "转化或留存最弱的购买周期。"),
+    # --- 客户价值贡献（audience_structure）：头部人群 + 复购集中度 ---
+    "audience_count": ("人群类型数", "参与价值贡献对比的人群类型数量。"),
+    "top_audience_by_gmv": ("GMV 头部人群", "GMV 贡献最高的人群类型。"),
+    "top_gmv_share": ("GMV 头部人群占比", "GMV 头部人群在总 GMV 中的占比。"),
+    "repeat_gmv_share": ("复购人群 GMV 占比", "复购（老客）人群贡献的 GMV 占总 GMV 的比例。"),
+    "repeat_gmv_gini": ("复购 GMV 集中度", "复购 GMV 集中在少数人群的程度：0 为均摊，越接近 1 越集中。"),
+    "repeat_gmv_hhi": ("复购 GMV 集中度指数", "复购 GMV 集中度的另一种衡量（各占比平方和），越高越集中。"),
+    "repeat_source_count": ("复购来源数", "参与复购集中度计算的来源分组数量。"),
+    # --- 价格甜点（sku_structure）：转化不低、退款不高的价位带 ---
+    "sweet_spot_band": ("价格甜点带", "转化不低于整体且退款不高于整体的价位带。"),
+    "sweet_net_margin": ("甜点带净收益", "价格甜点带的加购转化率减退款率，越高越优。"),
+    # --- 最优发布窗口（account_baseline）：去趋势后表现最好的发布时段 ---
+    "best_window": ("最优发布窗口", "去趋势后平均表现最好的发布「周几·时段」窗口。"),
+    "best_window_posts": ("最优窗口笔记数", "落在最优发布窗口内的笔记数量。"),
+    "ranked_windows": ("参与排名窗口数", "参与发布窗口表现排名的合格窗口数量。"),
     # --- 搜索效率（search_efficiency）：词分类、Wilson 区间、载体效率 ---
     "search_term": ("搜索词", "带来流量或成交的搜索关键词。"),
     "term_class": ("搜索词分类", "该词相对基线的分类：高机会 / 高流失 / 中等 / 小样本。"),

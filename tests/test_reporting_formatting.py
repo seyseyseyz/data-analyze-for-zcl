@@ -208,6 +208,28 @@ def test_field_label_covers_previously_unlabeled_fields():
     assert "追溯" not in field_help("total_gmv")
 
 
+def test_field_label_covers_audience_value_window_sweet_keys():
+    # keys that used to leak as raw English into 客户价值贡献 / 价格甜点 / 最优发布窗口 —
+    # each now carries a Chinese label + specific help (no generic 追溯 fallback).
+    for key in (
+        "audience_count",
+        "top_audience_by_gmv",
+        "top_gmv_share",
+        "repeat_gmv_share",
+        "repeat_gmv_gini",
+        "repeat_gmv_hhi",
+        "repeat_source_count",
+        "sweet_spot_band",
+        "sweet_net_margin",
+        "best_window",
+        "best_window_posts",
+        "ranked_windows",
+    ):
+        # label must not be the space-joined English fallback
+        assert field_label(key) != key.replace("_", " ")
+        assert "追溯" not in field_help(key)
+
+
 def test_field_label_known_and_unknown():
     assert field_label("gmv") == "销售额"
     assert field_label("totally_unknown_col") == "totally unknown col"
