@@ -35,12 +35,12 @@ _TOP_DECILE_FRACTION = 0.1
 
 _CONFOUNDERS = ["笔记曝光结构差异", "商品与内容混合", "发布时间与活动节奏"]
 
-_LEVER_PARETO = "头部依赖高：复制头部笔记选题/形式并测试腰部放量。"
-_LEVER_CONV = "高曝光低转化笔记优化封面/标题与商详承接，或缩量测试新选题。"
-_LEVER_REFUND = "对高退款笔记复核商品描述与预期一致性，必要时下线关联链接。"
+_LEVER_PARETO = "太依赖头部笔记了：把头部笔记的选题/形式复制过来，再挑腰部笔记加大投放试试。"
+_LEVER_CONV = "曝光高但成交少的笔记，可以优化封面/标题、把商品详情页承接做好，或者少投点先试试新选题。"
+_LEVER_REFUND = "退款高的笔记，检查一下商品描述跟买家实际收到的对不对得上，必要时把关联的商品链接下掉。"
 _LEVER_REFERRAL = (
-    "笔记站外引流成交显著：评估重拍/加投时应把引流贡献计入内容价值，"
-    "并优化店铺主页承接（选品陈列、活动位）承接这部分外溢流量。"
+    "笔记站外引流成交显著：评估重拍/加投时，把引流贡献计入内容价值，"
+    "并优化店铺主页（选品陈列、活动位）承接这部分外溢流量。"
 )
 
 # 笔记引流去向：每条 = (次数列, 支付金额列, 中文渠道名)。缺列即跳过该渠道，
@@ -190,7 +190,7 @@ def _gmv_pareto_finding(con, limitations: list[str]) -> tuple[Finding, list[dict
             "note_gmv_gini": note_gmv_gini,
             "note_gmv_hhi": note_gmv_hhi,
         },
-        caveats=[_OBS_CAVEAT, "帕累托集中度为快照统计，非因果归因。"],
+        caveats=[_OBS_CAVEAT, "帕累托集中度只是某个时间点的分布快照，反映现状、不代表因果关系。"],
         recommended_action=_LEVER_PARETO,
         evidence_reason=M.methodology_note(
             "GMV 集中度=Top 10% 笔记 GMV / 总 GMV；80% 覆盖笔记数为累计 GMV 门槛。",
@@ -278,9 +278,9 @@ def _conversion_finding(con, limitations: list[str]) -> tuple[Finding | None, li
         outlier_rows.append({**r, "outlier_type": "top_converter"})
 
     conclusion = (
-        f"仅 {round((converting_share or 0) * 100)}% 有阅读笔记产生成交"
+        f"仅 {round((converting_share or 0) * 100)}% 有人看过的笔记带来成交"
         f"（{qty(notes_with_orders)}/{qty(len(notes_with_reads))}）；"
-        f"整体转化基线 {round((baseline or 0) * 100, 2)}%；"
+        f"整体成交率 {round((baseline or 0) * 100, 2)}%；"
         f"{qty(len(high_traffic_low_conv))} 篇高曝光但成交偏低的笔记（阅读量前 25%、成交明显低于平均）。"
     )
     finding = Finding(
@@ -297,7 +297,7 @@ def _conversion_finding(con, limitations: list[str]) -> tuple[Finding | None, li
         },
         caveats=[
             _OBS_CAVEAT,
-            "笔记转化零膨胀（多数笔记无成交，中位数=0），故以正基线 Σ成交/Σ阅读 为判据。",
+            "笔记里大多数根本没成交（中间那篇就是 0），所以不用中位数，改看「总成交÷总阅读」算出的整体成交率来判断。",
         ],
         recommended_action=_LEVER_CONV if high_traffic_low_conv else None,
         evidence_reason=M.methodology_note(
@@ -377,9 +377,9 @@ def _refund_finding(con, limitations: list[str]) -> tuple[Finding | None, list[d
     high_refund_rows.sort(key=lambda r: r["note_refund_rate_pay"], reverse=True)
 
     conclusion = (
-        f"笔记退款基线 {round(baseline * 100, 2)}%；"
-        f"{qty(len(high_refund_rows))} 篇笔记退款率高于基线（成交 ≥ "
-        f"{_MIN_PAID_ORDERS_FOR_REFUND_FLAG} 单守卫小样本），"
+        f"整体退款率 {round(baseline * 100, 2)}%；"
+        f"{qty(len(high_refund_rows))} 篇笔记退款率高过整体水平（成交 ≥ "
+        f"{_MIN_PAID_ORDERS_FOR_REFUND_FLAG} 单，避免小样本误判），"
         f"其中 {qty(fdr_survivors)} 篇在排除统计误报后仍明显偏高。"
     )
     finding = Finding(
@@ -397,8 +397,8 @@ def _refund_finding(con, limitations: list[str]) -> tuple[Finding | None, list[d
         },
         caveats=[
             _OBS_CAVEAT,
-            "退款率异常可能由品类/尺码/物流等因素驱动，需人工复核高退款笔记的商品与描述一致性。",
-            "多重比较用 Benjamini-Hochberg FDR 控制假阳性；缺退款单列时退款单以率×成交单估计。",
+            "退款高可能是品类/尺码/物流等原因引起的，需要人工去看看这些高退款笔记的商品和描述对不对得上。",
+            "同时筛很多篇笔记容易看走眼，这里用统计方法（Benjamini-Hochberg）把误报压下去；后台缺退款单数时，用退款率×成交单数估算。",
         ],
         recommended_action=_LEVER_REFUND if high_refund_rows else None,
         evidence_reason=M.methodology_note(
@@ -478,7 +478,7 @@ def _referral_finding(con, limitations: list[str]) -> tuple[Finding | None, list
     if active:
         parts = "、".join(f"{c['channel']} {money(c['referral_gmv'])} 元" for c in active)
         share_part = (
-            f"，其中店铺主页引流约为直接成交口径的 {round((shop_share or 0) * 100)}%"
+            f"，其中店铺主页引流带来的金额大约是店内直接成交的 {round((shop_share or 0) * 100)}%"
             if shop_share is not None and shop_gmv > 0
             else ""
         )
@@ -488,7 +488,7 @@ def _referral_finding(con, limitations: list[str]) -> tuple[Finding | None, list
             _LEVER_REFERRAL if (shop_share is not None and shop_share >= 0.2) else None
         )
     else:
-        conclusion = "笔记引流次数/金额列存在但合计为 0，未见站外引流成交。"
+        conclusion = "笔记有引流数据但金额合计为 0，暂时没有站外引流成交。"
         recommended_action = None
 
     finding = Finding(
@@ -507,8 +507,8 @@ def _referral_finding(con, limitations: list[str]) -> tuple[Finding | None, list
         },
         caveats=[
             _OBS_CAVEAT,
-            "站外引流成交与笔记直接成交为两套归因口径，同一笔成交不重复计数，两者不相加。",
-            "引流金额为后台归因快照，受店铺主页/直播间承接与活动节奏影响。",
+            "站外引流成交和笔记直接成交是两套不同的口径，同一笔订单不会重复算，两个数字不能相加。",
+            "引流金额是平台后台某个时点算出来的，会受店铺主页/直播间能不能接住流量、以及活动节奏的影响。",
         ],
         recommended_action=recommended_action,
         evidence_reason=(

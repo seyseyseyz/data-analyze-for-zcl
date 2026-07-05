@@ -43,19 +43,19 @@ _MIN_MEANINGFUL_DIFF = 0.02
 # ``shop_page_funnel`` scope (rollup drop + cumulative-window collapse) is defined
 # once in ``funnel_scope``; ``_ROLLUP`` above is imported from there.
 _DEDUP_CAVEAT = (
-    "漏斗按天记录，跨天汇总的访客/支付人数可能重复计入回访用户，份额为近似。"
+    "漏斗按天记录，跨天汇总的访客/支付人数可能把回访的人重复算进去，份额只是个大概。"
 )
 
-_LEVER_AUDIENCE = "低转化人群：针对该人群做承接内容与利益点定制（人群包 + 定向笔记）。"
-_LEVER_CYCLE = "薄弱首购周期：首购人群补券/信任状；复购人群做召回与复购提醒。"
-_LEVER_SOURCE = "高流量低转化来源：优化该来源承接页的相关性与首屏转化。"
+_LEVER_AUDIENCE = "低转化人群先别急着扩量：这周针对该人群定制承接内容与利益点，用人群包 + 定向笔记先小范围试。"
+_LEVER_CYCLE = "薄弱首购周期分头承接：首购人群补券 + 加信任状（晒单、好评），复购人群做召回与复购提醒，这周先挑最弱那档动手。"
+_LEVER_SOURCE = "高流量低转化来源：这周先改该来源的承接页——让首屏和标题对上访客真正想要的，把相关性和首屏转化补上来。"
 _LEVER_COMPOSITION = (
-    "人群构成倾斜：向高 GMV 贡献人群加投，低效人群缩量或换承接——"
-    "份额为手工录入，先核对录入口径，再小步对照测试确认增量后固化。"
+    "人群构成偏一边：给 GMV 贡献高的人群多投，效果差的人群少投或换个承接方式。"
+    "份额是手工录入的，先核对填的数是不是一个标准，再一小步一小步做对比测试，确认真能带来增量后再固定下来。"
 )
 _LEVER_VALUE = (
-    "高贡献人群与高集中来源倾斜加投；复购贡献偏低时加强会员召回与复购提醒，"
-    "降低对单一来源的 GMV 依赖。"
+    "先给高贡献人群与高集中来源倾斜加投；复购贡献偏低时，这周把会员召回和复购提醒做起来，"
+    "别让 GMV 太依赖单一来源。"
 )
 
 _CONV_CONFOUNDERS = ["人群定义口径", "流量来源差异", "客单与品类"]
@@ -123,7 +123,7 @@ def _conversion_finding(con, limitations: list[str]) -> tuple[Finding, list[dict
         )
         finding = Finding(
             title="人群转化对比",
-            conclusion="shop_page_funnel 缺少访客/支付人数列，无法计算人群转化，需补充真实计数列。",
+            conclusion="无法计算人群转化：shop_page_funnel 缺少访客/支付人数列，需补充真实计数列。",
             evidence_strength=EvidenceStrength.NOT_JUDGABLE,
             key_numbers={"group_count": 0, "overall_conversion": None},
             caveats=[M.causal_disclaimer("人群之间的流量结构和客群成熟度不同"), "缺少真实计数列。"],
@@ -195,7 +195,7 @@ def _conversion_finding(con, limitations: list[str]) -> tuple[Finding, list[dict
     if new_customer_dependence is not None:
         retention_note += f" 新客贡献付费 {round(new_customer_dependence * 100)}%"
         if repeat_conversion_premium is not None:
-            retention_note += f"、老客转化为新客的 {round(repeat_conversion_premium + 1, 1)} 倍"
+            retention_note += f"、老客转化是新客的 {round(repeat_conversion_premium + 1, 1)} 倍"
         retention_note += "。"
 
     caveats = [M.causal_disclaimer("人群之间的流量结构和客群成熟度不同"), _DEDUP_CAVEAT]
@@ -238,7 +238,7 @@ def _conversion_finding(con, limitations: list[str]) -> tuple[Finding, list[dict
         lo, hi = wilson_interval(total_k, total_n) if min_n_guard(total_n) else (None, None)
         band = f"（{rate_band(lo, hi)}）" if lo is not None else ""
         conclusion = (
-            f"整体进店转化 {round((overall or 0) * 100)}%{band}。人群维度不足，未做人群对比。"
+            f"整体进店转化 {round((overall or 0) * 100)}%{band}。人群分得不够细，没做人群对比。"
         )
         key_numbers = {
             "group_count": len(valid),
@@ -331,7 +331,7 @@ def _cycle_finding(con, limitations: list[str]) -> tuple[Finding | None, list[di
 
     caveats = [
         M.causal_disclaimer("各周期之间的活动节奏和客群成熟度不同"),
-        "首购周期为累计窗口（180天 ⊂ 365天），各窗口访客/支付存在重叠，仅作漏斗对比不可相加。",
+        "首购周期是累计口径（180天包含在365天里），各窗口的访客/支付人数有重叠，只能拿来对比漏斗，不能相加。",
         _DEDUP_CAVEAT,
     ]
     evidence_reason_parts = [
@@ -343,8 +343,8 @@ def _cycle_finding(con, limitations: list[str]) -> tuple[Finding | None, list[di
     elif gap is not None and not windows_differ:
         cycle_note = "各累计窗口转化无有效差异（差异低于阈值，视为同一窗口）。"
     else:
-        cycle_note = "各周期样本量不足，暂无稳健最弱周期。"
-        caveats.append("各周期样本量均不足 30，转化率结果仅供参考。")
+        cycle_note = "各周期的人数都太少，暂时看不出哪个周期最弱。"
+        caveats.append("各周期的人数都不到 30，转化率只能当参考。")
         evidence_reason_parts.append("样本量不足 30 的周期未做置信区间判定。")
     conclusion = (
         f"共 {len(cycle_rows)} 个首购周期。"
@@ -436,7 +436,7 @@ def _source_finding(con, limitations: list[str]) -> tuple[Finding | None, list[d
     conclusion = (
         f"共 {len(source_rows)} 个进店来源，最大流量来源为 {top_source}"
         f"（访客占比 {round((source_rows[0]['visitor_share'] or 0) * 100)}%）。"
-        + (f" 承接优化点：{optimize_source}（高流量但转化低于整体）。" if optimize_source else "")
+        + (f" 该优化承接的来源：{optimize_source}（流量大但转化低于整体）。" if optimize_source else "")
     )
     finding = Finding(
         title="进店来源结构",
@@ -641,7 +641,7 @@ def _composition_finding(con, limitations: list[str]) -> tuple[Finding, list[dic
             "top_segment": top_segment,
             "top_gmv_share": top["gmv_share"] if top else None,
         },
-        caveats=[M.causal_disclaimer("人群定义口径不同"), "份额为手工录入，口径需自校。"],
+        caveats=[M.causal_disclaimer("人群定义口径不同"), "份额是手工录入的，口径要自己再核对一遍。"],
         # 手工录入快照 → 描述可靠性固定为 LOW，与其他计算型 finding 一样显式给出该正交轴。
         descriptive_reliability=DescriptiveReliability.LOW,
         recommended_action=_LEVER_COMPOSITION,
