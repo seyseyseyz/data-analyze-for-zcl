@@ -15,6 +15,7 @@ from xhs_ceramics_analytics.reporting.field_labels import FIELD_LABELS
 from xhs_ceramics_analytics.reporting.labels import (
     VALUE_LABELS,
     format_cn_date,
+    format_money,
     format_number,
     format_percent,
 )
@@ -86,6 +87,35 @@ PERCENT_FIELDS = {
 # 0-1 fractions rendered as percents.
 PERCENT_SUFFIXES = ("_rate", "_share", "_pct", "_rate_pay", "_mde")
 
+# Money amounts render as whole yuan (matching analysis.prose.money) so a summed
+# GMV/spend/refund reads ``1,302,239`` not ``1,302,239.01`` — the trailing cents are
+# export noise, not signal, and the prose path already drops them. Kept as an explicit
+# allow-list like PERCENT_FIELDS, NOT a fuzzy money-token match: an omission only leaves
+# a money field at the old 2-decimal display (harmless), whereas a false positive would
+# round a ratio/index (``gmv_gini`` 0.42, ``marginal_roas`` 4.4) to a meaningless integer.
+# Percent detection runs first, so ``gmv_share``/``amount_share`` never reach here.
+MONEY_FIELDS = {
+    "gmv",
+    "aov",
+    "aov_low",  # AOV/price-band boundaries (yuan)
+    "aov_high",
+    "spend",
+    "price",
+    "gmv_delta",
+    "gmv_total",
+    "gmv_optional",
+    "net_gmv_pay",
+    "refund_amount_pay",
+    "contribution",  # LMDI GMV-bridge factor contribution (yuan)
+    "contrib_traffic",
+    "contrib_conversion",
+}
+# ``_gmv`` (note/card/net/total/... gmv), ``_amount`` (refund/paid amounts), ``_spend``
+# (total/avg/break-even spend), ``_aov`` (note/card/median/contrib aov), ``_margin``
+# (net/sweet margin). None of these suffixes reach a ratio/index — ``gmv_gini`` ends
+# ``_gini``, ``marginal_roas`` ends ``_roas``, ``gmv_universe`` ends ``_universe``.
+MONEY_SUFFIXES = ("_gmv", "_amount", "_spend", "_aov", "_margin")
+
 # Fields whose values denote a calendar day. Real exports carry these as integer
 # YYYYMMDD, ISO strings, or datetime — the date branch normalizes all to ISO.
 DATE_FIELDS = {
@@ -101,6 +131,10 @@ DATE_FIELDS = {
 
 def is_percent_field(field_name: str) -> bool:
     return field_name in PERCENT_FIELDS or field_name.endswith(PERCENT_SUFFIXES)
+
+
+def is_money_field(field_name: str) -> bool:
+    return field_name in MONEY_FIELDS or field_name.endswith(MONEY_SUFFIXES)
 
 
 def is_date_field(field_name: str) -> bool:
@@ -177,6 +211,10 @@ def format_scalar(field_name: str, value: object) -> str:
             return "持平 0%"
         if is_percent_field(field_name):
             return format_percent(numeric)
+        # Money to whole yuan (shared format_money primitive) — checked after percent
+        # so *_share/*_amount_share concentrations stay percents.
+        if is_money_field(field_name):
+            return format_money(numeric)
         return format_number(numeric)
     return str(value)
 

@@ -1,7 +1,28 @@
 from pathlib import Path
 
+from xhs_ceramics_analytics.analysis.core_business import _bridge_rows
 from xhs_ceramics_analytics.analysis.registry import run_task
 from xhs_ceramics_analytics.db.duck import connect
+
+
+def test_bridge_movement_share_stays_sane_when_delta_near_zero():
+    # Large offsetting factors with a tiny net ΔGMV used to make share = contrib/ΔGMV
+    # blow up to 608% — meaningless to a merchant. Share is now a fraction of the
+    # gross factor movement, so it always reads as a sane 0–100% split.
+    bridge = {
+        "delta_gmv": 100.0,
+        "contrib_traffic": 5000.0,
+        "contrib_conversion": -3000.0,
+        "contrib_aov": -1900.0,
+        "dominant_factor": "traffic",
+    }
+    rows = _bridge_rows(bridge)
+    shares = [row["movement_share"] for row in rows]
+    assert all(-1.0 <= s <= 1.0 for s in shares)
+    # absolute shares sum to 1 (each factor's slice of total absolute movement)
+    assert abs(sum(abs(s) for s in shares) - 1.0) < 1e-9
+    # the old exploding key is gone
+    assert all("share" not in {k for k in row if k != "movement_share"} for row in rows)
 
 
 def _con(tmp_path: Path):

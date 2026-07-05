@@ -562,7 +562,10 @@ def test_hbar_value_label_stays_within_bounds_for_large_numbers():
         ]},
     )
     html = charts.for_result(result)
-    assert "839,335.64" in html
+    # GMV renders as whole yuan (shared format_money) — the wide 千分位 label is
+    # 839,336, and the layout must still keep its right edge within the viewBox.
+    assert "839,336" in html
+    assert "839,335.64" not in html
     assert _num_label_right_edges(html), "expected value labels to be present"
     assert max(_num_label_right_edges(html)) <= 640 + 1   # within the 640-wide viewBox
 

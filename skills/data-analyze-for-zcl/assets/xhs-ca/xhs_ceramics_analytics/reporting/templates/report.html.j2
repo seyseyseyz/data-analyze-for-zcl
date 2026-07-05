@@ -1221,7 +1221,7 @@
               <th>先动顺序</th>
               <th>哪个环节</th>
               <th>具体先做什么</th>
-              <th>为什么值得先做</th>
+              <th>置信度</th>
             </tr>
           </thead>
           <tbody>
@@ -1230,7 +1230,7 @@
               <td>{{ row.rank }}</td>
               <td>{{ row.weak_link }}</td>
               <td>{{ row.lever }}</td>
-              <td>{{ row.why }} <span class="tag {{ row.confidence_class }}">置信度 {{ row.confidence }}</span></td>
+              <td><span class="tag {{ row.confidence_class }}">{{ row.confidence }}</span></td>
             </tr>
             {% endfor %}
           </tbody>

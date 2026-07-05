@@ -137,6 +137,17 @@ def format_number(value: float) -> str:
     return f"{value:,.2f}".rstrip("0").rstrip(".")
 
 
+def format_money(value: float) -> str:
+    """Grouped whole-yuan amount: ``1302239.01`` -> ``1,302,239``.
+
+    The single reader-facing money rule, shared by the chart path (charts.py) and,
+    via reporting.formatting.format_scalar, the table/key-number path — mirroring
+    analysis.prose.money for prose. Summed GMV/spend carry spurious cents from
+    ``paid_amount``; they are export noise, not signal, so every surface drops them.
+    """
+    return format_number(float(round(value)))
+
+
 def format_cn_date(value: object) -> str | None:
     """Normalize a date-ish value to ISO ``YYYY-MM-DD``; ``None`` when not a date.
 

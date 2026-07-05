@@ -99,19 +99,6 @@ def _evidence_label(value: str) -> str:
     return _EVIDENCE_LABELS.get(value, value)
 
 
-# 面向读者的「为什么值得先做」一句话:把 impact 带位翻成生意语言,回答"凭什么排这么前"。
-# 统计口径(证据/可靠性)不进这句话——它折进随行的单一置信度标签(见 build_priority_table)。
-_WHY_BY_IMPACT: dict[str, str] = {
-    "高": "直接牵动整体生意,补齐后回报最快。",
-    "中": "对生意有明显带动,值得本周内推进。",
-    "低": "影响相对局部,可等更高优先级的动作落地后再做。",
-}
-
-
-def _why(impact_label: str) -> str:
-    return _WHY_BY_IMPACT.get(impact_label, _WHY_BY_IMPACT["中"])
-
-
 def _band(score: float) -> str:
     if score >= _HIGH_BAND:
         return "高"
@@ -185,9 +172,15 @@ def build_priority_table(
         impact = LEVER_WEIGHTS.get(result.task_id, _DEFAULT_WEIGHT)
         feasibility = _feasibility(finding)
         impact_label = _band(impact)
+        feasibility_label = _band(feasibility)
         # Single reader-facing 置信度 (same primitive as everywhere else), folded from
-        # the two statistical axes — it rides as one tag inside 「为什么值得先做」 rather
-        # than the old 预期影响/可行性/证据 three-column grid.
+        # the two statistical axes. It is the table's 4th column — a genuine per-row
+        # rating. There is deliberately NO band-composed "为什么值得先做" reason column:
+        # on real data every top module collapses to the same impact/feasibility band
+        # (all core-economics, all causally WEAK + descriptively HIGH), so any prose
+        # derived from those bands reads verbatim-identical down every row — a dead
+        # column. The priority rationale is the RANK ORDER itself, stated once in the
+        # section lede; the per-row signal the reader needs is 哪个环节/具体先做什么 + 置信度.
         confidence = reader_confidence(finding)
         rows.append(
             {
@@ -196,13 +189,12 @@ def build_priority_table(
                 "weak_link": finding.title,
                 "detail": finding.conclusion,
                 "lever": finding.recommended_action,
-                "why": _why(impact_label),
                 "confidence_label": confidence.label,
                 "confidence_class": confidence.level,
                 "impact": impact,
                 "impact_label": impact_label,
                 "feasibility": feasibility,
-                "feasibility_label": _band(feasibility),
+                "feasibility_label": feasibility_label,
                 "priority": impact * feasibility,
                 "evidence": finding.evidence_strength.value,
                 "evidence_label": _evidence_label(finding.evidence_strength.value),

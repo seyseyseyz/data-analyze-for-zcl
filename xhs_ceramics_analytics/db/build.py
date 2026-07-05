@@ -27,7 +27,11 @@ from xhs_ceramics_analytics.importing.profile import (
 
 _DERIVED_TABLES = ("daily_sku_sales", "business_overview_monthly")
 _DERIVED_VIEWS = ("note_metrics", "ad_metrics")
-_AUX_TABLES = ("needs_data", "build_manifest", "data_quality", "mapping_diagnostics")
+# Internal build scaffolding — not merchant data. Kept public so the coverage/
+# data-quality reporting can exclude these from the reader-facing 「空表」 list (an
+# empty aux table means "no diagnostics", which is normal, not a data gap).
+AUX_TABLES = ("needs_data", "build_manifest", "data_quality", "mapping_diagnostics")
+_AUX_TABLES = AUX_TABLES
 _TABULAR_SUFFIXES = {".csv", *EXCEL_SUFFIXES}
 _DOMAIN_HINTS = (("退款原因", "退款原因"), ("人群", "人群画像"))
 # Two files that both report a metric for the same grain key may round differently.

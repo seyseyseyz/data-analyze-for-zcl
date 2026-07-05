@@ -37,3 +37,31 @@ def test_low_reliability_chart_still_de_emphasized():
     svg = str(charts.for_result(_core_result(DescriptiveReliability.LOW)))
     assert svg
     assert "stroke-dasharray" in svg  # thin data still visibly de-emphasised
+
+
+def test_gmv_chart_labels_round_money_to_whole_yuan():
+    # The chart path is a THIRD money renderer (besides table/prose); a GMV bar
+    # label/tooltip must read 414,126 元, not 414,126.02 — spurious cents are noise.
+    # Uses the channel rank-bar chart, which labels every bar (unlike the trend line,
+    # which labels only the last point).
+    rows = [
+        {"carrier_zh": "笔记", "gmv": 800357.48},
+        {"carrier_zh": "商城", "gmv": 414126.02},
+    ]
+    finding = Finding(
+        title="渠道结构",
+        conclusion="c",
+        evidence_strength=EvidenceStrength.WEAK,
+        descriptive_reliability=DescriptiveReliability.HIGH,
+    )
+    result = AnalysisResult(
+        task_id="channel_structure_diagnosis",
+        title="渠道结构",
+        findings=[finding],
+        tables={"channel_scale": rows},
+    )
+    svg = str(charts.for_result(result))
+    assert "414,126.02" not in svg
+    assert "800,357.48" not in svg
+    assert "414,126" in svg
+    assert "800,357" in svg

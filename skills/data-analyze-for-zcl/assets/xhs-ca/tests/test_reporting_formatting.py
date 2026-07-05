@@ -97,8 +97,9 @@ def test_format_scalar_caliber_suffixed_refund_rates_are_percent():
 
 def test_format_scalar_delta_columns_respect_their_unit():
     # ``delta`` is polymorphic, so each trend renames its column: the GMV delta
-    # is money (must NOT be ×100 into a percent), the rate deltas are percent-scale.
-    assert format_scalar("gmv_delta", 1234.5) == "1,234.5"
+    # is money (must NOT be ×100 into a percent; rounds to whole yuan like all
+    # money), the rate deltas are percent-scale.
+    assert format_scalar("gmv_delta", 1234.5) == "1,234"
     assert format_scalar("refund_rate_delta", 0.05) == "5%"
     assert format_scalar("avg_pay_conversion_delta", -0.03) == "-3%"
 
@@ -114,8 +115,38 @@ def test_format_scalar_conversion_counts_and_source_are_not_percent():
 
 def test_format_scalar_money_fields_never_become_percent():
     # money that happens to end in _pay or resemble a rate must stay a number
-    assert format_scalar("net_gmv_pay", 1234.5) == "1,234.5"
+    # (and, being money, rounds to whole yuan).
+    assert format_scalar("net_gmv_pay", 1234.5) == "1,234"
     assert format_scalar("note_gmv", 903.0) == "903"
+
+
+def test_format_scalar_money_rounds_to_whole_yuan():
+    # Summed GMV/spend/refund carry spurious cents from paid_amount; the prose
+    # path (analysis.prose.money) already drops them, so tables/key-numbers must
+    # match — a merchant reads 1,302,239 元, not 1,302,239.01.
+    assert format_scalar("total_gmv", 1302239.01) == "1,302,239"
+    assert format_scalar("refund_amount", 88.49) == "88"
+    assert format_scalar("avg_spend", 200.6) == "201"
+    assert format_scalar("note_aov", 217.34) == "217"
+    assert format_scalar("net_margin", 1000.99) == "1,001"
+    # LMDI GMV-bridge contributions are yuan (prose already rounds them); the
+    # long-format bridge table's `contribution` column and the key-number
+    # `contrib_traffic`/`contrib_conversion` must match.
+    assert format_scalar("contribution", 34925.49) == "34,925"
+    assert format_scalar("contrib_traffic", 34925.49) == "34,925"
+    assert format_scalar("contrib_conversion", -25522.21) == "-25,522"
+    # AOV price-band boundaries are yuan too.
+    assert format_scalar("aov_high", 1721.7) == "1,722"
+    assert format_scalar("aov_low", 88.0) == "88"
+
+
+def test_format_scalar_money_lookalikes_keep_precision():
+    # ratios/indices that merely share a money token must NOT round to a
+    # meaningless integer — 0.42 concentration, 4.4 ROAS stay as-is; the _share
+    # concentration is a percent, not money.
+    assert format_scalar("gmv_gini", 0.42) == "0.42"
+    assert format_scalar("marginal_roas", 4.4) == "4.4"
+    assert format_scalar("gmv_share", 0.505) == "50.5%"
 
 
 def test_format_scalar_relative_lift_signed():
@@ -206,6 +237,28 @@ def test_field_label_covers_previously_unlabeled_fields():
     assert field_label("overall_refund_rate") == "整体退款率"
     # the generic追溯 fallback must no longer fire for these
     assert "追溯" not in field_help("total_gmv")
+
+
+def test_field_label_covers_audience_value_window_sweet_keys():
+    # keys that used to leak as raw English into 客户价值贡献 / 价格甜点 / 最优发布窗口 —
+    # each now carries a Chinese label + specific help (no generic 追溯 fallback).
+    for key in (
+        "audience_count",
+        "top_audience_by_gmv",
+        "top_gmv_share",
+        "repeat_gmv_share",
+        "repeat_gmv_gini",
+        "repeat_gmv_hhi",
+        "repeat_source_count",
+        "sweet_spot_band",
+        "sweet_net_margin",
+        "best_window",
+        "best_window_posts",
+        "ranked_windows",
+    ):
+        # label must not be the space-joined English fallback
+        assert field_label(key) != key.replace("_", " ")
+        assert "追溯" not in field_help(key)
 
 
 def test_field_label_known_and_unknown():

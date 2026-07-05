@@ -399,8 +399,8 @@ def _price_band_distribution_finding(
         ],
         recommended_action=_LEVER_PRICE_BAND,
         evidence_reason=(
-            "价位带由 gmv>0 SKU 的客单价四分位切分（analytics.distribution 共享口径），"
-            "SKU 数用 histogram、GMV 用同一 band_of 加权聚合，观察性描述。"
+            "价位带由有成交 SKU 的客单价四分位切分（与退款根因诊断同一共享口径），"
+            "SKU 数与 GMV 按同一套价位带边界加权聚合，观察性描述。"
         ),
         confounders=list(_PRICE_BAND_CONFOUNDERS),
     )
