@@ -1,0 +1,38 @@
+docs/superpowers/specs/2026-07-06-hybrid-report-writer-design.md
+  s_6bd2349b4ebd4d::t_f6dbe5f3ad5229 464-485
+  s_6bd2349b4ebd4d::t_82ad8aec12e0d6 209-211
+  s_6bd2349b4ebd4d::t_d4ec8aa4eefc7d 409
+  s_6bd2349b4ebd4d::t_54fb7812e10569 131
+  s_6bd2349b4ebd4d::t_08c04fe063637e 136
+  s_6bd2349b4ebd4d::t_f2c0dd3e06484b 7-9
+  s_6bd2349b4ebd4d::t_77bc8f90afd418 21-23
+  s_6bd2349b4ebd4d::t_d717d6a634ac3d 434-445
+  s_6bd2349b4ebd4d::t_67107b23cdef7c 386-393
+  s_6bd2349b4ebd4d::t_c96bd2cf426250 410-419
+  s_6bd2349b4ebd4d::t_9eb990664cc8f8 162-166,168-170,172-173
+  s_6bd2349b4ebd4d::t_efe32441c7a893 251-290,292-302
+  s_6bd2349b4ebd4d::t_e9a04c70b280b8 491-515
+  s_6bd2349b4ebd4d::t_677caf496386b7 428-433,446-448,450-457
+  s_6bd2349b4ebd4d::t_03ec78ec6a2ee2 114,118,120-126,128-130,133-134,137-139,142-161,167,171,174-208,212-250,291,303-309
+  s_6bd2349b4ebd4d::t_d7b1b7dfb675d1 1-6,10-20,24-113,115-117,119,127,132,135,140-141,310-317,321-385,394-408,420-427,449,458-463,486-490,516-530
+  s_6bd2349b4ebd4d::t_27657e7bbe9463 318-320
+docs/superpowers/plans/2026-07-06-hybrid-report-writer-plan-1-facts.md
+  s_6bd2349b4ebd4d::t_ce0764e81e9d0f 1-1582,1584-1599,1605-1679
+  s_6bd2349b4ebd4d::t_13514ad3903c99 1583,1600-1604
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.28-trip",
+  "base_commit_sha": "a74c697e1a2f76e2b31f529225b5e9fa54f6fec1",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
