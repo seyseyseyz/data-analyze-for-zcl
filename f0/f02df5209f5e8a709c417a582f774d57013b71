@@ -1,0 +1,11 @@
+tests/test_reporting_money_ledger.py
+  ai_agent 1-27
+xhs_ceramics_analytics/reporting/money_ledger.py
+  ai_agent 1-29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.28-trip",
+  "base_commit_sha": "f0f02df5209f5e8a709c417a582f774d57013b71",
+  "prompts": {}
+}
