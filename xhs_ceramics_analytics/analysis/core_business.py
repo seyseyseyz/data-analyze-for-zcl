@@ -750,16 +750,20 @@ def _growth_attribution_finding(
 
 
 def _bridge_rows(bridge: dict) -> list[dict]:
-    delta = bridge.get("delta_gmv")
+    factors = (("traffic", "流量"), ("conversion", "转化"), ("aov", "客单价"))
+    # Share of *gross* factor movement, not of ΔGMV. contrib/ΔGMV explodes to 608%
+    # when large factors offset into a near-zero net delta; dividing by the total
+    # absolute movement keeps every share a signed slice in [-1, 1] that sums to 100%.
+    gross = sum(abs(bridge.get(f"contrib_{f}") or 0.0) for f, _ in factors)
     out: list[dict] = []
-    for factor, zh in (("traffic", "流量"), ("conversion", "转化"), ("aov", "客单价")):
+    for factor, zh in factors:
         contrib = bridge.get(f"contrib_{factor}")
         out.append(
             {
                 # 表格行只呈现中文因子名；英文 `factor` 仅用于内部 is_dominant 比较。
                 "factor_zh": zh,
                 "contribution": contrib,
-                "share": (contrib / delta) if (contrib is not None and delta) else None,
+                "movement_share": (contrib / gross) if (contrib is not None and gross) else None,
                 "is_dominant": factor == bridge.get("dominant_factor"),
             }
         )
