@@ -882,9 +882,9 @@ def _priority_table_view(results: list[AnalysisResult]) -> list[dict[str, object
 
     The pure :func:`build_priority_table` primitive still orders rows by 预期影响 ×
     可行性 internally, but the reader only meets 先动顺序 / 哪个环节 / 具体先做什么 /
-    为什么值得先做. Here we attach the display rank and carry the single folded 置信度
-    (label + level class) so it renders as one tag inside the last column — no separate
-    impact/feasibility/evidence grid.
+    置信度. The 4th column is the folded 置信度 rating (label + level class) as one
+    colored tag — a genuine per-row rating, not a band-composed "为什么值得先做" reason
+    (which read verbatim-identical down every row on real data).
     """
     rows = build_priority_table(results)
     views: list[dict[str, object]] = []
@@ -894,7 +894,6 @@ def _priority_table_view(results: list[AnalysisResult]) -> list[dict[str, object
                 "rank": index,
                 "weak_link": row.get("weak_link"),
                 "lever": row.get("lever"),
-                "why": row.get("why"),
                 "confidence": row.get("confidence_label"),
                 "confidence_class": row.get("confidence_class"),
             }

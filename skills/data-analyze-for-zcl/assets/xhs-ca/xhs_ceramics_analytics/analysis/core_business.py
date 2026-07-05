@@ -347,7 +347,7 @@ def _benchmark_finding(con, limitations: list[str]):
             {
                 "metric": _BENCHMARK_LABELS.get(metric_key, metric_key),
                 "latest_period": latest_week,
-                "value": round(latest_value, 4),
+                "value": _benchmark_value(metric_key, latest_value),
                 "self_percentile": round(pct, 4),
                 "percentile_label": percentile_label(pct),
                 "periods": len(series),
@@ -403,6 +403,23 @@ _BENCHMARK_LABELS = {
     "weekly_gmv": "周 GMV",
     "weekly_pay_conversion": "周支付转化率",
 }
+
+# Money-typed benchmark metrics (rounded to whole yuan). The benchmark table is
+# long-format — one polymorphic `value` column keyed by `metric` — so the value's
+# unit is known only here at the producer, not to the column-name-based renderer.
+_BENCHMARK_MONEY_METRICS = frozenset({"weekly_gmv"})
+
+
+def _benchmark_value(metric_key: str, value: float) -> float:
+    """Round a benchmark value to its metric's natural precision.
+
+    Money metrics round to whole yuan (same rule as :func:`analysis.prose.money`)
+    so 周 GMV reads ``81,910`` not ``81,910.3``; rate metrics keep 4dp because a
+    支付转化率 of ``0.04`` must not collapse to ``0``.
+    """
+    if metric_key in _BENCHMARK_MONEY_METRICS:
+        return float(round(value))
+    return round(value, 4)
 
 
 def _partial_trailing_week(days_by_week: dict[str, set]) -> str | None:

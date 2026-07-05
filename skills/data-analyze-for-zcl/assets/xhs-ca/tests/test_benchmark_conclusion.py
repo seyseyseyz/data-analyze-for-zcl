@@ -8,6 +8,7 @@
 """
 from xhs_ceramics_analytics.analysis.core_business import (
     _benchmark_conclusion,
+    _benchmark_value,
     _percentile_phrase,
     _weekly_metric_series,
 )
@@ -60,3 +61,11 @@ def test_weekly_series_drops_partial_trailing_week():
     assert stub_week not in weeks
     # 最新保留周的 GMV 应是满周求和 (7000),不是被残周污染的 20。
     assert series["weekly_gmv"][-1][1] == 7000.0
+
+
+def test_benchmark_value_rounds_money_metric_to_whole_yuan():
+    # `value` 列口径随 `metric` 变化:周 GMV 是金额,须取整到元(与正文 money 口径
+    # 一致),读者看到 81,910 而非 81,910.3;而周支付转化率是 0-1 比率,取整会塌成
+    # 0,必须保留精度。渲染层无法按列名区分这一多态列,只能在产出源按 metric 取整。
+    assert _benchmark_value("weekly_gmv", 81910.3) == 81910.0
+    assert _benchmark_value("weekly_pay_conversion", 0.0417) == 0.0417

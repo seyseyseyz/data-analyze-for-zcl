@@ -49,10 +49,13 @@ def test_markdown_renders_priority_table_ranked():
 
 
 def test_markdown_priority_table_uses_four_human_columns():
-    # B4: the priority table is 4 plain-language columns; no 预期影响/可行性/证据 grid,
-    # no statistical formula in the intro — just "从上到下就是本周先后顺序".
+    # B4/D2: the priority table is 4 plain-language columns; no 预期影响/可行性/证据 grid,
+    # no statistical formula in the intro — just "从上到下就是本周先后顺序". The last
+    # column is the 置信度 rating, NOT a band-composed "为什么值得先做" sentence (which
+    # read verbatim-identical down every row on real data — a dead column).
     md = render_markdown(_priority_results())
-    assert "| 先动顺序 | 哪个环节 | 具体先做什么 | 为什么值得先做 |" in md
+    assert "| 先动顺序 | 哪个环节 | 具体先做什么 | 置信度 |" in md
+    assert "为什么值得先做" not in md
     assert "从上到下就是本周先后顺序" in md
     assert "预期影响 × 可行性" not in md
     assert "| 预期影响 | 可行性 | 证据 |" not in md
@@ -131,14 +134,17 @@ def test_html_renders_priority_table_section():
 
 
 def test_html_priority_table_uses_four_human_columns():
-    # B4: 4 plain-language columns, no 预期影响/可行性 grid columns, human intro.
+    # B4/D2: 4 plain-language columns, no 预期影响/可行性 grid columns, human intro.
+    # The 4th column is the 置信度 rating tag, not a band-composed "为什么值得先做"
+    # sentence (identical down every row on real data — a dead column).
     html = render_html(_priority_results())
     start = html.index('id="priority"')
     section = html[start : html.index("</section>", start)]
     assert "先动顺序" in section
     assert "哪个环节" in section
     assert "具体先做什么" in section
-    assert "为什么值得先做" in section
+    assert "<th>置信度</th>" in section
+    assert "为什么值得先做" not in section
     assert "<th>预期影响</th>" not in section
     assert "<th>可行性</th>" not in section
     assert "从上到下就是本周先后顺序" in section

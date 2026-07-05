@@ -130,9 +130,12 @@ def test_row_shape_carries_reader_facing_fields():
     assert row["feasibility_label"] in {"高", "中", "低"}
 
 
-def test_row_carries_reader_why_and_confidence_label():
-    # B4: the reader-facing table shows a plain "为什么值得先做" reason plus a single
-    # 置信度 tag — the two statistical axes are folded, no 预期影响/可行性/证据 grid.
+def test_row_carries_confidence_label_and_no_canned_why():
+    # D2 fix: the priority table no longer carries a band-composed "为什么值得先做"
+    # sentence — on real data every top module collapses to the same impact/
+    # feasibility/confidence bands, so any band-derived prose is identical across all
+    # rows (a dead column). The row keeps only the genuinely per-row signals plus the
+    # required 置信度 rating.
     results = [
         _result(
             "core_business_diagnosis",
@@ -141,31 +144,45 @@ def test_row_carries_reader_why_and_confidence_label():
         ),
     ]
     row = build_priority_table(results)[0]
-    assert isinstance(row["why"], str) and row["why"]
+    assert "why" not in row  # the canned reasoning sentence is gone
     assert row["confidence_label"] in {"高", "中", "低", "暂不下定论"}
     assert row["confidence_class"] in {"high", "medium", "low", "not_judgable"}
 
 
-def test_why_differentiates_by_feasibility_not_just_impact():
-    # The old _why keyed only off the impact band, which is 高 for almost every core
-    # module — so all 8 rows printed an identical "为什么值得先做", a dead column. Two
-    # equally high-impact modules with different evidence strength must now read
-    # differently (one act-now, one verify-first).
+def test_no_dead_prose_column_on_homogeneous_modules():
+    # The exact real-data scenario that defeated the old _why: several high-lever
+    # modules that ALL score causally WEAK + descriptively HIGH → identical impact/
+    # feasibility/confidence bands. The table must not emit any prose field that reads
+    # verbatim-identical down every row; the rows stay differentiated by 哪个环节/具体先做什么.
     results = [
-        _result(
-            "core_business_diagnosis",
-            "整体经营诊断",
-            [_finding("扎实结论", EvidenceStrength.STRONG)],
-        ),
-        _result(
-            "refund_root_cause_diagnosis",
-            "退款根因诊断",
-            [_finding("薄弱结论", EvidenceStrength.WEAK)],
-        ),
+        _result(task_id, title, [_finding(weak, EvidenceStrength.WEAK, action=action)])
+        for task_id, title, weak, action in [
+            ("core_business_diagnosis", "整体经营诊断", "经营是最弱环节", "补详情页承接"),
+            ("refund_root_cause_diagnosis", "退款根因诊断", "发货前退款为主漏点", "查发货前退款"),
+            ("search_efficiency_diagnosis", "搜索效率诊断", "点击多成交少", "优化搜索承接"),
+        ]
     ]
     table = build_priority_table(results)
-    whys = {row["task_id"]: row["why"] for row in table}
-    assert whys["core_business_diagnosis"] != whys["refund_root_cause_diagnosis"]
+    assert len(table) == 3
+    # No free-prose "reason" field is a constant sentence repeated across every row (the
+    # dead-column smell). Categorical ratings/labels/enums are ALLOWED to be uniform —
+    # they are single-token ratings (高/中/低, weak), honest even when they don't vary,
+    # not a sentence pretending to be per-row reasoning.
+    rating_fields = {
+        "confidence_label",
+        "confidence_class",
+        "evidence",
+        "evidence_label",
+        "evidence_class",
+        "impact_label",
+        "feasibility_label",
+    }
+    prose_keys = {k for k in table[0] if isinstance(table[0][k], str)} - rating_fields
+    for key in prose_keys:
+        values = {row[key] for row in table}
+        assert len(values) == 3, f"{key} should vary per row, not read identical down the table"
+    # The rows remain differentiated by their weak-link and lever.
+    assert len({row["weak_link"] for row in table}) == 3
 
 
 def test_caps_rows_and_degrades_empty():
