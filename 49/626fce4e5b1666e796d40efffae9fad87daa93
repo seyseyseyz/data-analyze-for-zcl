@@ -1,0 +1,41 @@
+xhs_ceramics_analytics/analysis/audience_structure.py
+  s_6bd2349b4ebd4d::t_c5131e515e7a20 46,49-51,53-54,57-58,126,198,241,334,346-347,439,644
+xhs_ceramics_analytics/analysis/channel_structure_diagnosis.py
+  s_6bd2349b4ebd4d::t_c5131e515e7a20 165-167,289,502,510,512-513
+xhs_ceramics_analytics/analysis/sku_structure.py
+  s_6bd2349b4ebd4d::t_c5131e515e7a20 35-37,46-47,53-54,207,300,380,398,514,531-532,630-632,641-642,715,722,726,735
+xhs_ceramics_analytics/analysis/core_business.py
+  s_6bd2349b4ebd4d::t_c5131e515e7a20 60-62,64,173,308,386-387,390,585-586,589-590,687-689,732,738,795,820,1065,1180,1218-1219
+xhs_ceramics_analytics/analysis/reshoot.py
+  s_6bd2349b4ebd4d::t_c5131e515e7a20 30,41-42,45,48
+xhs_ceramics_analytics/analysis/refund_root_cause_diagnosis.py
+  s_6bd2349b4ebd4d::t_c5131e515e7a20 33-36,102,110,144,156,161,273,384,443
+xhs_ceramics_analytics/analysis/weekly_review.py
+  s_6bd2349b4ebd4d::t_c5131e515e7a20 59,66,70-71,260
+xhs_ceramics_analytics/analysis/account_baseline.py
+  s_6bd2349b4ebd4d::t_c5131e515e7a20 72-73,81,149-151,170,173,278,281
+xhs_ceramics_analytics/analysis/refund_diagnosis.py
+  s_6bd2349b4ebd4d::t_c5131e515e7a20 27-29,121,128,133-134,137,253,264,341,359,487,490
+xhs_ceramics_analytics/analysis/search_efficiency.py
+  s_6bd2349b4ebd4d::t_c5131e515e7a20 42-47,145,203,207,264,278,423,458,510
+xhs_ceramics_analytics/analysis/demand_funnel.py
+  s_6bd2349b4ebd4d::t_c5131e515e7a20 35-36,40,156,248,285
+xhs_ceramics_analytics/analysis/note_commercial.py
+  s_6bd2349b4ebd4d::t_c5131e515e7a20 38-40,42-43,193,281,283,300,380-382,400-401,481,491,510-511
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.28-trip",
+  "base_commit_sha": "49626fce4e5b1666e796d40efffae9fad87daa93",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
