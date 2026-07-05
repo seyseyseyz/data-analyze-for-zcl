@@ -1,0 +1,13 @@
+tests/test_charts_waterfall.py
+  ai_agent 1-33
+xhs_ceramics_analytics/reporting/charts.py
+  ai_agent 284-335,413,458
+tests/test_charts_suppress_aggregate.py
+  ai_agent 1-22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.28-trip",
+  "base_commit_sha": "f24eb3b8600709cc6ea36327aba90071ef92b002",
+  "prompts": {}
+}
