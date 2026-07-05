@@ -1,0 +1,21 @@
+xhs_ceramics_analytics/reporting/templates/report.html.j2
+  s_551ca297f8b8c4::t_cc4c4a52b465a2 500-501,1034-1035,1037-1038
+tests/test_report_rendering.py
+  s_551ca297f8b8c4::t_56a1367edabadf 539-549
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.28-trip",
+  "base_commit_sha": "79753ae98c3a4b1202518c56c5255457695fc7ea",
+  "prompts": {},
+  "sessions": {
+    "s_551ca297f8b8c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f3289-0586-7c33-b18d-c5fae2ece586",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
