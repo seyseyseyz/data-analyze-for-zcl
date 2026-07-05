@@ -1,0 +1,50 @@
+orchestration/schemas/claim.json
+  s_6bd2349b4ebd4d::t_76daa307d93fa3 1-42
+orchestration/prompts/synthesizer.md
+  s_6bd2349b4ebd4d::t_d5db926bac0bec 1-16
+orchestration/schemas/section_bundle.json
+  s_6bd2349b4ebd4d::t_22803d31135c9a 1-18
+orchestration/prompts/seed.md
+  s_6bd2349b4ebd4d::t_02a77e516de7e3 1-17
+tests/test_orchestration_prompts.py
+  s_6bd2349b4ebd4d::t_557d3bdb0d7227 1-48
+orchestration/prompts/continuity.md
+  s_6bd2349b4ebd4d::t_85d59412815e9b 1-13
+tests/test_orchestration_schemas.py
+  s_6bd2349b4ebd4d::t_0766d4ba8102b4 1-59
+orchestration/schemas/fact.json
+  s_6bd2349b4ebd4d::t_20339ca7ba4a1d 1-23
+orchestration/schemas/continuity_edit.json
+  s_6bd2349b4ebd4d::t_41b721dd9a379e 1-16
+orchestration/schemas/spine_brief.json
+  s_6bd2349b4ebd4d::t_77855a27a2bbf9 1-38
+orchestration/dag.md
+  s_6bd2349b4ebd4d::t_334152c2c6a210 10-11
+  s_6bd2349b4ebd4d::t_8ff2fd80186843 1-9,12-19,23,26-53
+  s_6bd2349b4ebd4d::t_d2fa70f9fe121e 20-22,24-25
+orchestration/schemas/narrative_bundle.json
+  s_6bd2349b4ebd4d::t_7e9a61cf3a40b1 1-43
+orchestration/prompts/writer.md
+  s_6bd2349b4ebd4d::t_13f011fd4104a0 1-7,9-17
+  s_6bd2349b4ebd4d::t_b282560f2e0228 8
+orchestration/schemas/gate_report.json
+  s_6bd2349b4ebd4d::t_67986a4e3634c5 1-38
+orchestration/prompts/patch.md
+  s_6bd2349b4ebd4d::t_502e701ddddef8 1-16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.28-trip",
+  "base_commit_sha": "7efe1741a320c5ffc75b89817cdeca416937200d",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
