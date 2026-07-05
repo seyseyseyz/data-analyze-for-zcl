@@ -160,6 +160,21 @@ def run(
     report_title = name.replace("_", " ").strip() if name else None
     markdown_out.write_text(render_markdown(results, title=report_title), encoding="utf-8")
     typer.echo(f"Wrote report: {markdown_out}")
+
+    from xhs_ceramics_analytics.reporting.facts_export import (
+        build_factbook as _build_factbook,
+        factbook_to_json as _factbook_to_json,
+    )
+
+    # facts.json is the cache-key + writer-handoff sidecar, NOT a deliverable — it lives in
+    # the state dir beside analytics.duckdb / mapping_overrides.yaml / report_runs.jsonl, so
+    # outputs/ stays a pure two-file (md+html) delivery surface.
+    blocked = tuple(t for t in TASKS if t not in task_ids)
+    facts_out = state_dir(project_root) / "facts.json"
+    facts_out.write_text(
+        _factbook_to_json(_build_factbook(results, blocked_modules=blocked)), encoding="utf-8"
+    )
+    typer.echo(f"Wrote facts: {facts_out}")
     if html_out.exists():
         html_out.unlink()
     try:
@@ -192,7 +207,7 @@ def facts(
         Path | None, typer.Option(help="Override local state/output root.")
     ] = None,
 ) -> None:
-    """Build the deterministic FactBook and write outputs/facts.json (0 agents)."""
+    """Build the deterministic FactBook and write facts.json into the state dir (0 agents)."""
     from xhs_ceramics_analytics.analysis.coverage import producible_task_ids
     from xhs_ceramics_analytics.analysis.registry import TASKS, run_task
     from xhs_ceramics_analytics.reporting.facts_export import (
@@ -212,7 +227,7 @@ def facts(
     results = [run_task(task_id, db_path) for task_id in task_ids]
     blocked = tuple(t for t in TASKS if t not in task_ids)
     book = build_factbook(results, blocked_modules=blocked)
-    out = outputs_dir(project_root) / "facts.json"
+    out = state_dir(project_root) / "facts.json"
     out.write_text(factbook_to_json(book), encoding="utf-8")
     typer.echo(f"Wrote facts: {out}")
     typer.echo(f"facts_hash: {facts_hash(book)}")
@@ -332,6 +347,19 @@ def render_frozen_command(
     typer.echo(f"Wrote report: {base}.md")
     typer.echo(f"Wrote report: {base}.html")
 
+    from xhs_ceramics_analytics.reporting.report_telemetry import (
+        append_run_record,
+        build_run_record,
+    )
+
+    record = build_run_record(
+        mode="frozen", facts_hash=facts_data.get("facts_hash", ""), cache_hit=True,
+    )
+    try:
+        append_run_record(state_dir(None) / "report_runs.jsonl", record)
+    except Exception:
+        pass  # telemetry is best-effort; never break the report
+
 
 @app.command()
 def skeleton(
@@ -365,6 +393,25 @@ def skeleton(
     )
     typer.echo(f"Wrote skeleton report: {output_dir / f'{basename}.md'}")
     typer.echo(f"Wrote skeleton report: {output_dir / f'{basename}.html'}")
+
+    from xhs_ceramics_analytics.reporting.facts_export import (
+        build_factbook as _build_factbook,
+        facts_hash as _facts_hash,
+    )
+    from xhs_ceramics_analytics.reporting.report_telemetry import (
+        append_run_record,
+        build_run_record,
+    )
+
+    book = _build_factbook(results, blocked_modules=tuple(t for t in TASKS if t not in task_ids))
+    record = build_run_record(
+        mode="skeleton", facts_hash=_facts_hash(book), cache_hit=False,
+        degradation_reason="skeleton_cli",
+    )
+    try:
+        append_run_record(state_dir(project_root) / "report_runs.jsonl", record)
+    except Exception:
+        pass  # telemetry is best-effort; never break the report
 
 
 @app.command()

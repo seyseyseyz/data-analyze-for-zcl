@@ -27,7 +27,7 @@ def test_facts_command_writes_json_and_hash(tmp_path, fixture_dir):
         ["facts", "core_business_diagnosis", "--project-root", str(tmp_path)],
     )
     assert result.exit_code == 0, result.output
-    facts_json = tmp_path / ".xhs-ceramics-analytics" / "outputs" / "facts.json"
+    facts_json = tmp_path / ".xhs-ceramics-analytics" / "facts.json"
     assert facts_json.exists()
     data = json.loads(facts_json.read_text(encoding="utf-8"))
     assert "facts_hash" in data and len(data["facts_hash"]) == 64
@@ -38,7 +38,7 @@ def test_facts_command_is_deterministic(tmp_path, fixture_dir):
     _build_db(tmp_path, fixture_dir)
     runner = CliRunner()
     runner.invoke(app, ["facts", "core_business_diagnosis", "--project-root", str(tmp_path)])
-    first = (tmp_path / ".xhs-ceramics-analytics" / "outputs" / "facts.json").read_text("utf-8")
+    first = (tmp_path / ".xhs-ceramics-analytics" / "facts.json").read_text("utf-8")
     runner.invoke(app, ["facts", "core_business_diagnosis", "--project-root", str(tmp_path)])
-    second = (tmp_path / ".xhs-ceramics-analytics" / "outputs" / "facts.json").read_text("utf-8")
+    second = (tmp_path / ".xhs-ceramics-analytics" / "facts.json").read_text("utf-8")
     assert first == second  # byte-identical re-run
