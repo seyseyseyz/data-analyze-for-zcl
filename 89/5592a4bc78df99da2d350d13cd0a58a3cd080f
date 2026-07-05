@@ -1,0 +1,11 @@
+tests/test_reporting_money.py
+  ai_agent 1-40
+xhs_ceramics_analytics/reporting/money.py
+  ai_agent 1-52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.28-trip",
+  "base_commit_sha": "895592a4bc78df99da2d350d13cd0a58a3cd080f",
+  "prompts": {}
+}
