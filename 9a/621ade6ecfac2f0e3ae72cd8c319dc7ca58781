@@ -1,0 +1,50 @@
+xhs_ceramics_analytics/reporting/charts.py
+  s_6bd2349b4ebd4d::t_1c6b310e9e5bc7 204
+  s_6bd2349b4ebd4d::t_91a173429e4ef0 690
+  s_6bd2349b4ebd4d::t_a2f364621be342 232
+  s_6bd2349b4ebd4d::t_d37b1f2331b1c4 304,342,428,529,573,711,736,750
+  s_6bd2349b4ebd4d::t_3dbf5c9addaf7c 757,766
+  s_6bd2349b4ebd4d::t_3400264291f037 63-71,75-76,81,83-87,90
+  s_6bd2349b4ebd4d::t_eb6853b49dca84 308,315,326,414,509,540,714,739,753,762,771,780
+  s_6bd2349b4ebd4d::t_5117eecedd28f3 18
+  s_6bd2349b4ebd4d::t_1f6eb433a82108 292
+  s_6bd2349b4ebd4d::t_bf0bdf05969395 311,318
+  s_6bd2349b4ebd4d::t_9b259441a01af3 775
+  s_6bd2349b4ebd4d::t_5460de7ea48e32 790
+  s_6bd2349b4ebd4d::t_aa564695bb9963 796
+tests/test_report_charts.py
+  s_6bd2349b4ebd4d::t_0e973ca8dbabeb 81-90
+  s_6bd2349b4ebd4d::t_009b67f6598096 249
+  s_6bd2349b4ebd4d::t_88c3c3e4ddbe34 6,19-40
+  s_6bd2349b4ebd4d::t_9f6844591c7887 209
+  s_6bd2349b4ebd4d::t_e81b22ecf5d65a 423
+  s_6bd2349b4ebd4d::t_885f60f700244b 159-160
+  s_6bd2349b4ebd4d::t_71d157165080e2 133
+  s_6bd2349b4ebd4d::t_b3384fb2303f36 460
+xhs_ceramics_analytics/reporting/field_labels.py
+  s_6bd2349b4ebd4d::t_fc986569594a7b 52
+tests/test_reporting_confidence.py
+  s_6bd2349b4ebd4d::t_d1676f2d768cfd 59-74
+  s_6bd2349b4ebd4d::t_73b30384655939 5
+  s_6bd2349b4ebd4d::t_e9f043225bfff4 4
+xhs_ceramics_analytics/reporting/labels.py
+  s_6bd2349b4ebd4d::t_eb75dbe4ae93c7 103
+xhs_ceramics_analytics/reporting/domains.py
+  s_6bd2349b4ebd4d::t_e24925d8387bfd 77
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.28-trip",
+  "base_commit_sha": "9a621ade6ecfac2f0e3ae72cd8c319dc7ca58781",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
