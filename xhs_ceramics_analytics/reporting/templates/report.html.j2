@@ -497,9 +497,8 @@
       transition: box-shadow 200ms ease, border-color 200ms ease;
     }
 
-    /* Hover lifts via shadow + border only (no transform): a filled scroll-reveal
-       animation retains its final transform and would otherwise override a hover
-       translate, so we keep the two concerns on separate properties. */
+    /* Hover feedback stays subtle and non-layout-affecting; the report body
+       itself remains static so long-form reading is not interrupted. */
     .card:hover,
     .finding-card:hover {
       box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
@@ -1032,62 +1031,14 @@
 
     .codex-list li:hover { border-color: #E0E0DC; }
 
-    /* Fallback reveal (browsers without scroll-driven timelines): a single gentle
-       entrance on load, staggered by --index. */
+    /* Kept as a semantic hook for top-level sections, intentionally static:
+       this is a dense report, not a scroll-choreographed page. */
     .reveal {
-      opacity: 0;
-      transform: translateY(14px);
-      animation: enter 700ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
-      animation-delay: calc(var(--index, 0) * 80ms);
-    }
-
-    @keyframes enter {
-      to { opacity: 1; transform: translateY(0); }
-    }
-
-    @keyframes fade {
-      from { opacity: 0; }
-      to { opacity: 1; }
-    }
-
-    /* Progressive enhancement: where the browser supports scroll-driven animations,
-       elements reveal as they cross into the viewport — the IntersectionObserver
-       behaviour the design calls for, achieved with zero JavaScript so the report
-       stays a single self-contained file. Big blocks translate + fade; hover-able
-       cards fade opacity only, so their hover/active transforms stay free. */
-    @supports (animation-timeline: view()) {
-      .reveal {
-        opacity: 1;
-        transform: none;
-        animation: enter linear both;
-        animation-delay: 0s;
-        animation-timeline: view();
-        animation-range: entry 0% entry 44%;
-      }
-      .card,
-      .action-item,
-      .finding-card,
-      .chart,
-      .section-panel,
-      .codex-list li {
-        animation: fade linear both;
-        animation-timeline: view();
-        animation-range: entry 2% cover 16%;
-      }
+      opacity: 1;
+      transform: none;
     }
 
     @media (prefers-reduced-motion: reduce) {
-      .reveal,
-      .card,
-      .action-item,
-      .finding-card,
-      .chart,
-      .section-panel,
-      .codex-list li {
-        opacity: 1;
-        transform: none;
-        animation: none;
-      }
       html { scroll-behavior: auto; }
       .card,
       .finding-card,

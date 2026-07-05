@@ -536,6 +536,17 @@ def test_render_html_builds_reader_friendly_editorial_report():
     assert "Lucide" not in html
 
 
+def test_html_report_body_is_static_not_scroll_revealed():
+    html = render_html(_priority_results())
+
+    # Dense business reports should read like documents, not scroll choreography.
+    # Keep interaction feedback, but do not attach scroll-driven reveal animation
+    # to article-like report content such as finding cards and section panels.
+    assert "animation-timeline: view()" not in html
+    assert ".finding-card,\n      .chart,\n      .section-panel" not in html
+    assert ".finding-card:hover" in html
+
+
 def test_render_html_moves_evidence_reason_from_card_to_appendix():
     # 病根 A + C: the analyst-vocabulary "可信度原因" inline line is gone from the card;
     # the methodology text itself is not lost — it folds into 方法与附录 (appendix).
