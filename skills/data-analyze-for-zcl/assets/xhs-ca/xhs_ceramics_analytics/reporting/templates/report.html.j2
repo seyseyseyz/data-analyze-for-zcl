@@ -38,17 +38,10 @@
 {% macro finding_card(finding) %}
 <article class="finding-card">
   <div class="finding-tags">
-    <span class="tag {{ finding.evidence_class }}" title="{{ finding.help }}">可信度 {{ finding.evidence }}</span>
-    {% if finding.reliability %}
-    <a class="tag reliability-{{ finding.reliability_class }}" href="#appendix" title="{{ finding.reliability_help }}">描述可靠性 {{ finding.reliability }}</a>
-    {% endif %}
+    <span class="tag {{ finding.confidence_class }}" title="{{ finding.confidence_help }}">置信度 {{ finding.confidence }}</span>
   </div>
   <h3>{{ finding.title }}</h3>
   <p>{{ finding.body }}</p>
-
-  {% if finding.evidence_reason %}
-  <p><strong>可信度原因：</strong>{{ finding.evidence_reason }}</p>
-  {% endif %}
 
   {% if finding.key_numbers %}
   <div class="numbers">
@@ -96,6 +89,105 @@
   {% endif %}
 </article>
 {% endmacro %}
+{% macro result_block(result, extra_class='') %}
+<section class="result-block{% if extra_class %} {{ extra_class }}{% endif %}">
+  <div class="result-heading">
+    <span class="tag section-label">{{ result.label }}</span>
+    <h4>{{ result.title }}</h4>
+  </div>
+
+  {% if result.limitations %}
+  <div class="notice notice-warn">
+    <strong>{{ ic('warn') }} 数据限制</strong>
+    <ul class="note-list">
+      {% for limitation in result.limitations %}
+      <li>{{ limitation }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {% if result.findings %}
+  <div class="finding-grid">
+    {% for finding in result.findings %}
+    {{ finding_card(finding) }}
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% for subsection in result.subsections %}
+  <div class="subsection">
+    <h4>{{ subsection.title }}</h4>
+    {% if subsection.body %}<p>{{ subsection.body }}</p>{% endif %}
+    {% if subsection.findings %}
+    <div class="finding-grid">
+      {% for finding in subsection.findings %}
+      {{ finding_card(finding) }}
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+
+  {% if result.named_examples %}
+  <div class="notice">
+    <strong>{{ ic('tag') }} 命名示例</strong>
+    <ul class="note-list">
+      {% for example in result.named_examples %}
+      {% set _label = example.label or example.name %}
+      {% set _detail = example.detail or example.note %}
+      <li><strong>{{ _label }}</strong>{% if _detail %}：{{ _detail }}{% endif %}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {% if result.chart_svg %}
+  <div class="chart">{{ result.chart_svg }}</div>
+  {% endif %}
+
+  {% for table in result.table_views %}
+  <details class="table-details"{% if table.open %} open{% endif %}>
+    <summary>
+      <span>
+        {{ table.label }}
+        <span class="summary-meta">用户视图：{{ table.display_text }}</span>
+      </span>
+      {{ ic('chevron') }}
+    </summary>
+    {% if table.row_count %}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            {% for column in table.user_columns %}
+            <th>
+              <span class="field-name">
+                <strong>{{ column.label }}</strong>
+                <span class="field-help">{{ column.help }}</span>
+              </span>
+            </th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in table.user_rows %}
+          <tr>
+            {% for cell in row %}
+            <td>{{ cell.value }}</td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="empty-state">这个模块没有可展示的明细行。</p>
+    {% endif %}
+  </details>
+  {% endfor %}
+</section>
+{% endmacro %}
 <!doctype html>
 <html lang="zh-CN">
 <head>
@@ -120,9 +212,9 @@
       --yellow-text: #956400;
       --red-bg: #FDEBEC;
       --red-text: #9F2F2D;
-      /* Neutral tier — the honest default for observational, low-causal-strength
-         findings. Grey, not alarm-yellow: a "低可信度" wall should read calm,
-         because it means "directional", not "broken". */
+      /* Neutral tier — the honest default for lower-confidence (small-sample /
+         wide-interval) findings. Grey, not alarm-yellow: a "低置信度" chip should
+         read calm, because it means "directional", not "broken". */
       --neutral-bg: #F1F1EF;
       --neutral-text: #787774;
       --radius-card: 12px;
@@ -444,8 +536,12 @@
     /* Causal-strength tag: solid fill. Green = usable, neutral grey = directional
        (the honest common case), red = not judgable. Yellow is retired from this
        axis so an all-observational report no longer reads as a wall of warnings. */
+    /* 单一「置信度」呈现:high/medium 收敛为绿(可用),low/weak 收敛为中性(参考),
+       not_judgable 为红(需补数据)。legacy strong/weak 仍供优先级表沿用。 */
+    .tag.high,
     .tag.medium,
     .tag.strong { background: var(--green-bg); color: var(--green-text); }
+    .tag.low,
     .tag.weak { background: var(--neutral-bg); color: var(--neutral-text); }
     .tag.not_judgable { background: var(--red-bg); color: var(--red-text); }
     .tag.info { background: var(--blue-bg); color: var(--blue-text); }
@@ -457,20 +553,6 @@
       border: 1px solid var(--line);
       color: var(--muted);
     }
-
-    /* Reliability = the orthogonal axis. Rendered as an OUTLINE chip (虚) so it
-       never visually competes with the solid causal chip (实) beside it. Links to
-       the appendix so the full "两把尺子" explanation is reachable on touch, not
-       hidden behind a hover-only tooltip. */
-    .tag[class*="reliability-"] {
-      background: transparent;
-      border: 1px solid var(--line);
-      color: var(--muted);
-      transition: border-color 160ms ease;
-    }
-    .tag.reliability-high { border-color: #A9D4EE; color: var(--blue-text); }
-    .tag.reliability-medium { border-color: #CBE6F5; color: var(--blue-text); }
-    a.tag[class*="reliability-"]:hover { border-color: var(--blue-text); }
 
     .action-list {
       display: grid;
@@ -534,6 +616,21 @@
       line-height: 1.55;
     }
 
+    /* 「怎么读」一级 section：置信度说明 + 分布图 + 分级释义,不套 bento 卡片。 */
+    .how-to-read-body {
+      border: 1px solid var(--line);
+      border-radius: var(--radius-inner);
+      padding: 28px;
+      background: var(--surface-soft);
+    }
+
+    .how-to-read-note {
+      margin: 0;
+      color: var(--ink);
+      font-size: 15px;
+      line-height: 1.7;
+    }
+
     .step-number {
       width: 42px;
       height: 42px;
@@ -577,7 +674,35 @@
       padding: 28px;
       display: grid;
       gap: 18px;
+      /* Grid items default to min-width:auto and refuse to shrink below their
+         content — a wide table then blows the panel wider than the page instead
+         of scrolling inside .table-wrap (#13). Pinning both the grid and its
+         tracks to min-width:0 lets the overflow live in the scroll container. */
+      min-width: 0;
     }
+
+    .panel-body > * {
+      min-width: 0;
+    }
+
+    /* 域内次要模块折叠区：headline 大卡之后收起,展开才看其余分析。 */
+    .domain-more {
+      border-top: 1px solid var(--line);
+      padding-top: 14px;
+    }
+    .domain-more > summary {
+      cursor: pointer;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .domain-more > summary::-webkit-details-marker { display: none; }
+    .domain-more[open] > summary { margin-bottom: 18px; }
+    .domain-more > .result-block + .result-block { margin-top: 18px; }
 
     .finding-grid {
       display: grid;
@@ -735,6 +860,9 @@
       line-height: 1.45;
       font-weight: 400;
       max-width: 220px;
+      /* Wrap long help text instead of forcing a wide table cell that can't
+         scroll back (#13). */
+      white-space: normal;
     }
 
     .note-list {
@@ -814,16 +942,6 @@
 
     .table-caption {
       margin: 0 0 12px;
-      color: var(--muted);
-      font-size: 13px;
-    }
-
-    .technical-details {
-      border-top: 1px solid var(--line);
-      margin-top: 4px;
-    }
-
-    .technical-details summary {
       color: var(--muted);
       font-size: 13px;
     }
@@ -1002,6 +1120,7 @@
     <header class="topbar">
       <div class="brand">{{ ic('spark') }} 小红书经营分析</div>
       <nav class="toc" aria-label="报告目录">
+        <a href="#how-to-read">怎么读</a>
         <a href="#guide">经营导读</a>
         <a href="#actions">行动计划</a>
         <a href="#analysis">详细分析</a>
@@ -1015,7 +1134,7 @@
         <span class="eyebrow">Operating Report</span>
         <h1>{{ report_title }}</h1>
         <p class="hero-copy">
-          这份报告按经营问题组织：先看结论和下周动作，再看商品、内容、用户需求、实验和数据可信度。技术字段会保留在追溯区，不影响正常阅读。
+          这份报告按业务主题分组：生意大盘、流量与内容、商品结构、用户与需求、退款与售后、实验与下周行动，每组先给最该动的一条，其余折叠备查。先看结论和下周动作，数据质量与口径说明放在末尾附录。
         </p>
       </div>
       <aside class="metric-stack" aria-label="报告概览">
@@ -1034,7 +1153,39 @@
       </aside>
     </section>
 
-    <section id="guide" class="reveal" style="--index: 1">
+    <section id="how-to-read" class="reveal" style="--index: 1">
+      <div class="section-heading">
+        <p class="section-kicker">How to Read</p>
+        <h2>{{ ic('info') }}这份报告怎么读</h2>
+        <p class="section-lede">
+          先花一分钟看懂置信度，后面每条结论都带着它：置信度说明这条结论适合怎么用——直接决策、短期观察、转成实验，还是先补数据。
+        </p>
+      </div>
+      <div class="how-to-read-body">
+        <p class="how-to-read-note">
+          置信度主要看<strong>样本量和口径</strong>：样本大、口径清晰的数字是对本期的可靠描述，标为「高」，可直接用于本周决策；样本偏小或区间较宽的标为「低」，先当方向性线索、下小实验验证再放大。所有结论都基于已发生的数据，没有对照组，因此暂不能据此断定因果——这是背景前提，不影响你按建议行动。
+        </p>
+        {% if report.evidence_chart_svg %}
+        <div class="chart">{{ report.evidence_chart_svg }}</div>
+        {% endif %}
+        <div class="action-meta-grid">
+          {% for item in report.evidence_counts %}
+          <div class="action-cell">
+            <span>
+              {% if item.value == "not_judgable" %}
+              暂不下定论
+              {% else %}
+              {{ item.label }}置信度
+              {% endif %}
+            </span>
+            <p>{{ item.help }}</p>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </section>
+
+    <section id="guide" class="reveal" style="--index: 2">
       <div class="section-heading">
         <p class="section-kicker">Reader Path</p>
         <h2>{{ ic('book') }}经营导读</h2>
@@ -1045,72 +1196,41 @@
       <div class="bento">
         {% for item in report.highlights %}
         <article class="card {% if loop.first %}span-7{% else %}span-5{% endif %}">
-          <span class="tag {{ item.evidence_class }}">可信度 {{ item.evidence }}</span>
+          <span class="tag {{ item.confidence_class }}">置信度 {{ item.confidence }}</span>
           <h3>{{ item.title }}</h3>
           <p>{{ item.body }}</p>
-          <p class="meta-label">{{ item.help }}</p>
+          <p class="meta-label">{{ item.confidence_help }}</p>
         </article>
         {% endfor %}
-        <article class="card span-12">
-          <span class="tag info">{{ ic('info') }} How to read</span>
-          <h3>这份报告怎么读</h3>
-          <p>可信度说明这条结论适合怎么用：直接决策、短期观察、转成实验，或先补数据。</p>
-          <p class="meta-label">
-            后台导出多为「观察性」聚合数据，没有对照组，因此多数结论会落在「低」。这里的「低」不代表结论是错的，而是提示它属于<strong>方向性线索</strong>——先按建议下小实验验证，再放大投入；只有拿到足够样本与对照才会升到「中 / 高」。
-          </p>
-          {% if report.evidence_chart_svg %}
-          <div class="chart">{{ report.evidence_chart_svg }}</div>
-          {% endif %}
-          <div class="action-meta-grid">
-            {% for item in report.evidence_counts %}
-            <div class="action-cell">
-              <span>
-                {% if item.value == "not_judgable" %}
-                不可判断
-                {% else %}
-                {{ item.label }}可信度
-                {% endif %}
-              </span>
-              <p>{{ item.help }}</p>
-            </div>
-            {% endfor %}
-          </div>
-        </article>
       </div>
     </section>
 
     {% if report.priority_table %}
-    <section id="priority" class="reveal" style="--index: 2">
+    <section id="priority" class="reveal" style="--index: 3">
       <div class="section-heading">
         <p class="section-kicker">Where to Start</p>
         <h2>{{ ic('target') }}优先级导读：先动哪里</h2>
         <p class="section-lede">
-          把各模块的结论收成一张表，按「预期影响 × 可行性」跨模块排序，越靠前越该先动。可行性同时看因果证据强度与描述可靠性——低可行性代表更像实验线索，而非可直接放大的定论。
+          下面这张表把各模块的结论收成一份先后清单，从上到下就是本周先后顺序，越靠前越该先动。每行末尾的置信度标签说明这条判断有多可靠。
         </p>
       </div>
       <div class="table-wrap">
         <table>
           <thead>
             <tr>
-              <th>优先级</th>
-              <th>模块</th>
-              <th>最弱环节</th>
-              <th>最高杠杆（建议动作）</th>
-              <th>预期影响</th>
-              <th>可行性</th>
-              <th>证据</th>
+              <th>先动顺序</th>
+              <th>哪个环节</th>
+              <th>具体先做什么</th>
+              <th>为什么值得先做</th>
             </tr>
           </thead>
           <tbody>
             {% for row in report.priority_table %}
             <tr>
               <td>{{ row.rank }}</td>
-              <td>{{ row.module }}</td>
               <td>{{ row.weak_link }}</td>
               <td>{{ row.lever }}</td>
-              <td>{{ row.impact_label }}</td>
-              <td>{{ row.feasibility_label }}</td>
-              <td><span class="tag {{ row.evidence_class }}">可信度 {{ row.evidence }}</span></td>
+              <td>{{ row.why }} <span class="tag {{ row.confidence_class }}">置信度 {{ row.confidence }}</span></td>
             </tr>
             {% endfor %}
           </tbody>
@@ -1119,7 +1239,7 @@
     </section>
     {% endif %}
 
-    <section id="actions" class="reveal" style="--index: 3">
+    <section id="actions" class="reveal" style="--index: 4">
       <div class="section-heading">
         <p class="section-kicker">Next Week</p>
         <h2>{{ ic('checklist') }}下周行动计划</h2>
@@ -1132,7 +1252,7 @@
         <article class="action-item">
           <div class="step-number">{{ loop.index }}</div>
           <div>
-            <span class="tag {{ action.evidence_class }}">可信度 {{ action.evidence }}</span>
+            <span class="tag {{ action.confidence_class }}" title="{{ action.confidence_help }}">置信度 {{ action.confidence }}</span>
             <h3>{{ action.task }}：{{ action.target }}</h3>
             <div class="action-meta-grid">
               <div class="action-cell">
@@ -1158,12 +1278,12 @@
       </div>
     </section>
 
-    <section id="analysis" class="reveal" style="--index: 4">
+    <section id="analysis" class="reveal" style="--index: 5">
       <div class="section-heading">
         <p class="section-kicker">Deep Dive</p>
         <h2>{{ ic('analysis') }}详细分析</h2>
         <p class="section-lede">
-          这里按业务问题分组，不按程序模块排序。每个小节先讲结论，再给用户视图表格；需要查原始字段时，再展开技术追溯信息。
+          按业务问题分组，每个小节先讲结论，再给可读的明细表格。
         </p>
       </div>
 
@@ -1173,153 +1293,30 @@
           <div>
             <p class="section-kicker">Business Question</p>
             <h3>{{ group.title }}</h3>
-            <p>{{ group.description }}</p>
+            <p>{{ group.intro }}</p>
           </div>
         </header>
         <div class="panel-body">
-          {% for result in group.results %}
-          <section class="result-block">
-            <div class="result-heading">
-              <span class="tag section-label">{{ result.label }}</span>
-              <h4>{{ result.title }}</h4>
-            </div>
-
-            {% if result.limitations %}
-            <div class="notice notice-warn">
-              <strong>{{ ic('warn') }} 数据限制</strong>
-              <ul class="note-list">
-                {% for limitation in result.limitations %}
-                <li>{{ limitation }}</li>
-                {% endfor %}
-              </ul>
-            </div>
-            {% endif %}
-
-            {% if result.findings %}
-            <div class="finding-grid">
-              {% for finding in result.findings %}
-              {{ finding_card(finding) }}
-              {% endfor %}
-            </div>
-            {% endif %}
-
-            {% for subsection in result.subsections %}
-            <div class="subsection">
-              <h4>{{ subsection.title }}</h4>
-              {% if subsection.body %}<p>{{ subsection.body }}</p>{% endif %}
-              {% if subsection.findings %}
-              <div class="finding-grid">
-                {% for finding in subsection.findings %}
-                {{ finding_card(finding) }}
-                {% endfor %}
-              </div>
-              {% endif %}
-            </div>
+          {% if group.headline_result %}
+          {{ result_block(group.headline_result, 'result-headline') }}
+          {% endif %}
+          {% if group.secondary_results %}
+          <details class="domain-more">
+            <summary>
+              <span>展开本组其余 {{ group.secondary_results | length }} 项分析</span>
+              {{ ic('chevron') }}
+            </summary>
+            {% for result in group.secondary_results %}
+            {{ result_block(result) }}
             {% endfor %}
-
-            {% if result.named_examples %}
-            <div class="notice">
-              <strong>{{ ic('tag') }} 命名示例</strong>
-              <ul class="note-list">
-                {% for example in result.named_examples %}
-                {% set _label = example.label or example.name %}
-                {% set _detail = example.detail or example.note %}
-                <li><strong>{{ _label }}</strong>{% if _detail %}：{{ _detail }}{% endif %}</li>
-                {% endfor %}
-              </ul>
-            </div>
-            {% endif %}
-
-            {% if result.chart_svg %}
-            <div class="chart">{{ result.chart_svg }}</div>
-            {% endif %}
-
-            {% for table in result.table_views %}
-            <details class="table-details"{% if table.open %} open{% endif %}>
-              <summary>
-                <span>
-                  {{ table.label }}
-                  <span class="summary-meta">用户视图：{{ table.display_text }}</span>
-                </span>
-                {{ ic('chevron') }}
-              </summary>
-              {% if table.row_count %}
-              <p class="table-caption">
-                用户视图只展示最适合经营判断的字段；完整字段和原始字段名在下方“技术追溯信息”里。
-              </p>
-              <div class="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      {% for column in table.user_columns %}
-                      <th>
-                        <span class="field-name">
-                          <strong>{{ column.label }}</strong>
-                          <span class="field-help">{{ column.help }}</span>
-                        </span>
-                      </th>
-                      {% endfor %}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {% for row in table.user_rows %}
-                    <tr>
-                      {% for cell in row %}
-                      <td>{{ cell.value }}</td>
-                      {% endfor %}
-                    </tr>
-                    {% endfor %}
-                  </tbody>
-                </table>
-              </div>
-              <details class="technical-details">
-                <summary>
-                  <span>技术追溯信息</span>
-                  {{ ic('chevron') }}
-                </summary>
-                <p class="table-caption">
-                  这里保留完整字段名，方便复查数据来源或继续让{{ report.assistant_name }}做二次分析。
-                </p>
-                <div class="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        {% for column in table.technical_columns %}
-                        <th>
-                          <span class="field-name">
-                            <strong>{{ column.label }}</strong>
-                            <code>{{ column.name }}</code>
-                            <span class="field-help">{{ column.help }}</span>
-                          </span>
-                        </th>
-                        {% endfor %}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {% for row in table.technical_rows %}
-                      <tr>
-                        {% for cell in row %}
-                        <td>{{ cell.value }}</td>
-                        {% endfor %}
-                      </tr>
-                      {% endfor %}
-                    </tbody>
-                  </table>
-                </div>
-              </details>
-              {% else %}
-              <p class="empty-state">这个模块没有可展示的明细行。</p>
-              {% endif %}
-            </details>
-            {% endfor %}
-          </section>
-          {% endfor %}
+          </details>
+          {% endif %}
         </div>
       </article>
       {% endfor %}
     </section>
 
-    <section id="appendix" class="reveal" style="--index: 5">
+    <section id="appendix" class="reveal" style="--index: 6">
       <div class="section-heading">
         <p class="section-kicker">Appendix</p>
         <h2>{{ ic('appendix') }}数据附录</h2>
@@ -1329,14 +1326,14 @@
       </div>
       <div class="appendix-grid">
         <article class="card">
-          <h3>可信度说明</h3>
+          <h3>置信度说明</h3>
           {% for evidence in report.evidence_counts %}
           <div class="numbers">
             <div class="number-row"><span>{{ evidence.label }}</span><strong>{{ evidence.count }} 条</strong></div>
             <p>{{ evidence.help }}</p>
           </div>
           {% endfor %}
-          <p class="axis-note"><strong>两把尺子，别混用：</strong>「可信度」量的是这条结论能不能当作<strong>因果依据</strong>——只看观测数据、没有对照实验时天花板就是「低」，这不是数据差，而是不能证明因果。「描述可靠性」量的是数字本身<strong>测得准不准</strong>——样本量大、置信区间窄就是「高」。所以一条结论完全可能「可信度低、描述可靠性高」：现象测得很准，但别当成已被验证的原因。</p>
+          <p class="axis-note"><strong>置信度怎么定：</strong>主要看<strong>样本量和口径</strong>——样本大、口径清晰的数字是对本期的可靠描述，标为「高」，可直接用于本周决策；样本偏小或区间较宽标为「低」，先当方向性线索。需要说明的是，本报告都基于已发生的观测数据、没有对照组，因此不能据此断定<strong>因果</strong>；这是所有结论共同的背景前提，不单独降低某一条的置信度，但放大投入前建议先下小实验验证。</p>
         </article>
         <article class="card">
           <h3>术语解释</h3>
@@ -1350,7 +1347,7 @@
       </div>
     </section>
 
-    <section id="assistant" class="reveal" style="--index: 6">
+    <section id="assistant" class="reveal" style="--index: 7">
       <div class="section-heading">
         <p class="section-kicker">Assistant Questions</p>
         <h2>{{ ic('chat') }}可以问{{ report.assistant_name }}的问题</h2>

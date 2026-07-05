@@ -9,6 +9,7 @@ import math
 from pathlib import Path
 
 from xhs_ceramics_analytics.analytics.numeric import to_finite_float
+from xhs_ceramics_analytics.analysis import methodology as M
 from xhs_ceramics_analytics.analysis.prose import money, qty
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.analytics.concentration import gini, hhi
@@ -195,16 +196,15 @@ def _pareto_finding(
     if top_category is not None:
         key_numbers["top_category"] = top_category
 
-    gini_note = (
-        f" GMV 基尼系数 {round(gmv_gini, 2)}（0=均匀，越高越集中）。"
+    gini_reason = (
+        f"集中度以基尼系数衡量：{round(gmv_gini, 2)}（0=均摊，越高越集中在少数）。"
         if gmv_gini is not None
-        else ""
+        else None
     )
     conclusion = (
         f"共 {qty(sku_count)} 个有效 SKU，GMV 合计 {money(total_gmv)}。"
         f"头部 10% SKU 贡献 {round((top_decile_gmv_share or 0) * 100)}% GMV，"
         f"累计 80% GMV 需 {qty(skus_for_80pct)} 个 SKU。"
-        + gini_note
         + (f" 主力类目为 {top_category}。" if top_category else "")
     )
 
@@ -214,10 +214,13 @@ def _pareto_finding(
         evidence_strength=score_evidence(sku_count, has_controls=False, confounder_count=1),
         descriptive_reliability=score_reliability(sku_count),
         key_numbers=key_numbers,
-        caveats=["观察性诊断，非因果——GMV 集中度可能由品类结构、价格带与活动节奏共同驱动。"],
+        caveats=[M.causal_disclaimer("品类结构、价格带和活动节奏不同")],
         # No positive-GMV SKU →集中度不可计算，此时不给出加投动作（避免无数据支撑的建议）。
         recommended_action=_LEVER_PARETO if valid else None,
-        evidence_reason="GMV 集中度基于真实 gmv 列排序聚合，观察性描述，非因果。",
+        evidence_reason=M.methodology_note(
+            "GMV 集中度基于真实 gmv 列排序聚合，观察性描述，非因果。",
+            gini_reason,
+        ),
         confounders=list(_CONFOUNDERS),
     )
     return finding, pareto_rows, category_rows
@@ -294,7 +297,7 @@ def _refund_finding(
     conclusion = (
         f"整体退款率基线约 {round((baseline or 0) * 100, 1)}%，"
         f"识别出 {qty(len(outliers))} 个高退款 SKU（退款率高于基线且支付订单数 ≥{_MIN_ORDERS_GUARD}），"
-        f"其中 {qty(fdr_survivors)} 个经 BH-FDR 5% 显著（预计假阳性约 {round(exp_false_positives, 1)} 个）。"
+        f"其中 {qty(fdr_survivors)} 个在排除统计误报后仍明显偏高。"
     )
 
     finding = Finding(
@@ -309,13 +312,14 @@ def _refund_finding(
             "expected_false_positives": exp_false_positives,
         },
         caveats=[
-            "观察性诊断，非因果——退款率差异可能由品类、发货时效与售后政策共同驱动。",
+            M.causal_disclaimer("品类、发货时效和售后政策不同"),
             "多重比较用 Benjamini-Hochberg FDR 控制假阳性；缺退款单列时退款单以率×成交单估计。",
         ],
         recommended_action=_LEVER_REFUND,
-        evidence_reason=(
+        evidence_reason=M.methodology_note(
             "退款基线用真实 paid_orders 加权聚合；高退款 SKU 先经基线筛选，"
-            "再以单侧二项 p 值 + BH-FDR 控制多重比较假阳性。"
+            "再以单侧二项 p 值 + BH-FDR 控制多重比较假阳性。",
+            M.METHOD_FDR,
         ),
         confounders=list(_CONFOUNDERS),
     )
@@ -373,7 +377,7 @@ def _price_band_distribution_finding(
 
     top_band = max(band_rows, key=lambda r: (r["gmv_share"] or 0.0))
     conclusion = (
-        f"共 {qty(len(usable))} 个有效 SKU 按客单价四分位分为 4 个价位带，"
+        f"共 {qty(len(usable))} 个有效 SKU 按客单价高低分成 4 个价位带，"
         f"GMV 最集中于{top_band['band']}"
         f"（占 GMV {round((top_band['gmv_share'] or 0) * 100)}%、"
         f"占 SKU 数 {round((top_band['sku_share'] or 0) * 100)}%）。"
@@ -390,8 +394,8 @@ def _price_band_distribution_finding(
             "top_gmv_band_share": top_band["gmv_share"],
         },
         caveats=[
-            "观察性诊断，非因果——价位带 GMV 分布反映品类结构、流量分配与活动节奏叠加。",
-            "价位带口径与退款根因诊断一致（客单价四分位），便于跨模块对照。",
+            M.causal_disclaimer("品类结构、流量分配和活动节奏不同"),
+            "价位带口径与退款根因诊断一致（客单价高低分档），便于跨模块对照。",
         ],
         recommended_action=_LEVER_PRICE_BAND,
         evidence_reason=(
@@ -523,8 +527,8 @@ def _price_sweet_spot_finding(
             "sweet_net_margin": sweet["net_margin"] if sweet else None,
         },
         caveats=[
-            "观察性联表，非因果——同一价位带的转化与退款受品类、流量与活动结构叠加影响。",
-            "价位带口径与价格带分布/退款根因一致（客单价四分位），便于跨模块对照。",
+            M.causal_disclaimer("品类、流量和活动结构不同"),
+            "价位带口径与价格带分布/退款根因一致（客单价高低分档），便于跨模块对照。",
             "转化与退款按价位带内 SKU 聚合，非顾客个体口径；甜点带为描述性最优，非因果最优。",
         ],
         recommended_action=_LEVER_SWEET_SPOT,
@@ -620,9 +624,7 @@ def _conversion_finding(
 
 
 def _conversion_caveats(conversion_universe: int, gmv_universe: int | None) -> list[str]:
-    caveats = [
-        "观察性诊断，非因果——加购转化与客单价结构可能受流量质量、活动折扣与品类共同影响。"
-    ]
+    caveats = [M.causal_disclaimer("流量质量、活动折扣和品类不同")]
     if gmv_universe is not None:
         caveats.append(
             f"本节口径为「加购人数>0」的 SKU 全集（{qty(conversion_universe)} 个），"
@@ -725,9 +727,7 @@ def _category_l2_finding(
             f"（约 {round((top_refund['refund_rate'] or 0) * 100, 1)}%），需重点复核。"
         )
 
-    caveats = [
-        "观察性诊断，非因果——二级品类的营收与退款差异可能由价格带、发货时效与流量结构共同驱动。"
-    ]
+    caveats = [M.causal_disclaimer("价格带、发货时效和流量结构不同")]
     if not has_refund:
         caveats.append("缺少 refund_rate_pay/paid_orders 列，本节仅呈现营收结构，退款率留空。")
     else:

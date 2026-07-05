@@ -147,7 +147,7 @@ def test_full_fixture_emits_all_findings(tmp_path):
 
     for f in result.findings:
         assert f.confounders
-        assert any("观察性" in c for c in f.caveats)
+        assert any("这不是因果关系" in c for c in f.caveats)
 
 
 # ---- Missing note_gmv/card_gmv -> Finding 1 NOT_JUDGABLE --------------------

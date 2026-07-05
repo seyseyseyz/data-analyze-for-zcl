@@ -6,6 +6,15 @@ from xhs_ceramics_analytics.evidence import score_evidence
 from xhs_ceramics_analytics.evidence import score_reliability
 
 
+# 子段机器名 → 读者面中文小标题,逐段 finding 用它作标题后缀。
+_SECTION_ZH = {
+    "data_quality": "数据加载概况",
+    "baseline": "账号基线",
+    "funnel": "内容互动漏斗",
+    "product_opportunity": "商品机会",
+}
+
+
 def run(db_path: Path) -> AnalysisResult:
     con = connect(db_path)
     try:
@@ -14,42 +23,51 @@ def run(db_path: Path) -> AnalysisResult:
         con.close()
 
     ready_sections = [row for row in rows if row["status"] == "ready"]
-    evidence_count = sum(int(row["evidence_count"]) for row in ready_sections)
     limitations = [
         f"{row['section']} 模块缺少源数据。"
         for row in rows
         if row["status"] != "ready"
     ]
 
+    # #5:过去无论多少子段有数据都折成一条"已汇总 N 个模块",读者看不到任何实质
+    # 结论。改为每个有数据的子段各出一条结论;全空时才降级为单条 not_judgable。
+    findings = [_section_finding(row) for row in ready_sections]
+    if not findings:
+        findings = [_no_data_finding()]
+
     return AnalysisResult(
         task_id="weekly_business_review",
         title="每周经营复盘",
-        findings=[
-            Finding(
-                title="每周复盘模块已汇总",
-                conclusion=(
-                    f"已汇总 {len(rows)} 个每周复盘模块，其中 "
-                    f"{len(ready_sections)} 个有源数据。"
-                ),
-                evidence_strength=score_evidence(
-                    evidence_count, has_controls=False, confounder_count=2
-                ),
-                descriptive_reliability=score_reliability(evidence_count),
-                key_numbers={
-                    "sections": len(rows),
-                    "ready_sections": len(ready_sections),
-                    "evidence_items": evidence_count,
-                },
-                caveats=[
-                    "每周复盘模块汇总的是描述性输出，不能证明因果关系。"
-                ],
-                recommended_action=(
-                    "将已有数据的模块作为本周经营叙事，把缺失模块转成导入或埋点任务。"
-                ),
-            )
-        ],
+        findings=findings,
         tables={"weekly_sections": rows},
         limitations=limitations,
+    )
+
+
+def _section_finding(row: dict[str, object]) -> Finding:
+    zh = _SECTION_ZH.get(str(row["section"]), str(row["section"]))
+    evidence_count = int(row["evidence_count"])
+    return Finding(
+        title=f"本周复盘 · {zh}",
+        conclusion=str(row["summary"]),
+        evidence_strength=score_evidence(
+            evidence_count, has_controls=False, confounder_count=2
+        ),
+        descriptive_reliability=score_reliability(evidence_count),
+        key_numbers={"本周样本量": evidence_count},
+        caveats=["这是本周描述性汇总，反映已发生的数据，不能据此断定因果。"],
+    )
+
+
+def _no_data_finding() -> Finding:
+    return Finding(
+        title="每周复盘暂无可用数据",
+        conclusion="本周各复盘子段都缺少源数据，请先完成数据导入或埋点后再复盘。",
+        evidence_strength=score_evidence(0, has_controls=False, confounder_count=2),
+        descriptive_reliability=score_reliability(0),
+        key_numbers={"就绪子段": 0},
+        caveats=["没有任何子段就绪，无法给出本周经营叙事。"],
+        recommended_action="把缺失模块转成导入或埋点任务，补齐后再复盘。",
     )
 
 

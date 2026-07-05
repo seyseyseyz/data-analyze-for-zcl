@@ -2,6 +2,7 @@ from pathlib import Path
 
 from xhs_ceramics_analytics.analytics.numeric import to_finite_float
 from xhs_ceramics_analytics.analysis.prose import money, qty
+from xhs_ceramics_analytics.analysis import methodology as M
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.analytics.confidence import (
     min_n_guard,
@@ -123,7 +124,7 @@ def _layer_finding(con, limitations: list[str]) -> tuple[Finding, list[dict]]:
         else "发货阶段退款金额列缺失，无法拆解。"
     )
     caveats = [
-        "观察性拆解，非因果；层级份额基于聚合快照。",
+        M.causal_disclaimer("促销节奏、季节性和品类结构不同"),
         "本节为退款金额份额口径；退款率口径见退款根因诊断，分渠道退款率见渠道结构与健康诊断，三者非重复。",
     ]
     return_row = next((r for r in layer_rows if r["axis"] == "return_type"), None)
@@ -149,7 +150,10 @@ def _layer_finding(con, limitations: list[str]) -> tuple[Finding, list[dict]]:
         },
         caveats=caveats,
         recommended_action=_LAYER_LEVERS.get(dominant_layer) if dominant_layer else None,
-        evidence_reason="退款率为观察性比例，样本量以退款订单/退款率反推支付订单基数估计。",
+        evidence_reason=M.methodology_note(
+            "退款率样本量以退款订单/退款率反推支付订单基数估计；层级份额基于聚合快照口径。",
+            M.METHOD_OBSERVATIONAL,
+        ),
         confounders=["促销节奏", "季节性", "品类结构"],
     )
     return finding, layer_rows
@@ -199,10 +203,13 @@ def _carrier_finding(con, limitations: list[str]) -> tuple[Finding | None, list[
             "ci_overlap": test["ci_overlap"],
         },
         caveats=[
-            "观察性对比，非因果；样本量以退款订单/退款率反推。",
-            "显著性用两样本比例 z 检验，辅以 Wilson 区间重叠判断。",
+            M.causal_disclaimer("载体之间流量结构和客群不同"),
         ],
-        evidence_reason="载体间退款率差异用两样本比例检验，观察性。",
+        evidence_reason=M.methodology_note(
+            "载体间退款率差异样本量以退款订单/退款率反推。",
+            M.METHOD_PROPORTION_TEST,
+            M.METHOD_WILSON,
+        ),
         confounders=["载体流量结构", "客群差异"],
     )
     return finding, by_carrier
@@ -253,10 +260,13 @@ def _trend_finding(con, limitations: list[str]) -> tuple[Finding | None, list[di
             "last_rate": series[-1][1],
         },
         caveats=[
-            "观察性趋势，非因果；方向按最小二乘斜率判定（非首末两点），未做显著性检验。",
+            M.causal_disclaimer("促销周期和季节性不同"),
             "日度退款率波动较大，逐期环比见退款趋势表。",
         ],
-        evidence_reason="逐期退款率走势，方向用最小二乘斜率，观察性描述。",
+        evidence_reason=M.methodology_note(
+            "逐期退款率走势描述。",
+            M.METHOD_TREND_SLOPE,
+        ),
         confounders=["促销周期", "季节性"],
         appendix="趋势方向用最小二乘斜率；逐期环比（delta/pct）见 refund_trend 表。",
     )
@@ -321,7 +331,10 @@ def _note_finding(con, limitations: list[str]) -> tuple[Finding | None, list[dic
             )
 
     top_feature = _top_feature(high, _NOTE_FEATURES) if has_features else None
-    caveats = ["观察性反思，非因果——高退款笔记的共有特征仅供假设生成。"]
+    caveats = [
+        M.causal_disclaimer("选品差异、定价和客群不同")
+        + "高退款笔记的共有特征仅供假设生成。"
+    ]
     if not has_features:
         caveats.append("缺少 content_features，仅列高退款笔记，无法归因特征。")
     conclusion = (
@@ -441,7 +454,10 @@ def _product_finding(con, limitations: list[str]) -> tuple[Finding | None, list[
     product_rows.sort(key=lambda r: r["refund_amount"], reverse=True)
     top_feature = _top_feature(high, _PRODUCT_FEATURES) if has_products else None
     top_share = sum(r["amount_share"] or 0 for r in product_rows[:3])
-    caveats = ["观察性反思，非因果——高退款产品的共有特征仅供假设生成。"]
+    caveats = [
+        M.causal_disclaimer("品类结构、定价带和上新周期不同")
+        + "高退款产品的共有特征仅供假设生成。"
+    ]
     if not has_products:
         caveats.append("缺少 products，仅列高退款产品，无法归因特征。")
     if not has_orders:

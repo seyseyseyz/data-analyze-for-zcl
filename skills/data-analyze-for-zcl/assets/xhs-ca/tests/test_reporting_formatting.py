@@ -8,8 +8,26 @@ from xhs_ceramics_analytics.reporting.formatting import (
     field_help,
     field_label,
     format_scalar,
+    is_timeseries_table,
     should_render_table,
 )
+
+
+def test_is_timeseries_table_by_trend_suffix():
+    # 表名以 _trend 结尾即视为时序表,即便首列不是日期字段。
+    assert is_timeseries_table("refund_rate_trend", ["stage", "rate"]) is True
+
+
+def test_is_timeseries_table_by_leading_date_column():
+    # 首列是日期字段(date/day/period/*_date)即视为时序表。
+    assert is_timeseries_table("shop_funnel_stages", ["date", "gmv"]) is True
+    assert is_timeseries_table("weekly_x", ["period", "value"]) is True
+
+
+def test_is_timeseries_table_false_for_plain_table():
+    assert is_timeseries_table("carrier_structure", ["carrier", "gmv"]) is False
+    # 无列时不误判。
+    assert is_timeseries_table("carrier_structure", []) is False
 
 
 def test_format_scalar_percent_field():
@@ -184,7 +202,7 @@ def test_field_label_covers_previously_unlabeled_fields():
     assert field_label("total_gmv") == "总销售额"
     assert field_label("pay_conversion") == "支付转化率"
     assert field_label("weakest_stage") == "最弱环节"
-    assert field_label("wilson_low") == "Wilson 下界"
+    assert field_label("wilson_low") == "保守估计下界"
     assert field_label("overall_refund_rate") == "整体退款率"
     # the generic追溯 fallback must no longer fire for these
     assert "追溯" not in field_help("total_gmv")

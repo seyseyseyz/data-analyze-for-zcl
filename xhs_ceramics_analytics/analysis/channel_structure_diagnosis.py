@@ -12,6 +12,7 @@ Real counts available for 笔记/商卡: the daily table carries genuine per-car
 from pathlib import Path
 
 from xhs_ceramics_analytics.analytics.numeric import to_finite_float
+from xhs_ceramics_analytics.analysis import methodology as M
 from xhs_ceramics_analytics.analysis.prose import money, pp
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.analytics.confidence import (
@@ -32,7 +33,7 @@ _CARRIER_ZH = {"note": "笔记", "card": "商品卡"}
 # the z-test flags it — "显著" is gated on a reported non-trivial effect size.
 _MIN_MEANINGFUL_DIFF = 0.01
 
-_OBS_CAVEAT = "观察性对比，非因果——渠道差异可能由流量结构与选品共同驱动。"
+_OBS_CAVEAT = M.causal_disclaimer("渠道之间流量结构和选品不同")
 
 _SCALE_CONFOUNDERS = ["渠道流量结构差异", "选品与内容混合", "投放与活动节奏"]
 _CONV_CONFOUNDERS = ["客群与流量质量差异", "价格带与品类结构", "承接页差异"]
@@ -244,6 +245,7 @@ def _conversion_finding(con, limitations: list[str]) -> tuple[Finding | None, li
         conv_diff = note_conversion - card_conversion
 
     conv_significant = None
+    conv_methodology = False
     if source == "count" and note_visitors and card_visitors:
         test = two_proportion(note_buyers, note_visitors, card_buyers, card_visitors)
         diff = test["diff"]
@@ -251,7 +253,7 @@ def _conversion_finding(con, limitations: list[str]) -> tuple[Finding | None, li
             test["significant"] and diff is not None and abs(diff) >= _MIN_MEANINGFUL_DIFF
         )
         conv_diff = diff
-        caveats.append("显著性用两样本比例 z 检验，辅以效应量门槛（≥1 个百分点）。")
+        conv_methodology = True
 
     better_carrier = None
     if note_conversion is not None and card_conversion is not None:
@@ -260,6 +262,12 @@ def _conversion_finding(con, limitations: list[str]) -> tuple[Finding | None, li
     conclusion = _conversion_conclusion(
         note_conversion, card_conversion, conv_diff, conv_significant, note_aov, card_aov, better_carrier
     )
+
+    conv_evidence_reason = "转化率优先用真实 买家数/访客数 计数；缺失时退回转化率列均值（source=column）。"
+    if conv_methodology:
+        conv_evidence_reason = M.methodology_note(
+            conv_evidence_reason, M.METHOD_PROPORTION_TEST
+        )
 
     finding = Finding(
         title="渠道转化与客单对比",
@@ -279,7 +287,7 @@ def _conversion_finding(con, limitations: list[str]) -> tuple[Finding | None, li
         },
         caveats=caveats,
         recommended_action="向转化更弱的渠道做承接页/内容优化，向转化更强的渠道倾斜投放与选品。",
-        evidence_reason="转化率优先用真实 买家数/访客数 计数；缺失时退回转化率列均值（source=column）。",
+        evidence_reason=conv_evidence_reason,
         confounders=list(_CONV_CONFOUNDERS),
     )
 
@@ -395,6 +403,7 @@ def _refund_finding(con, limitations: list[str]) -> tuple[Finding | None, list[d
         refund_diff = note_refund_rate - card_refund_rate
 
     refund_significant = None
+    refund_methodology = False
     if has_counts and note_orders and card_orders:
         test = two_proportion(note_refund_orders, note_orders, card_refund_orders, card_orders)
         diff = test["diff"]
@@ -402,7 +411,7 @@ def _refund_finding(con, limitations: list[str]) -> tuple[Finding | None, list[d
             test["significant"] and diff is not None and abs(diff) >= _MIN_MEANINGFUL_DIFF
         )
         refund_diff = diff
-        caveats.append("显著性用两样本比例 z 检验，辅以效应量门槛（≥1 个百分点）。")
+        refund_methodology = True
 
     higher_refund_carrier = None
     higher_stage = None
@@ -414,6 +423,12 @@ def _refund_finding(con, limitations: list[str]) -> tuple[Finding | None, list[d
         note_refund_rate, card_refund_rate, refund_significant, higher_refund_carrier, higher_stage
     )
     lever = _refund_lever(higher_refund_carrier, higher_stage)
+
+    refund_evidence_reason = "退款率优先用真实 退款订单数/支付订单数 计数；缺失时退回退款率列均值。"
+    if refund_methodology:
+        refund_evidence_reason = M.methodology_note(
+            refund_evidence_reason, M.METHOD_PROPORTION_TEST
+        )
 
     finding = Finding(
         title="渠道退款健康",
@@ -431,7 +446,7 @@ def _refund_finding(con, limitations: list[str]) -> tuple[Finding | None, list[d
         },
         caveats=caveats,
         recommended_action=lever,
-        evidence_reason="退款率优先用真实 退款订单数/支付订单数 计数；缺失时退回退款率列均值。",
+        evidence_reason=refund_evidence_reason,
         confounders=list(_REFUND_CONFOUNDERS),
     )
 

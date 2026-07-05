@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from xhs_ceramics_analytics.analysis.prose import qty
+from xhs_ceramics_analytics.analysis import methodology as M
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.analytics.cadence import posting_windows
 from xhs_ceramics_analytics.db.duck import connect
@@ -164,8 +165,8 @@ def _posting_window_finding(con, columns: set[str]):
                 "metric": metric_label,
             },
             caveats=[
-                "观察性节律：窗口表现已按发布日去趋势、并对每个窗口设最低 3 篇的样本门槛，"
-                "但选题、投放与节假日仍是混淆项，不能读作「换个时间发就会更好」。",
+                M.causal_disclaimer("不同时段的选题、投放和节假日")
+                + "不能读作「换个时间发就会更好」。",
                 "缺具体发布小时时，时段维度会退化为按日归入夜间，仅周几维度可靠。",
             ],
             recommended_action=(
@@ -173,7 +174,7 @@ def _posting_window_finding(con, columns: set[str]):
             ),
             evidence_reason=(
                 "用 analytics.cadence.posting_windows 对 (周几,时段) 分组求去趋势后的"
-                "平均表现，为观察性相对排序，无随机对照。"
+                "平均表现，每个窗口设最低 3 篇样本门槛后再排序，为观察性相对排序，无随机对照。"
             ),
             confounders=["笔记选题差异", "投放叠加", "节假日与活动", "笔记时长累积"],
         ),

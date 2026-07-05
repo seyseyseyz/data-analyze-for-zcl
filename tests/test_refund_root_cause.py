@@ -174,7 +174,7 @@ def test_full_fixture_produces_three_findings(tmp_path):
     assert ship.key_numbers["source"] == "sku_performance"
     assert ship.evidence_strength.value == "weak"
     assert ship.confounders
-    assert any("观察性" in c for c in ship.caveats)
+    assert any("这不是因果关系" in c for c in ship.caveats)
 
     category = next(f for f in result.findings if f.title == "品类退款分解")
     assert category.key_numbers["top_category"] == "问题品类"

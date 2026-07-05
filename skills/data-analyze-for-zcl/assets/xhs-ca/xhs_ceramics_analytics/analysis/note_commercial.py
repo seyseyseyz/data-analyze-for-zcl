@@ -9,6 +9,7 @@ import math
 from pathlib import Path
 
 from xhs_ceramics_analytics.analytics.numeric import to_finite_float
+from xhs_ceramics_analytics.analysis import methodology as M
 from xhs_ceramics_analytics.analysis.prose import money, qty
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.analytics.concentration import gini, hhi
@@ -49,7 +50,7 @@ _REFERRAL_CHANNELS = (
     ("引流直播间次数", "引流直播间支付金额", "直播间"),
 )
 
-_OBS_CAVEAT = "观察性描述，非因果——笔记间差异可能由曝光结构、选品与发布节奏共同驱动。"
+_OBS_CAVEAT = M.causal_disclaimer("笔记之间的曝光结构、选品和发布节奏不同")
 
 
 def run(db_path: Path) -> AnalysisResult:
@@ -162,18 +163,19 @@ def _gmv_pareto_finding(con, limitations: list[str]) -> tuple[Finding, list[dict
     note_gmv_hhi = hhi([_num(r.get("note_gmv")) for r in gmv_rows])
 
     if gmv_rows and total_gmv > 0:
-        gini_note = (
-            f" GMV 基尼系数 {round(note_gmv_gini, 2)}（越高越集中于头部笔记）。"
-            if note_gmv_gini is not None
-            else ""
-        )
         conclusion = (
             f"共 {qty(note_count)} 篇笔记（{qty(len(gmv_rows))} 篇有 GMV）；"
             f"Top 10% 笔记贡献 GMV {round((top_decile_gmv_share or 0) * 100)}%，"
-            f"{qty(notes_for_80pct)} 篇笔记贡献 80% GMV。" + gini_note
+            f"{qty(notes_for_80pct)} 篇笔记贡献 80% GMV。"
+        )
+        gini_reason = (
+            f"集中度以基尼系数衡量：{round(note_gmv_gini, 2)}（0=均摊，越高越集中在少数）。"
+            if note_gmv_gini is not None
+            else None
         )
     else:
         conclusion = f"共 {qty(note_count)} 篇笔记，但无正 GMV 记录，无法计算集中度。"
+        gini_reason = None
 
     finding = Finding(
         title="GMV 集中度（帕累托）",
@@ -190,7 +192,10 @@ def _gmv_pareto_finding(con, limitations: list[str]) -> tuple[Finding, list[dict
         },
         caveats=[_OBS_CAVEAT, "帕累托集中度为快照统计，非因果归因。"],
         recommended_action=_LEVER_PARETO,
-        evidence_reason="GMV 集中度=Top 10% 笔记 GMV / 总 GMV；80% 覆盖笔记数为累计 GMV 门槛。",
+        evidence_reason=M.methodology_note(
+            "GMV 集中度=Top 10% 笔记 GMV / 总 GMV；80% 覆盖笔记数为累计 GMV 门槛。",
+            gini_reason,
+        ),
         confounders=list(_CONFOUNDERS),
     )
     return finding, pareto_rows
@@ -276,7 +281,7 @@ def _conversion_finding(con, limitations: list[str]) -> tuple[Finding | None, li
         f"仅 {round((converting_share or 0) * 100)}% 有阅读笔记产生成交"
         f"（{qty(notes_with_orders)}/{qty(len(notes_with_reads))}）；"
         f"整体转化基线 {round((baseline or 0) * 100, 2)}%；"
-        f"{qty(len(high_traffic_low_conv))} 篇高曝光低转化笔记（阅读前 25% 且转化 Wilson 上界低于基线）。"
+        f"{qty(len(high_traffic_low_conv))} 篇高曝光但成交偏低的笔记（阅读量前 25%、成交明显低于平均）。"
     )
     finding = Finding(
         title="转化效率分布",
@@ -293,12 +298,12 @@ def _conversion_finding(con, limitations: list[str]) -> tuple[Finding | None, li
         caveats=[
             _OBS_CAVEAT,
             "笔记转化零膨胀（多数笔记无成交，中位数=0），故以正基线 Σ成交/Σ阅读 为判据。",
-            "高曝光低转化=阅读前25%分位且转化率 Wilson 上界低于整体基线（守卫小样本）。",
         ],
         recommended_action=_LEVER_CONV if high_traffic_low_conv else None,
-        evidence_reason=(
+        evidence_reason=M.methodology_note(
             "转化率=成交/阅读；基线=Σ成交/Σ阅读（加权正基线，规避零膨胀中位数）；"
-            "高曝光低转化以阅读前25%分位 + Wilson 上界<基线判定。"
+            "高曝光低转化以阅读前25%分位 + Wilson 上界<基线判定。",
+            M.METHOD_WILSON,
         ),
         confounders=list(_CONFOUNDERS),
     )
@@ -375,7 +380,7 @@ def _refund_finding(con, limitations: list[str]) -> tuple[Finding | None, list[d
         f"笔记退款基线 {round(baseline * 100, 2)}%；"
         f"{qty(len(high_refund_rows))} 篇笔记退款率高于基线（成交 ≥ "
         f"{_MIN_PAID_ORDERS_FOR_REFUND_FLAG} 单守卫小样本），"
-        f"其中 {qty(fdr_survivors)} 篇经 BH-FDR 5% 显著（预计假阳性约 {round(exp_false_positives, 1)} 个）。"
+        f"其中 {qty(fdr_survivors)} 篇在排除统计误报后仍明显偏高。"
     )
     finding = Finding(
         title="笔记级退款异常",
@@ -396,9 +401,10 @@ def _refund_finding(con, limitations: list[str]) -> tuple[Finding | None, list[d
             "多重比较用 Benjamini-Hochberg FDR 控制假阳性；缺退款单列时退款单以率×成交单估计。",
         ],
         recommended_action=_LEVER_REFUND if high_refund_rows else None,
-        evidence_reason=(
+        evidence_reason=M.methodology_note(
             "基线退款率=Σ退款单/Σ成交单（缺退款单列时按成交单加权均值兜底）；"
-            "异常笔记以成交≥10单守卫小样本后与基线比较，再经 BH-FDR 控制多重比较假阳性。"
+            "异常笔记以成交≥10单守卫小样本后与基线比较，再经 BH-FDR 控制多重比较假阳性。",
+            M.METHOD_FDR,
         ),
         confounders=list(_CONFOUNDERS),
     )

@@ -16,6 +16,7 @@ from markupsafe import Markup, escape
 from xhs_ceramics_analytics.analysis.result import AnalysisResult
 from xhs_ceramics_analytics.evidence import EvidenceStrength
 from xhs_ceramics_analytics.reporting import labels
+from xhs_ceramics_analytics.reporting.confidence import reader_confidence
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +100,20 @@ def for_result(result: AnalysisResult) -> Markup:
     return Markup(html) if html else Markup("")
 
 
+def _de_emphasize(result: AnalysisResult) -> bool:
+    """Whether a chart should render de-emphasised (hatch/dashed/faded).
+
+    Driven by the reader-facing confidence (descriptive precision first), NOT by
+    causal :class:`EvidenceStrength`. Single-window shop data is causally WEAK by
+    construction, so keying greying off that would fade every large-sample chart
+    into a "broken" look. Here a chart only de-emphasises when its number is
+    genuinely thin (low reliability) or not judgable. Never raises.
+    """
+    if not result.findings:
+        return False
+    return reader_confidence(result.findings[0]).de_emphasize
+
+
 def _hbar(
     rows: list[tuple[str, float, str, str]],
     *,
@@ -148,10 +163,14 @@ def _hbar(
 # Weak reads neutral-grey (not warning-yellow) to match the report's tag palette:
 # an observational finding is "directional", not "broken".
 _EVIDENCE_TONE = {
-    "strong": "var(--green-bg)",
+    # Reader-facing 置信度 levels (高/中/低/暂不下定论) — matches reporting.confidence.
+    "high": "var(--green-bg)",
     "medium": "var(--green-bg)",
-    "weak": "var(--neutral-bg)",
+    "low": "var(--neutral-bg)",
     "not_judgable": "var(--red-bg)",
+    # Legacy causal keys kept as harmless fallbacks.
+    "strong": "var(--green-bg)",
+    "weak": "var(--neutral-bg)",
 }
 
 
@@ -276,7 +295,7 @@ def _measure_panel(cats, rows, key, de_emphasize) -> str:
     return _vbar(cats, values, texts, title=_MEASURE_TITLE[key], de_emphasize=de_emphasize)
 
 
-def _build_effect_pair(rows, category_key, strength) -> str:
+def _build_effect_pair(rows, category_key, strength, de_emphasize) -> str:
     if not rows:
         return ""
     cats = [labels.value_label(str(row.get(category_key))) for row in rows]
@@ -286,22 +305,23 @@ def _build_effect_pair(rows, category_key, strength) -> str:
     )
     if not has_any:
         return ""
-    de = strength == EvidenceStrength.WEAK
-    reads = _measure_panel(cats, rows, "avg_reads", de)
-    collects = _measure_panel(cats, rows, "avg_collects", de)
+    reads = _measure_panel(cats, rows, "avg_reads", de_emphasize)
+    collects = _measure_panel(cats, rows, "avg_collects", de_emphasize)
     badge = _chart_badge(strength, len(rows))
     return f'{badge}<div class="chart-multiples">{reads}{collects}</div>'
 
 
 def _build_cover(result: AnalysisResult, strength: EvidenceStrength) -> str:
     return _build_effect_pair(
-        result.tables.get("cover_effects", []), "composition_type", strength
+        result.tables.get("cover_effects", []), "composition_type",
+        strength, _de_emphasize(result),
     )
 
 
 def _build_copy(result: AnalysisResult, strength: EvidenceStrength) -> str:
     return _build_effect_pair(
-        result.tables.get("copy_effects", []), "copy_angle", strength
+        result.tables.get("copy_effects", []), "copy_angle",
+        strength, _de_emphasize(result),
     )
 
 
@@ -323,7 +343,7 @@ def _build_comment_demand(result: AnalysisResult, strength: EvidenceStrength) ->
         )
         for r in rows
     ]
-    de = strength == EvidenceStrength.WEAK
+    de = _de_emphasize(result)
     body = _hbar(bar_rows, value_max=max(v for _, v, _, _ in bar_rows), de_emphasize=de)
     return f'{_chart_badge(strength, total)}{body}'
 
@@ -409,7 +429,7 @@ def _build_response_curve(result: AnalysisResult, strength: EvidenceStrength) ->
         )
         for row in rows
     ]
-    de = strength == EvidenceStrength.WEAK
+    de = _de_emphasize(result)
     body = _line(series, x_labels, de_emphasize=de)
     return f'{_chart_badge(strength, len(rows))}{body}'
 
@@ -499,7 +519,7 @@ def _build_opportunity(result: AnalysisResult, strength: EvidenceStrength) -> st
     ]
     if not rows:
         return ""
-    de = strength == EvidenceStrength.WEAK
+    de = _de_emphasize(result)
     points = [
         {
             "x": float(r["units"]),
@@ -532,7 +552,7 @@ def _build_paid(result: AnalysisResult, strength: EvidenceStrength) -> str:
     ]
     if total_spend <= 0 or not plotted:
         return ""  # honest: no spend / no return -> no efficiency chart
-    de = strength == EvidenceStrength.WEAK
+    de = _de_emphasize(result)
     dims = ("campaign_name_optional", "creative_name_optional",
             "note_id_optional", "sku_id_optional", "platform_source")
 
@@ -674,6 +694,7 @@ def _rank_bars(
     value_key: str,
     value_fmt: Callable[[float], str],
     strength: EvidenceStrength,
+    de_emphasize: bool,
     top_n: int = 8,
 ) -> str:
     """Horizontal bars ranked by value_key descending, top_n kept. Returns "" when
@@ -683,7 +704,7 @@ def _rank_bars(
         return ""
     clean = sorted(clean, key=lambda r: float(r[value_key]), reverse=True)[:top_n]
     vmax = max(float(r[value_key]) for r in clean) or 1.0
-    de = strength == EvidenceStrength.WEAK
+    de = de_emphasize
     bar_rows = [
         (
             str(r.get(label_key) or "—"),
@@ -707,7 +728,7 @@ def _build_demand_funnel(result: AnalysisResult, strength: EvidenceStrength) -> 
     total_pay = sum(float(r.get("paid_buyers") or 0) for r in rows)
     if total_cart <= 0:
         return ""
-    de = strength == EvidenceStrength.WEAK
+    de = _de_emphasize(result)
     funnel_rows = [
         ("加购人数", total_cart, labels.format_number(total_cart), "var(--ink-strong)"),
         ("成交人数", total_pay, labels.format_number(total_pay), "var(--ink-strong)"),
@@ -725,7 +746,7 @@ def _build_core_business(result: AnalysisResult, strength: EvidenceStrength) -> 
     rows = [r for r in result.tables.get("business_trend", []) if r.get("gmv") is not None]
     if not rows:
         return ""
-    de = strength == EvidenceStrength.WEAK
+    de = _de_emphasize(result)
     changepoints = {str(r.get("date")) for r in rows if r.get("is_changepoint")}
     body = _timeseries_line(
         rows, date_key="date", value_key="gmv",
@@ -740,6 +761,7 @@ def _build_channel(result: AnalysisResult, strength: EvidenceStrength) -> str:
         result.tables.get("channel_scale", []),
         label_key="carrier_zh", value_key="gmv",
         value_fmt=labels.format_number, strength=strength,
+        de_emphasize=_de_emphasize(result),
     )
 
 
@@ -748,6 +770,7 @@ def _build_sku_l2(result: AnalysisResult, strength: EvidenceStrength) -> str:
         result.tables.get("sku_category_l2_mix", []),
         label_key="category_l2", value_key="gmv",
         value_fmt=labels.format_number, strength=strength,
+        de_emphasize=_de_emphasize(result),
     )
 
 
@@ -756,6 +779,7 @@ def _build_refund_category(result: AnalysisResult, strength: EvidenceStrength) -
         result.tables.get("refund_by_category", []),
         label_key="category_l1", value_key="refund_orders",
         value_fmt=labels.format_number, strength=strength,
+        de_emphasize=_de_emphasize(result),
     )
 
 
@@ -770,11 +794,13 @@ def _build_audience(result: AnalysisResult, strength: EvidenceStrength) -> str:
         return _rank_bars(
             conversion, label_key="audience_type", value_key="conversion",
             value_fmt=labels.format_percent, strength=strength,
+            de_emphasize=_de_emphasize(result),
         )
     return _rank_bars(
         result.tables.get("audience_composition", []),
         label_key="audience_segment", value_key="gmv_share",
         value_fmt=labels.format_percent, strength=strength,
+        de_emphasize=_de_emphasize(result),
     )
 
 
