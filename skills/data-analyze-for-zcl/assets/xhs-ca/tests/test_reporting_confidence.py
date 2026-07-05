@@ -1,6 +1,8 @@
 from xhs_ceramics_analytics.analysis.result import Finding
 from xhs_ceramics_analytics.evidence import DescriptiveReliability, EvidenceStrength
 from xhs_ceramics_analytics.reporting.confidence import reader_confidence
+from xhs_ceramics_analytics.reporting.domains import APPENDIX_DOMAIN_INTRO
+from xhs_ceramics_analytics.reporting.formatting import field_label
 
 
 def _finding(strength, reliability):
@@ -54,3 +56,19 @@ def test_not_applicable_reliability_falls_back_to_evidence():
         _finding(EvidenceStrength.WEAK, DescriptiveReliability.NOT_APPLICABLE)
     )
     assert rc.level == "low"
+
+
+def test_appendix_intro_uses_unified_confidence_word():
+    # The appendix says it annotates every conclusion with a confidence rating —
+    # that rating IS the folded 置信度, so the prose must not reintroduce 可信度.
+    assert "置信度" in APPENDIX_DOMAIN_INTRO
+    assert "可信度" not in APPENDIX_DOMAIN_INTRO
+
+
+def test_evidence_strength_column_labelled_as_raw_causal_axis():
+    # The evidence_strength column carries the RAW causal tier (强/中/弱), not the
+    # folded reader 置信度. Its label must name the causal axis honestly and never
+    # collide with either the retired 可信度 or the folded 置信度 vocabulary.
+    label = field_label("evidence_strength")
+    assert label == "证据强度"
+    assert "可信度" not in label

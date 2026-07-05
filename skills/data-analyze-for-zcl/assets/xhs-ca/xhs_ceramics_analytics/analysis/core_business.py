@@ -57,11 +57,11 @@ _STAGE_ZH = {
     "visit_pay": "访问→支付",
 }
 _STAGE_LEVERS = {
-    "visit_click": "优化店铺页首屏与商品卡点击诱因（主图、卖点、价格锚点）。",
-    "click_pay": "优化商详转化（尺寸/规格说明、评价、优惠与信任状）。",
-    "visit_pay": "全链路诊断，先补最弱阶段再看承接。",
+    "visit_click": "这周先从店铺页首屏和商品卡入手：换一张更抓眼的主图，把卖点和价格锚点放到最显眼的位置，先让人愿意点进来。",
+    "click_pay": "这周先补商详页：把尺寸/规格说明写清楚，置顶真实评价，摆出优惠与信任状，减少下单前的犹豫。",
+    "visit_pay": "先做一次全链路诊断，集中补最弱阶段，跑通了再看后面的承接，别一上来就全线铺开。",
 }
-_CARRIER_LEVER = "检视 note vs card 的投入产出，向高转化载体倾斜内容与预算。"
+_CARRIER_LEVER = "这周对比一下 note 和 card 的投入产出，把内容和预算更多压到转化更高的那个载体上。"
 
 
 def run(db_path: Path) -> AnalysisResult:
@@ -170,7 +170,7 @@ def _snapshot_finding(
         method_notes.append("异常日按去趋势后 GMV 偏离 ±2σ 判定。")
     if decomp.get("projected_gmv") is not None:
         caveats.append(
-            f"末尾的 {decomp.get('projection_horizon')} 日 GMV 外推为趋势线的线性延伸，"
+            f"末尾的 {decomp.get('projection_horizon')} 日 GMV 是顺着当前趋势往后延出来的估算，"
             "仅供参考、非预测承诺，活动或季节变化会使其失真。"
         )
 
@@ -305,7 +305,7 @@ def _benchmark_conclusion(headline: dict, worst: dict, n_weeks: int) -> str:
     exists — a single-metric account no longer emits a self-contradicting 「而…」.
     """
     conclusion = (
-        f"以近 {n_weeks} 个 ISO 周为自身基准，最新一周"
+        f"拿自己最近 {n_weeks} 周当尺子，最新这一周"
         f"「{headline['metric']}」处于{_percentile_phrase(headline['self_percentile'])}"
         f"（{headline['percentile_label']}）"
     )
@@ -383,11 +383,11 @@ def _benchmark_finding(con, limitations: list[str]):
             descriptive_reliability=score_reliability(n),
             key_numbers=key_numbers,
             caveats=[
-                "这是相对自身历史的排名，不代表绝对好坏；周期越少越容易受单周波动影响。",
-                "GMV 按周求和、转化率按周内日均聚合；促销周天然偏高，读数需结合活动节奏。",
+                "这是跟自己过去比出来的排名，不代表绝对的好坏；参考的周数越少，越容易被某一周的波动带偏。",
+                "GMV 是一周加总、转化率是一周里每天平均出来的；有促销的那周本来就偏高，看的时候要结合当时有没有活动。",
             ],
             recommended_action=(
-                "把最新周处于低分位的指标列为本周重点，对照高分位周的动作复盘差异。"
+                "这周把还处在低分位的那个指标定为重点，翻出高分位那几周当时做了什么，照着把差距补回来。"
             ),
             evidence_reason=(
                 "把最新一周放进该账号自身周度分布里求中位秩分位（P__），"
@@ -582,12 +582,12 @@ def _event_lift_finding(con, limitations: list[str]):
                 "conversion_significant": conv_significant,
             },
             caveats=[
-                "活动期 GMV 抬升主要来自降价/满减与投放加码本身，是活动的组成，不能读作「活动很成功」的独立因果。",
-                "活动日与平销日非随机分配（大促常压在周末/节假日），季节性与流量结构是主要混淆项。",
+                "活动期 GMV 抬升不能读作「活动很成功」的独立因果：它主要来自降价/满减与投放加码本身，本就是活动的组成部分。",
+                "活动日和平销日不是随机安排的（大促常压在周末、节假日），季节和流量结构的差别是主要的干扰因素。",
             ],
             recommended_action=(
-                "对照抬升幅度与活动让利成本核算净收益，再决定活动强度与频率；"
-                "转化差异不显著时优先复盘承接页而非加大让利。"
+                "先把这次的抬升幅度和让利成本摆在一起算笔净账，再决定活动做多重、隔多久做一次；"
+                "如果转化差异不显著，先回头看承接页，别急着加大让利。"
             ),
             evidence_reason=(
                 "按活动日历切分活动/平销两组，GMV 取日均相对差、"
@@ -684,9 +684,9 @@ def _snapshot_conclusion(total_gmv, total_buyers, aov, pay_conv, direction, deco
 # --------------------------------------------------------------------------- #
 _BRIDGE_CONFOUNDERS = ["促销与活动", "流量结构变化", "品类结构变化"]
 _FACTOR_LEVER = {
-    "traffic": "GMV 变化主要由流量驱动：稳固当前流量来源，并检视转化/客单是否被稀释。",
-    "conversion": "GMV 变化主要由转化驱动：延续起效的详情页/信任状/优惠，扩大到更多商品。",
-    "aov": "GMV 变化主要由客单价驱动：核对是价格结构还是连带/客群变化，评估可持续性。",
+    "traffic": "GMV 变化主要由流量驱动：这周先守住现在跑量的流量来源，同时盯一下转化和客单有没有被悄悄稀释。",
+    "conversion": "GMV 变化主要由转化驱动：把已经见效的详情页/信任状/优惠打法，这周复制到更多商品上。",
+    "aov": "GMV 变化主要由客单价驱动：先弄清是价格结构、连带还是客群变化带来的，再判断这波能不能接着走。",
 }
 
 
@@ -729,13 +729,13 @@ def _growth_attribution_finding(
     factor_zh = bridge.get("dominant_factor_zh")
 
     caveats = [
-        f"前后各取半程聚合：前段 {dated[0][0]}–{dated[mid - 1][0]}，后段 {dated[mid][0]}–{dated[-1][0]}。",
+        f"把整段时间前后对半分：前段 {dated[0][0]}–{dated[mid - 1][0]}，后段 {dated[mid][0]}–{dated[-1][0]}。",
     ]
     bridge_method_notes = [
         "GMV = 访客数 × 支付转化率 × 客单价 的 LMDI 确定性分解，三项贡献之和≈ΔGMV，非因果。",
     ]
     if bridge.get("partial"):
-        caveats.append("部分因子缺失或非正（如某段访客/买家为零），分解降级。")
+        caveats.append("有些数据缺了或不正常（比如某一段访客、买家为零），只能拆个大概。")
         bridge_method_notes.append("未拆分部分计入残差。")
 
     sample_size = int(p0["buyers"] + p1["buyers"])
@@ -792,7 +792,7 @@ _FACTOR_ZH = {"traffic": "流量", "conversion": "转化", "aov": "客单价"}
 
 # 口径句:GMV 桥比较的是窗口前后两段之间的变化,不是单点绝对值——读者过去看不懂
 # "前段/后段"从哪来,这里在结论开头一句话交代清楚。
-_BRIDGE_CALIBER = "把统计窗口分成前半程和后半程两段对比，下面是两段之间的变化："
+_BRIDGE_CALIBER = "把这段时间分成前半程和后半程两段来对比，下面是两段之间的变化："
 
 
 def _offsetting_factors_zh(bridge: dict, delta: float) -> str:
@@ -817,7 +817,7 @@ def _bridge_conclusion(bridge: dict, p0: dict, p1: dict) -> str:
     )
     zh = bridge.get("dominant_factor_zh")
     if zh is None:
-        return head + "，各因子贡献相近或数据不足以定位主因。"
+        return head + "，几项的作用差不多，或者数据还不够，看不出主要是哪一项带动的。"
     contrib = bridge.get(f"contrib_{bridge['dominant_factor']}")
     # When the biggest-magnitude factor moves *against* the net change, it was
     # offset by the others — calling it the "driver" would misread the sign.
@@ -1062,7 +1062,7 @@ def _funnel_finding(
         caveats.append("缺 product_click_users，访问→点击/点击→支付用比率列均值。")
     if canonical_cycle is not None:
         caveats.append(
-            f"首购周期为累计窗口，固定取 {canonical_cycle} 避免 180/365 天窗口重复计数。"
+            f"首购数据是按累计时间段统计的，统一取 {canonical_cycle} 避免 180/365 天两个口径把同一批人重复算进去。"
         )
     key_numbers: dict[str, object] = {
         # 读者面存中文环节名；内部 weakest（英文键）仍用于杠杆/结论查表。
@@ -1177,7 +1177,7 @@ def _funnel_conclusion(weakest: str | None, stage_rates: dict) -> str:
         return "店铺页各阶段转化数据不足，无法定位漏点。"
     rate = stage_rates.get(weakest)
     pct = f"{round((rate or 0) * 100, 1)}%"
-    return f"最弱阶段为 {_STAGE_ZH[weakest]}（转化 {pct}），优先补该阶段。"
+    return f"最弱阶段为 {_STAGE_ZH[weakest]}（转化 {pct}），这周就先集中补这一环。"
 
 
 # --------------------------------------------------------------------------- #
@@ -1215,8 +1215,8 @@ def _comparison_extras(
     caveat = None
     if not _sig_gated(test, test.get("diff")) and mde is not None:
         caveat = (
-            f"当前样本量下最小可测差约 {round(mde * 100, 1)}pp，"
-            "未达显著更可能是样本不足而非确无差异。"
+            f"按现在这点数据量，两边至少要差出约 {round(mde * 100, 1)}pp 才看得出来；"
+            "现在没看出差距，更可能是数据太少，而不是真的没差别。"
         )
     return lift, mde, caveat
 

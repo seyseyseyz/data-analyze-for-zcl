@@ -162,9 +162,9 @@ def _scale_finding(con, limitations: list[str]) -> tuple[Finding, list[dict]]:
 
     if dominant_carrier is not None:
         lever = (
-            f"重点巩固主渠道{_CARRIER_ZH[dominant_carrier]}的供给与内容承接；"
-            f"同时排查{_CARRIER_ZH[other_carrier]}渠道转化/退款是否存在健康问题，"
-            "判断是否值得追加资源。"
+            f"这周先守住主渠道{_CARRIER_ZH[dominant_carrier]}：把卖得好的款备足货、把承接内容排上；"
+            f"同时抽空看一眼{_CARRIER_ZH[other_carrier]}渠道的转化和退款有没有明显掉链子，"
+            "再决定要不要给它追加资源。"
         )
     else:
         lever = "GMV 数据不足，暂无法给出渠道资源建议。"
@@ -286,7 +286,7 @@ def _conversion_finding(con, limitations: list[str]) -> tuple[Finding | None, li
             "conversion_source": source,
         },
         caveats=caveats,
-        recommended_action="向转化更弱的渠道做承接页/内容优化，向转化更强的渠道倾斜投放与选品。",
+        recommended_action="先给转化更弱的渠道改承接页和内容（比如详情图、卖点），转化更强的渠道多倾斜投放与上新选品。",
         evidence_reason=conv_evidence_reason,
         confounders=list(_CONV_CONFOUNDERS),
     )
@@ -499,7 +499,7 @@ def _refund_conclusion(
         f"{_CARRIER_ZH[lower_carrier]} {round(lower_rate * 100, 1)}%{sig_part}。"
     )
     if higher_stage:
-        conclusion += f"且以{higher_stage}退款为主。"
+        conclusion += f"退款主要集中在{higher_stage}。"
     return conclusion
 
 
@@ -507,10 +507,10 @@ def _refund_lever(higher_refund_carrier: str | None, higher_stage: str | None) -
     if higher_refund_carrier is None or higher_stage is None:
         return "退款数据不足，暂无法给出针对性退款优化建议。"
     if higher_stage == "发货前":
-        stage_lever = "重点排查物流时效、揽收/发货时长、退款前置提醒与价保机制。"
+        stage_lever = "这周先从物流时效下手，逐项排查揽收/发货时长、退款前置提醒与价保机制。"
     else:
-        stage_lever = "重点排查商品质量与图文/详情描述一致性问题。"
-    return f"{_CARRIER_ZH[higher_refund_carrier]}退款率更高且以{higher_stage}为主：{stage_lever}"
+        stage_lever = "这周先逐个核对商品质量，重点看图文/详情描述一致性是否到位。"
+    return f"{_CARRIER_ZH[higher_refund_carrier]}退款率更高，而且大多出在{higher_stage}：{stage_lever}"
 
 
 # --------------------------------------------------------------------------- #

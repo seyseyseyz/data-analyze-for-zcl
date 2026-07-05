@@ -100,7 +100,7 @@ VALUE_LABELS = {
     "ship_stage": "发货阶段",
     "return_type": "退款类型",
     "return": "退货",
-    # --- 可信度枚举（与 _EVIDENCE_LABELS 对齐）---
+    # --- 证据强度枚举（与 _EVIDENCE_LABELS 对齐）---
     "not_judgable": "不可判断",
     # --- 数据源 / 数据表名（数据质量与复盘来源列）---
     "posts": "发布笔记数",

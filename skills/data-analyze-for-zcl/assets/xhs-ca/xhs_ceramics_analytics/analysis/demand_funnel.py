@@ -32,12 +32,12 @@ _WISHLIST_COL = "新增加入心愿单人数"
 _CONFOUNDERS = ["流量质量", "促销与活动节奏", "客群构成", "季节性"]
 
 _LEVER_FUNNEL = (
-    "加购蓄水与成交转化分开看：加购在涨但转化走平/下降，说明承接（详情页/价格/信任状）"
-    "跟不上蓄水，应优先补转化钩子；两者同向上行则以扩流量为主。"
+    "加购蓄水和成交转化分开看：加购人数在涨、但真正下单的没跟上（走平或掉了），说明详情页/价格/信任这些接住客人的环节"
+    "跟不上蓄水，就先把这些环节补好、让客人更愿意下单；两者一起往上走时，就主要去多拉流量。"
 )
 _LEVER_WISHLIST = (
     "心愿单是延迟需求的蓄水池：规模走高时用上新预告/到货提醒/限时权益促其转化，"
-    "避免蓄水沉淀不动。"
+    "别让这池需求沉着不动，趁热推一把。"
 )
 
 
@@ -153,7 +153,7 @@ def _funnel_finding(
 
     caveats = [
         M.causal_disclaimer("流量质量、活动折扣和客群不同"),
-        "比值口径而非严格漏斗：部分成交未先加购，比值可能接近或超过 100%，趋势比绝对值更可读。",
+        "不是严格的漏斗、只是个比值：有些人没先加购就直接下单了，所以这个比值可能接近甚至超过 100%，看走势比看具体数字更靠谱。",
     ]
 
     key_numbers: dict[str, object] = {
@@ -245,7 +245,7 @@ def _wishlist_finding(
         key_numbers=key_numbers,
         caveats=[
             "心愿单是延迟需求信号。" + M.causal_disclaimer("上新、提醒和权益节奏不同"),
-            "心愿单与加购为两种意向强度，不可相加；心愿单/加购仅作蓄水深度参考。",
+            "心愿单和加购是两种不同热度的想买信号，不能加在一起算；心愿单/加购只当作蓄水深浅的参考。",
         ],
         recommended_action=_LEVER_WISHLIST,
         evidence_reason="心愿单新增为真实列逐日聚合，趋势按最小二乘斜率判定；观察性描述，非因果。",
@@ -282,7 +282,7 @@ def _missing_result(reason: str) -> AnalysisResult:
         findings=[
             Finding(
                 title="需求漏斗不可诊断",
-                conclusion="需要导出 business_overview_daily（每日经营概览）数据后才能诊断需求漏斗与心愿单。",
+                conclusion="暂时无法诊断需求漏斗与心愿单，需要导出 business_overview_daily（每日经营概览）数据。",
                 evidence_strength=EvidenceStrength.NOT_JUDGABLE,
                 key_numbers={},
                 caveats=["每日经营概览缺失应视为导入缺口。"],

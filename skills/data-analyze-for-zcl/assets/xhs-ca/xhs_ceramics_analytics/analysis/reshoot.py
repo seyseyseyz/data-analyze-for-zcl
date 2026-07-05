@@ -27,7 +27,7 @@ def run(db_path: Path) -> AnalysisResult:
             Finding(
                 title="高收藏笔记重拍候选已排序",
                 conclusion=(
-                    f"已按收藏率并结合低阅读补偿，对 {qty(len(rows))} 篇笔记排序。"
+                    f"已完成 {qty(len(rows))} 篇笔记的重拍排序。排序依据：先看收藏率，再对低阅读做补偿。"
                 ),
                 evidence_strength=score_evidence(
                     len(metrics), has_controls=False, confounder_count=1
@@ -38,14 +38,14 @@ def run(db_path: Path) -> AnalysisResult:
                     "top_candidate": top_candidate,
                 },
                 caveats=[
-                    "高收藏率可能代表小众强意图，重拍优先级仍需要创意复核。",
-                    "小样本笔记会被降权，进入队首前需要更多数据。",
+                    "重拍优先级仍需要创意复核：高收藏率可能代表小众强意图。",
+                    "样本太少的笔记会被自动降权，想让它挤进队首，得先多攒些阅读数据再看。",
                 ],
                 recommended_action=(
-                    "优先重拍队首候选，用更清晰的开场画面做对照；确认阅读率提升后再扩大重发。"
+                    "先重拍队首候选，用更清晰的开场画面做对照。确认阅读率提升后，再扩大重发。"
                 )
                 if rows
-                else "先收集可读的笔记指标，再选择重拍候选。",
+                else "先把笔记的阅读、收藏数据补齐，等能读到有效指标了再回来挑重拍候选。",
             )
         ],
         tables={"reshoot_candidates": rows},

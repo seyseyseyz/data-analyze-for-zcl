@@ -24,9 +24,9 @@ _LAYER_COLUMNS = {
 }
 _SHIP_STAGE_LAYERS = ("pre_ship", "post_ship")
 _LAYER_LEVERS = {
-    "pre_ship": "发货前退款最高：优化下单后拦截话术、库存与发货时效、价格波动预期管理。",
-    "post_ship": "发货后退款最高：排查物流破损与时效、加强客服响应与签收提醒。",
-    "return": "退货退款最高：核查商品质量、尺寸色差、详情页描述相符度（陶瓷重点：开裂、色差、规格一致性）。",
+    "pre_ship": "发货前退款最高：退款主要卡在发货前。这周先翻发货前退款的订单备注，分清是催不发货、缺货还是价格波动；对上号的先补下单后拦截话术，再理顺库存与发货时效，价格波动就提前把预期说清。",
+    "post_ship": "发货后退款最高：退款主要出在发货之后。这周先抽发货后退款的订单问客户是破损还是嫌慢，优先排查物流破损与时效；同时把客服响应提上来，发货后主动推签收提醒。",
+    "return": "退货退款最高：钱主要退在退货上。这周先拿退货最多的商品，对着实物逐条核查商品质量、尺寸色差、详情页描述相符度，陶瓷重点盯开裂、色差、规格一致性，哪条对不上先改哪条。",
 }
 
 
@@ -118,23 +118,23 @@ def _layer_finding(con, limitations: list[str]) -> tuple[Finding, list[dict]]:
 
     dominant_layer = dominant["layer"] if dominant else None
     conclusion = (
-        f"总退款 {money(total)} 元，按发货阶段划分（发货前+发货后=100%）占比最高的是 "
+        f"总退款 {money(total)} 元。按发货阶段划分（发货前+发货后=100%），占比最高的是 "
         f"{_layer_zh(dominant_layer)}（{round((dominant['share'] or 0) * 100)}%）。"
         if dominant
         else "发货阶段退款金额列缺失，无法拆解。"
     )
     caveats = [
         M.causal_disclaimer("促销节奏、季节性和品类结构不同"),
-        "本节为退款金额份额口径；退款率口径见退款根因诊断，分渠道退款率见渠道结构与健康诊断，三者非重复。",
+        "本节为退款金额份额口径。退款率口径见退款根因诊断，分渠道退款率见渠道结构与健康诊断，三者非重复。",
     ]
     return_row = next((r for r in layer_rows if r["axis"] == "return_type"), None)
     if return_row is not None:
         caveats.append(
-            f"退货退款为发货后退款的子集（占总退款额 "
-            f"{round((return_row['share'] or 0) * 100)}%），与发货前/后不在同一划分轴，份额不相加。"
+            f"退货退款本身就算在发货后退款里（占总退款额 "
+            f"{round((return_row['share'] or 0) * 100)}%），它和发货前、发货后不是同一套分法，占比不能直接相加。"
         )
     if lo is not None:
-        caveats.append(f"整体退款率 {rate_band(lo, hi)}（样本 n≈{qty(n)}）。")
+        caveats.append(f"整体退款率 {rate_band(lo, hi)}（大致统计了 {qty(n)} 单）。")
     finding = Finding(
         title="退款主漏点层级",
         conclusion=conclusion,
@@ -250,7 +250,7 @@ def _trend_finding(con, limitations: list[str]) -> tuple[Finding | None, list[di
         title="退款率时间趋势",
         conclusion=(
             f"退款率整体呈{direction}趋势（{qty(len(series))} 期，"
-            f"起 {round(series[0][1] * 100)}% 止 {round(series[-1][1] * 100)}%）。"
+            f"从 {round(series[0][1] * 100)}% 到 {round(series[-1][1] * 100)}%）。"
         ),
         evidence_strength=score_evidence(len(series), has_controls=False, confounder_count=1),
         descriptive_reliability=score_reliability(len(series)),
@@ -261,7 +261,7 @@ def _trend_finding(con, limitations: list[str]) -> tuple[Finding | None, list[di
         },
         caveats=[
             M.causal_disclaimer("促销周期和季节性不同"),
-            "日度退款率波动较大，逐期环比见退款趋势表。",
+            "日度退款率波动较大，一期一期的涨跌见退款趋势表。",
         ],
         evidence_reason=M.methodology_note(
             "逐期退款率走势描述。",
@@ -338,7 +338,7 @@ def _note_finding(con, limitations: list[str]) -> tuple[Finding | None, list[dic
     if not has_features:
         caveats.append("缺少 content_features，仅列高退款笔记，无法归因特征。")
     conclusion = (
-        f"共 {qty(len(high))} 篇笔记退款率显著高于基线（{round(baseline * 100)}%）。"
+        f"有 {qty(len(high))} 篇笔记退款率显著高于平均水平（{round(baseline * 100)}%）。"
         + (f" 高退款笔记更多集中在 {top_feature}。" if top_feature else "")
     )
     finding = Finding(
@@ -356,7 +356,7 @@ def _note_finding(con, limitations: list[str]) -> tuple[Finding | None, list[dic
         caveats=caveats,
         evidence_reason="以 Wilson 下界高于加权基线判定高退款笔记，避免小样本误报。",
         confounders=["选品差异", "定价", "客群"],
-        next_test="对疑似高退款特征做重拍/A-B 验证后复测退款率。",
+        next_test="先挑出疑似高退款特征，做重拍或 A-B 验证，跑完再复测退款率看有没有降下来。",
     )
     return finding, high
 
@@ -484,10 +484,10 @@ def _product_finding(con, limitations: list[str]) -> tuple[Finding | None, list[
             "top_feature": top_feature,
         },
         caveats=caveats,
-        recommended_action="对高退款产品优先做质量抽检 / 详情页尺寸与色差描述修订，评估下架或换供应。",
+        recommended_action="先从退款金额最高的高退款产品下手：这周安排质量抽检，同时把详情页尺寸与色差描述改准；抽检差的再评估下架或换供应。",
         evidence_reason="产品退款金额=支付-退款后支付；高退款以退款率对比基线（有订单量时 Wilson 守卫）。",
         confounders=["品类结构", "定价带", "上新周期"],
-        next_test="对疑似器型/系列做质量抽检或描述修订后复测退款率。",
+        next_test="挑出可疑的器型/系列做质量抽检、或修订详情页描述，之后再复测一次退款率。",
     )
     return finding, product_rows
 
