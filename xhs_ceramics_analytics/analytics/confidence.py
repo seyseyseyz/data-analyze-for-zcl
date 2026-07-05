@@ -29,7 +29,18 @@ def min_n_guard(n: float | None) -> bool:
 
 
 def rate_band(lo: float, hi: float) -> str:
-    return f"约 {round(lo * 100)}%–{round(hi * 100)}%"
+    """Reader-facing "约 lo%–hi%" band, with just enough precision to separate bounds.
+
+    Whole-percent rounding collapsed narrow intervals into a degenerate "约 8%–8%"
+    (both 7.8% and 8.3% → 8%). Step up to 1 then 2 decimals only when needed so the
+    two bounds stay distinct; if they are genuinely equal, print a single point.
+    """
+    lo_pct, hi_pct = lo * 100, hi * 100
+    for dp in (0, 1, 2):
+        lo_s, hi_s = f"{lo_pct:.{dp}f}", f"{hi_pct:.{dp}f}"
+        if lo_s != hi_s:
+            return f"约 {lo_s}%–{hi_s}%"
+    return f"约 {hi_pct:.0f}%"
 
 
 def bounded_rate(r: float | None) -> float | None:
