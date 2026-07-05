@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
+from xhs_ceramics_analytics.db.build import AUX_TABLES
 from xhs_ceramics_analytics.db.duck import connect
 from xhs_ceramics_analytics.evidence import EvidenceStrength
 
@@ -14,6 +15,7 @@ def run(db_path: Path) -> AnalysisResult:
                 "rows": con.sql(f"SELECT COUNT(*) FROM {_quote_identifier(name)}").fetchone()[0],
             }
             for (name,) in con.sql("SHOW TABLES").fetchall()
+            if name not in AUX_TABLES
         ]
     finally:
         con.close()
