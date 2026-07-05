@@ -3,7 +3,7 @@ import re
 from markupsafe import Markup
 
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
-from xhs_ceramics_analytics.evidence import EvidenceStrength
+from xhs_ceramics_analytics.evidence import DescriptiveReliability, EvidenceStrength
 from xhs_ceramics_analytics.reporting import charts
 
 
@@ -14,6 +14,30 @@ def _result(task_id, strength, tables):
         findings=[Finding(title="f", conclusion="c", evidence_strength=strength)],
         tables=tables,
     )
+
+
+def test_chart_badge_reads_folded_confidence_not_raw_causal_tier():
+    # The design bug: a large-sample observational finding is causally WEAK by
+    # construction, yet its prose shows the folded "置信度 高" (descriptive axis).
+    # The chart badge must speak the SAME word — never contradict the section by
+    # displaying the raw causal tier "可信度 弱" beside a "置信度 高" conclusion.
+    result = AnalysisResult(
+        task_id="core_business_diagnosis",
+        title="t",
+        findings=[Finding(
+            title="f", conclusion="c",
+            evidence_strength=EvidenceStrength.WEAK,
+            descriptive_reliability=DescriptiveReliability.HIGH,
+        )],
+        tables={"business_trend": [
+            {"date": "2026-04-01", "gmv": 1000.0, "is_changepoint": False},
+            {"date": "2026-04-02", "gmv": 1500.0, "is_changepoint": True},
+        ]},
+    )
+    html = charts.for_result(result)
+    assert "置信度 高" in html      # folded reader-confidence, consistent with the prose
+    assert "可信度" not in html     # the retired methodology term never surfaces
+    assert "置信度 弱" not in html  # the raw causal tier is a footnote, not the headline
 
 
 def test_for_result_returns_markup_empty_for_unknown_task():
@@ -52,6 +76,16 @@ def test_empty_state_carries_message():
     svg = charts._frame(charts._empty_state(640, 200), 640, 200)
     assert "数据不足，无法判断" in svg
     assert svg.startswith("<svg")
+
+
+def test_evidence_distribution_title_reads_confidence_not_reliability_term():
+    # The segments are the folded 置信度 levels (高/中/低), so the chart title must
+    # say 置信度 too — never the retired 可信度 term, which would re-split the one
+    # confidence vocabulary the rest of the report was unified onto.
+    counts = [{"value": "high", "label": "高", "count": 3, "help": "h"}]
+    svg = charts.evidence_distribution(counts)
+    assert "结论置信度分布" in svg
+    assert "可信度" not in svg
 
 
 def test_evidence_distribution_renders_segments_with_counts():
@@ -96,7 +130,7 @@ def test_cover_chart_has_two_measure_panels_and_zero_baseline():
     html = charts.for_result(result)
     assert "平均阅读数" in html and "平均收藏数" in html
     assert 'class="chart-multiples"' in html
-    assert "可信度 中" in html          # evidence badge present
+    assert "置信度 中" in html          # folded reader-confidence badge present
     assert html.count("<svg") == 2       # one panel per measure
     assert 'class="ca-axis"' in html     # zero baseline is actually drawn
 
@@ -122,7 +156,8 @@ def test_cover_chart_weak_evidence_is_de_emphasized():
         ]},
     )
     html = charts.for_result(result)
-    assert "可信度 弱" in html
+    # WEAK causal + no descriptive-reliability estimate folds to 低 (not the raw 弱 tier).
+    assert "置信度 低" in html
     assert "url(#ca-hatch)" in html
 
 
@@ -171,7 +206,7 @@ def test_comment_demand_skips_zero_comment_groups():
         ]},
     )
     html = charts.for_result(result)
-    assert "可信度 弱" in html            # weak evidence badge
+    assert "置信度 低" in html            # folded reader-confidence badge
     assert "送礼角度" not in html         # zero-comment group omitted
 
 
@@ -211,7 +246,7 @@ def test_response_curve_single_point_series_draws_dot_not_line():
     html = charts.for_result(result)
     assert "<circle" in html
     assert "<path" not in html             # one observed point never draws a line
-    assert "可信度 弱" in html
+    assert "置信度 低" in html
 
 
 def test_response_curve_empty_when_no_rows():
@@ -385,7 +420,7 @@ def test_demand_funnel_draws_two_stage_funnel_and_trend():
     assert "加购人数" in html and "成交人数" in html
     assert "加购→成交转化率趋势" in html
     assert "<path" in html                 # cart_to_pay trend draws a line
-    assert "可信度 弱" in html
+    assert "置信度 低" in html
     assert "n=300" in html                 # total add_to_cart_users, not a row count
 
 
@@ -422,7 +457,7 @@ def test_core_business_draws_gmv_trend_with_changepoint():
     assert "成交金额" in html               # timeseries title
     assert "<path" in html
     assert "结构转折" in html               # changepoint annotation drawn
-    assert "可信度 中" in html
+    assert "置信度 中" in html
 
 
 def test_core_business_empty_when_no_trend():

@@ -74,7 +74,7 @@ DOMAINS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
 # 数据质量附录不进业务域,由 section_order 收尾;标题与导语在此单点定义,md / html 共用。
 APPENDIX_DOMAIN_TITLE = "附录：数据质量与口径说明"
 APPENDIX_DOMAIN_INTRO = (
-    "数据导入、口径与完整度说明,为上面所有结论标注可信度;"
+    "数据导入、口径与完整度说明,为上面所有结论标注置信度;"
     "阻断性问题在建库阶段已处置,这里只作透明留证。"
 )
 
