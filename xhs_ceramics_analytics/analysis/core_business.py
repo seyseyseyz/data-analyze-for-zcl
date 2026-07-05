@@ -390,7 +390,7 @@ def _benchmark_finding(con, limitations: list[str]):
                 "把最新周处于低分位的指标列为本周重点，对照高分位周的动作复盘差异。"
             ),
             evidence_reason=(
-                "用 analytics.benchmark.self_percentile 把最新周放进自身周度分布的中位秩分位，"
+                "把最新一周放进该账号自身周度分布里求中位秩分位（P__），"
                 "为观察性相对定位，无外部对照。"
             ),
             confounders=_BENCHMARK_CONFOUNDERS,
@@ -573,8 +573,8 @@ def _event_lift_finding(con, limitations: list[str]):
                 "转化差异不显著时优先复盘承接页而非加大让利。"
             ),
             evidence_reason=(
-                "按 calendar_events 日期切分活动/平销两组，GMV 取日均相对差、"
-                "转化用 analytics.confidence.two_proportion 做两比例检验；观察性对比、无随机对照。"
+                "按活动日历切分活动/平销两组，GMV 取日均相对差、"
+                "转化用两比例检验判显著；观察性对比、无随机对照。"
             ),
             confounders=_EVENT_CONFOUNDERS,
         ),
