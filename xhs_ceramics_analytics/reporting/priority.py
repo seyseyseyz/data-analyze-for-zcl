@@ -99,28 +99,6 @@ def _evidence_label(value: str) -> str:
     return _EVIDENCE_LABELS.get(value, value)
 
 
-# 面向读者的「为什么值得先做」一句话,回答"凭什么排这么前"。它拼两半:
-# 影响面 (impact) + 可动手程度 (feasibility)。旧版只看 impact,而核心模块 impact
-# 几乎全是「高」→ 八行文案完全一致、成了废列;现在两轴一起决定措辞,同为高影响但
-# 证据强弱不同的两行会读出「本周直接落地」vs「先小样本验证」的差别。
-_IMPACT_CLAUSE: dict[str, str] = {
-    "高": "影响面大、直接牵动整体生意",
-    "中": "对生意有明显带动",
-    "低": "影响相对局部",
-}
-_READY_CLAUSE: dict[str, str] = {
-    "高": "证据扎实、本周可直接落地,回报最快",
-    "中": "证据中等,建议小步推进、边做边看",
-    "低": "证据偏薄,先小样本验证再放大",
-}
-
-
-def _why(impact_label: str, feasibility_label: str) -> str:
-    impact = _IMPACT_CLAUSE.get(impact_label, _IMPACT_CLAUSE["中"])
-    ready = _READY_CLAUSE.get(feasibility_label, _READY_CLAUSE["中"])
-    return f"{impact},{ready}。"
-
-
 def _band(score: float) -> str:
     if score >= _HIGH_BAND:
         return "高"
@@ -196,8 +174,13 @@ def build_priority_table(
         impact_label = _band(impact)
         feasibility_label = _band(feasibility)
         # Single reader-facing 置信度 (same primitive as everywhere else), folded from
-        # the two statistical axes — it rides as one tag inside 「为什么值得先做」 rather
-        # than the old 预期影响/可行性/证据 three-column grid.
+        # the two statistical axes. It is the table's 4th column — a genuine per-row
+        # rating. There is deliberately NO band-composed "为什么值得先做" reason column:
+        # on real data every top module collapses to the same impact/feasibility band
+        # (all core-economics, all causally WEAK + descriptively HIGH), so any prose
+        # derived from those bands reads verbatim-identical down every row — a dead
+        # column. The priority rationale is the RANK ORDER itself, stated once in the
+        # section lede; the per-row signal the reader needs is 哪个环节/具体先做什么 + 置信度.
         confidence = reader_confidence(finding)
         rows.append(
             {
@@ -206,7 +189,6 @@ def build_priority_table(
                 "weak_link": finding.title,
                 "detail": finding.conclusion,
                 "lever": finding.recommended_action,
-                "why": _why(impact_label, feasibility_label),
                 "confidence_label": confidence.label,
                 "confidence_class": confidence.level,
                 "impact": impact,

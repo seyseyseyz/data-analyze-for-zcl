@@ -84,8 +84,10 @@ def _render_priority_table(results: list[AnalysisResult]) -> list[str]:
     Renders one ranked table so the reader sees, before any module detail, what to do
     first. The statistical scoring (预期影响 × 可行性) still orders the rows internally,
     but the reader only meets 4 human columns — 先动顺序 / 哪个环节 / 具体先做什么 /
-    为什么值得先做 — with the single 置信度 folded into the last column. Omitted entirely
-    when no module carries an actionable finding.
+    置信度. The last column is a genuine per-row rating, NOT a band-composed
+    "为什么值得先做" reason (which read verbatim-identical down every row on real data —
+    the priority rationale is the rank order itself, said once in the intro). Omitted
+    entirely when no module carries an actionable finding.
     """
     rows = build_priority_table(results)
     if not rows:
@@ -95,17 +97,14 @@ def _render_priority_table(results: list[AnalysisResult]) -> list[str]:
         "",
         "下面这张表把各模块的结论收成一份先后清单，从上到下就是本周先后顺序，越靠前越该先动。",
         "",
-        "| 先动顺序 | 哪个环节 | 具体先做什么 | 为什么值得先做 |",
+        "| 先动顺序 | 哪个环节 | 具体先做什么 | 置信度 |",
         "| --- | --- | --- | --- |",
     ]
     for index, row in enumerate(rows, start=1):
         lever = _cell(row.get("lever"))
         weak_link = _cell(row.get("weak_link"))
-        why = _cell(row.get("why"))
         confidence = _cell(row.get("confidence_label"))
-        lines.append(
-            f"| {index} | {weak_link} | {lever} | {why}（置信度：{confidence}） |"
-        )
+        lines.append(f"| {index} | {weak_link} | {lever} | {confidence} |")
     lines.append("")
     return lines
 
