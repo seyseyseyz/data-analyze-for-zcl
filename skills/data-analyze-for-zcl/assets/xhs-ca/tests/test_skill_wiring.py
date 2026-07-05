@@ -1,8 +1,16 @@
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 SYNC = ROOT / "skills" / "data-analyze-for-zcl" / "scripts" / "sync-runtime"
 SKILL = ROOT / "skills" / "data-analyze-for-zcl" / "SKILL.md"
+
+# The skill's own scripts/SKILL.md live outside the mirrored runtime; skip in the mirror copy.
+pytestmark = pytest.mark.skipif(
+    not SYNC.exists() or not SKILL.exists(),
+    reason="skill wiring files are only present in the source checkout",
+)
 
 
 def test_sync_runtime_mirrors_orchestration():
