@@ -750,7 +750,7 @@ def _build_core_business(result: AnalysisResult, strength: EvidenceStrength) -> 
     changepoints = {str(r.get("date")) for r in rows if r.get("is_changepoint")}
     body = _timeseries_line(
         rows, date_key="date", value_key="gmv",
-        value_fmt=labels.format_number, de_emphasize=de,
+        value_fmt=labels.format_money, de_emphasize=de,
         title="成交金额(GMV)趋势", changepoint_dates=changepoints,
     )
     return f'{_chart_badge(strength, len(rows))}{body}'
@@ -760,7 +760,7 @@ def _build_channel(result: AnalysisResult, strength: EvidenceStrength) -> str:
     return _rank_bars(
         result.tables.get("channel_scale", []),
         label_key="carrier_zh", value_key="gmv",
-        value_fmt=labels.format_number, strength=strength,
+        value_fmt=labels.format_money, strength=strength,
         de_emphasize=_de_emphasize(result),
     )
 
@@ -769,7 +769,7 @@ def _build_sku_l2(result: AnalysisResult, strength: EvidenceStrength) -> str:
     return _rank_bars(
         result.tables.get("sku_category_l2_mix", []),
         label_key="category_l2", value_key="gmv",
-        value_fmt=labels.format_number, strength=strength,
+        value_fmt=labels.format_money, strength=strength,
         de_emphasize=_de_emphasize(result),
     )
 

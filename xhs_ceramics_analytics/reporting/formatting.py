@@ -15,6 +15,7 @@ from xhs_ceramics_analytics.reporting.field_labels import FIELD_LABELS
 from xhs_ceramics_analytics.reporting.labels import (
     VALUE_LABELS,
     format_cn_date,
+    format_money,
     format_number,
     format_percent,
 )
@@ -96,6 +97,8 @@ PERCENT_SUFFIXES = ("_rate", "_share", "_pct", "_rate_pay", "_mde")
 MONEY_FIELDS = {
     "gmv",
     "aov",
+    "aov_low",  # AOV/price-band boundaries (yuan)
+    "aov_high",
     "spend",
     "price",
     "gmv_delta",
@@ -103,6 +106,9 @@ MONEY_FIELDS = {
     "gmv_optional",
     "net_gmv_pay",
     "refund_amount_pay",
+    "contribution",  # LMDI GMV-bridge factor contribution (yuan)
+    "contrib_traffic",
+    "contrib_conversion",
 }
 # ``_gmv`` (note/card/net/total/... gmv), ``_amount`` (refund/paid amounts), ``_spend``
 # (total/avg/break-even spend), ``_aov`` (note/card/median/contrib aov), ``_margin``
@@ -205,10 +211,10 @@ def format_scalar(field_name: str, value: object) -> str:
             return "持平 0%"
         if is_percent_field(field_name):
             return format_percent(numeric)
-        # Money to whole yuan (same rule as analysis.prose.money) — checked after
-        # percent so *_share/*_amount_share concentrations stay percents.
+        # Money to whole yuan (shared format_money primitive) — checked after percent
+        # so *_share/*_amount_share concentrations stay percents.
         if is_money_field(field_name):
-            return format_number(float(round(numeric)))
+            return format_money(numeric)
         return format_number(numeric)
     return str(value)
 

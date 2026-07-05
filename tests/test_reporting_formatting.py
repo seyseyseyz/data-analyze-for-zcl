@@ -129,6 +129,15 @@ def test_format_scalar_money_rounds_to_whole_yuan():
     assert format_scalar("avg_spend", 200.6) == "201"
     assert format_scalar("note_aov", 217.34) == "217"
     assert format_scalar("net_margin", 1000.99) == "1,001"
+    # LMDI GMV-bridge contributions are yuan (prose already rounds them); the
+    # long-format bridge table's `contribution` column and the key-number
+    # `contrib_traffic`/`contrib_conversion` must match.
+    assert format_scalar("contribution", 34925.49) == "34,925"
+    assert format_scalar("contrib_traffic", 34925.49) == "34,925"
+    assert format_scalar("contrib_conversion", -25522.21) == "-25,522"
+    # AOV price-band boundaries are yuan too.
+    assert format_scalar("aov_high", 1721.7) == "1,722"
+    assert format_scalar("aov_low", 88.0) == "88"
 
 
 def test_format_scalar_money_lookalikes_keep_precision():
