@@ -23,25 +23,15 @@ Use this skill when the user provides Xiaohongshu (小红书 / 千帆) exported 
 
 6. **Data quality (inspect, then fold in)** — run `xhs-ca run data_quality_check` on its own once to inspect the export and drive the **字段映射自愈** gate below; if paid-traffic data was provided, also inspect `ad_data_quality_check`. Resolve empty tables / missing columns *before* building the final report. Do NOT deliver this inspection run as a separate artifact — `data_quality_check` is folded into the single integrated report in step 7, where the compositor renders it as the **closing appendix (附录：数据质量与口径说明)**, not a separate file.
 
-7. **Run selected task(s) — ONE integrated report, exactly TWO artifacts** — the simplest correct path is `scripts/xhs-ca run auto --name <表意名称>`: `auto` runs exactly the producible set from step 4's coverage (including `data_quality_check`) in one shot, so the report is as deep as the data allows without hand-listing slugs. To curate, instead pass every confirmed slug plus `data_quality_check` to a **single** `scripts/xhs-ca run <slug1> <slug2> … data_quality_check --name <表意名称>` invocation. Either way this composes ONE integrated report written as exactly two files — `<name>.md` + `<name>.html` — under `.xhs-ceramics-analytics/outputs/`. **Section order is enforced by the compositor, not by argument order:** business modules lead (executive summary → 经营诊断 → 商品/内容/用户需求/实验 → 基础参考), and `data_quality_check`/`ad_data_quality_check` always sink to the end as the **附录：数据质量与口径说明** — the reader meets conclusions first and the data caveats close the report. Always pass a meaningful `--name` (e.g. `--name 千帆经营诊断报告`); without it the combined default is `经营诊断报告`. Do NOT run one slug at a time — that fragments the deliverable into a file per task, which is exactly what to avoid. Before summarizing, read each module's `assets/xhs-ca/task_templates/<slug>.md` and `assets/xhs-ca/references/cheatsheet.md` for metric definitions, evidence rules, and report structure.
+7. **Run fact layer — REQUIRED, not final delivery** — the simplest correct path is `scripts/xhs-ca run auto --name <店铺名>经营诊断报告`: `auto` runs exactly the producible set from step 4's coverage (including `data_quality_check`) in one shot, so the report mines the data to its full depth and writes the deterministic fact layer plus `facts.json`. To curate, instead pass every confirmed slug plus `data_quality_check` to a **single** `scripts/xhs-ca run <slug1> <slug2> … data_quality_check --name <店铺名>经营诊断报告` invocation. This step is an intermediate fact layer, not the final merchant-facing deliverable. **Name reports from the shop/store name, not the platform/export source**: prefer `<店铺名>经营诊断报告` or `<店铺名><日期范围>经营诊断报告`; never use `千帆`, `小红书`, `XHS`, `Qianfan`, or another platform name as the leading report name unless it is literally part of the shop name. If the shop name is unavailable from files or prior context, ask once; if the user does not provide it, use a neutral `店铺经营诊断报告` fallback and state the missing shop-name caveat. **Section order is enforced by the compositor, not by argument order:** business modules lead (executive summary → 经营诊断 → 商品/内容/用户需求/实验 → 基础参考), and `data_quality_check`/`ad_data_quality_check` always sink to the end as the **附录：数据质量与口径说明**. Do NOT run one slug at a time — that fragments the evidence base. Before summarizing, read each module's `assets/xhs-ca/task_templates/<slug>.md` and `assets/xhs-ca/references/cheatsheet.md` for metric definitions, evidence rules, and report structure.
 
-7b. **(可选) 商家叙事编排 — Compose merchant narrative** — step 7 已 0-agent 产出确定性报告与
-`facts.json`。若要把它升级为「读物级」商家叙事,按 `assets/xhs-ca/orchestration/dag.md` 跑 L3 多 agent
-写手管线(host 中立):先用 `facts.json` 做缓存校验 `(facts_hash, narrative_schema_version,
-renderer_version)`——命中即 `xhs-ca render-frozen`(0 agent)。未命中则**用你所在 host 的 subagent
-机制** fan out 同一份 DAG(**Claude Code**: 可选 `.xhs-ceramics-analytics/report_writer_workflow.js`
-或 Task 工具;**Codex**: 其自带 subagent;**无 subagent 的 host**: 顺序 in-session role-pass),读取
-`orchestration/prompts/*.md` 与 `schemas/*.json` 作为唯一契约 → `xhs-ca gate` → 硬失败时 0–2 个定向
-补丁 agent → `xhs-ca render-draft` → 一个 Continuity agent 全篇连读 → `xhs-ca finalize`。任一环节耗尽
-预算 → `xhs-ca skeleton` 确定性骨架兜底。模型选择一律「判断层/起草层 + reasoning effort」,不绑定任何
-模型 id。每次运行都会向 `.xhs-ceramics-analytics/report_runs.jsonl` 追加一条计数记录(降级率/命中/骨架
-兜底/硬失败计数),在 step 9 交付说明里如实汇报,避免骨架成为静默默认值。仍然是**恰好两份产物**。
+7b. **Merchant narrative orchestration — REQUIRED finalization step** — after step 7, always run the merchant-facing L3 narrative workflow in `assets/xhs-ca/orchestration/dag.md`; do not stop at `run auto` unless orchestration fails or the user explicitly requests deterministic-only output. First use `facts.json` for cache validation `(facts_hash, narrative_schema_version, renderer_version)`: cache hit → `xhs-ca render-frozen` (0 agent); cache miss → **use the current host's subagent mechanism** to fan out the same DAG (**Claude Code**: optional `.xhs-ceramics-analytics/report_writer_workflow.js` or Task tool; **Codex**: native subagents if available; **no subagent-capable host**: required sequential in-session role-pass fallback). Read `orchestration/prompts/*.md` and `schemas/*.json` as the only contracts → `xhs-ca gate` → on hard failure run 0-2 targeted patch passes → `xhs-ca render-draft` → one Continuity pass over the whole report → `xhs-ca finalize`. If budget/tooling is exhausted, run `xhs-ca skeleton` as an explicit fallback. Each run appends `.xhs-ceramics-analytics/report_runs.jsonl`; delivery must report cache hit/miss, fallback mode, hard failures, patch count, and whether skeleton was used.
 
-8. **Custom integrated reports** — only when you need a report outside the built-in task registry (non-standard sheets a task does not cover): write the Markdown report first, then immediately run `scripts/xhs-ca render-html <report.md>` or `scripts/xhs-ca render-html <report.md> --output <report.html>`. For any combination of built-in tasks, prefer the single multi-slug `run` in step 7 over hand-authoring. Keep any Excel/CSV companion tables, but they do not replace the HTML report.
+8. **Custom integrated reports** — only when you need a report outside the built-in task registry (non-standard sheets a task does not cover): write the Markdown source first, then immediately run `scripts/xhs-ca render-html <report.md>` or `scripts/xhs-ca render-html <report.md> --output <report.html>`. For any combination of built-in tasks, prefer the single multi-slug `run` in step 7 over hand-authoring. Keep any Excel/CSV companion tables, but they do not replace the HTML report.
 
-9. **Delivery verification (REQUIRED)** — the user must receive exactly TWO artifacts: the integrated `<name>.md` and its matching single-file `<name>.html`. Before the final response, confirm both exist under `.xhs-ceramics-analytics/outputs/` and that no stray per-slug `data_quality_check.md`/`.html` were delivered. If HTML rendering fails, keep the Markdown report, report the error path/message, and do not imply HTML was delivered.
+9. **Delivery verification (REQUIRED, HTML-only final deliverable)** — the user must receive only the final single-file HTML report. Markdown may exist as an internal source/intermediate, but do not present it as a deliverable unless the user explicitly asks for source Markdown. Before the final response, confirm the final HTML exists under `.xhs-ceramics-analytics/outputs/`, the filename starts with the shop/store name or the neutral `店铺` fallback, no platform name leads the filename, and no stray per-slug `data_quality_check.md`/`.html` were delivered. Also verify the final artifact came from `finalize`, `render-frozen`, or explicit skeleton fallback, not merely from step 7's deterministic `run auto`. If HTML rendering fails, report the error path/message and state clearly that final delivery failed; do not substitute Markdown as the final deliverable.
 
-10. **Summarize** — present findings with: evidence tier (Strong/Medium/Weak/Not-judgable), key numbers, caveats verbatim from the report, next-data-needed, recommended action, and the Markdown + HTML file paths. NEVER claim deterministic note-to-order attribution.
+10. **Summarize** — present findings with: evidence tier (Strong/Medium/Weak/Not-judgable), key numbers, caveats verbatim from the report, next-data-needed, recommended action, narrative workflow status, and the final HTML file path only. NEVER claim deterministic note-to-order attribution.
 
 ## 字段映射自愈 (Field-mapping self-heal)
 
@@ -81,13 +71,12 @@ The build never rejects a file for a drifted Chinese header — it degrades and 
 # Run a single analysis task (writes note_funnel.md + note_funnel.html)
 <skill-dir>/scripts/xhs-ca run note_funnel
 
-# THE STANDARD DELIVERABLE — auto-select every producible task (deepest report),
-# data quality folded in as the closing appendix, exactly TWO files.
-<skill-dir>/scripts/xhs-ca run auto --name 千帆经营诊断报告
+# Fact layer — auto-select every producible task. Use the shop/store name.
+<skill-dir>/scripts/xhs-ca run auto --name 店铺名经营诊断报告
 
-# Same deliverable, explicitly curated. Argument order is free: the compositor
-# always sinks data_quality_check to the end.
-<skill-dir>/scripts/xhs-ca run core_business_diagnosis demand_funnel_diagnosis search_efficiency_diagnosis channel_structure_diagnosis audience_structure_diagnosis refund_root_cause_diagnosis note_commercial_diagnosis sku_structure_diagnosis data_quality_check --name 千帆经营诊断报告
+# Same fact layer, explicitly curated. Argument order is free: the compositor
+# always sinks data_quality_check to the end. Still run required step 7b after this.
+<skill-dir>/scripts/xhs-ca run core_business_diagnosis demand_funnel_diagnosis search_efficiency_diagnosis channel_structure_diagnosis audience_structure_diagnosis refund_root_cause_diagnosis note_commercial_diagnosis sku_structure_diagnosis data_quality_check --name 店铺名经营诊断报告
 
 # Combined run without --name falls back to 经营诊断报告.md + 经营诊断报告.html
 <skill-dir>/scripts/xhs-ca run core_business_diagnosis search_efficiency_diagnosis data_quality_check
@@ -123,4 +112,4 @@ The build never rejects a file for a drifted Chinese header — it degrades and 
 5. **Prefer DuckDB and bundled tasks** — use `scripts/xhs-ca run` over ad-hoc Python/SQL scripts. The bundled tasks enforce evidence scoring, report structure, and metric definitions consistently.
 6. **Never mention troubleshooting steps preemptively** — only surface repair commands from `references/troubleshooting.md` when bootstrap or doctor actually fails.
 7. **Do not invent metrics** — all metrics in reports must trace back to `references/metric_definitions.md` (consolidated in cheatsheet). If a metric is needed but absent, flag it rather than fabricating a formula.
-8. **HTML is part of the deliverable** — Markdown-only delivery is incomplete unless HTML rendering failed and the failure was explicitly reported.
+8. **HTML is the final deliverable** — Markdown is internal source/intermediate output unless the user explicitly asks for it. Markdown-only delivery is incomplete unless HTML rendering failed and the failure was explicitly reported.
