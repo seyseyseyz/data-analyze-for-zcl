@@ -169,23 +169,25 @@ _EXPECTED_STATUS = {
 
 
 def _scan_balanced(text: str):
-    for opener, closer in (("{", "}"), ("[", "]")):
-        start = text.find(opener)
-        if start == -1:
+    """Return the earliest balanced {...}/[...] substring that parses as JSON."""
+    pairs = {"{": "}", "[": "]"}
+    for start, ch in enumerate(text):
+        closer = pairs.get(ch)
+        if closer is None:
             continue
         depth = 0
         for i in range(start, len(text)):
-            ch = text[i]
-            if ch == opener:
+            c = text[i]
+            if c == ch:
                 depth += 1
-            elif ch == closer:
+            elif c == closer:
                 depth -= 1
                 if depth == 0:
                     candidate = text[start : i + 1]
                     try:
                         return json.loads(candidate)
                     except json.JSONDecodeError:
-                        break
+                        break  # this opener didn't yield JSON; try the next opener position
     return None
 
 
@@ -209,6 +211,8 @@ def extract_json(text: str):
 
 
 def _record_section(state: dict, section: dict) -> None:
+    if not isinstance(section, dict):
+        raise ValueError(f"section entry must be a JSON object, got {type(section).__name__}")
     title = section.get("title") or section.get("section_id") or "section"
     section_id = _slug(section.get("section_id") or title)
     state["sections"][section_id] = {

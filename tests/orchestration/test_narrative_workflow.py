@@ -110,3 +110,21 @@ def test_ingest_seed_records_sections(tmp_path):
     state = nw.ingest_output(tmp_path, stage="seed", text=payload)
     assert "域0" in state["sections"]
     assert state["sections"]["域0"]["body"] == "b0 🍶"
+
+
+def test_extract_json_skips_fake_bracket_before_real_payload():
+    text = 'note: {oops not json} real payload: {"section_id": "a", "body": "hi 🍵"}'
+    assert nw.extract_json(text) == {"section_id": "a", "body": "hi 🍵"}
+
+
+def test_extract_json_returns_textually_earliest_valid_json():
+    text = 'array first [1, 2, 3] then object {"a": 1}'
+    assert nw.extract_json(text) == [1, 2, 3]
+
+
+def test_ingest_rejects_non_dict_section(tmp_path):
+    results = {"domain_slices": [_slice(0)]}
+    facts_json = {"facts_hash": "abc123", "numbers": {}}
+    nw.prepare_run(tmp_path, results=results, facts_json=facts_json, report_name="r")
+    with pytest.raises(ValueError):
+        nw.ingest_output(tmp_path, stage="seed", text='{"sections": ["not-a-dict"]}')
