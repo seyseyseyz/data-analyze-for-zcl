@@ -1,0 +1,23 @@
+skills/data-analyze-for-zcl/agents/openai.yaml
+  s_2f0a4857a3cfa9::t_42ddb6c318e5ed 4
+skills/data-analyze-for-zcl/SKILL.md
+  s_2f0a4857a3cfa9::t_76c927794488ab 26,28,30,32,34,74-75
+  s_2f0a4857a3cfa9::t_a847e687810c70 79
+  s_2f0a4857a3cfa9::t_393c628fe32665 77-78,115
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.28-trip",
+  "base_commit_sha": "e24e8fee9455ac01f5e3c05651c1d833cbdcb866",
+  "prompts": {},
+  "sessions": {
+    "s_2f0a4857a3cfa9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f37cf-9f59-7ac2-abf9-379319b8d6e9",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
