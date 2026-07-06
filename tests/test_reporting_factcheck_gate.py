@@ -69,6 +69,38 @@ def test_missing_fact_hard_fails():
     assert any(f["code"] == "MISSING_FACT" for f in r.hard_failures)
 
 
+def test_duplicate_token_id_hard_fails():
+    # Two tokens sharing token_id "t0" collapse in the {tN} multiset and would pass
+    # MAGNITUDE_UNBOUND; only the first ever fills, silently dropping the second fact.
+    r = run_gate(_bundle([_claim(number_tokens=[
+        {"token_id": "t0", "fact_id": "m.gmv", "expected_metric_key": "gmv", "direction": "down"},
+        {"token_id": "t0", "fact_id": "m.aov", "expected_metric_key": "aov", "direction": "down"},
+    ])]), _facts())
+    assert r.status == "FAIL"
+    assert any(f["code"] == "MAGNITUDE_UNBOUND" for f in r.hard_failures)
+
+
+def test_first_screen_action_with_fabricated_magnitude_hard_fails():
+    # first_screen.actions are writer free-text, not token claims — the only narrative
+    # surface the token gate doesn't cover. A currency/percent/万 magnitude there is a
+    # fabricated number (no fact anchor) and must HARD-fail, not slip through un-gated.
+    for bad in ("把客单价提到 ¥150", "转化率冲到 5%", "把 GMV 做到 3 万"):
+        b = _bundle([_claim()])
+        b["first_screen"]["actions"] = [bad]
+        r = run_gate(b, _facts())
+        assert r.status == "FAIL", bad
+        assert any(f["code"] == "MAGNITUDE_UNBOUND" for f in r.hard_failures), bad
+
+
+def test_first_screen_action_with_benign_count_passes():
+    # Imperative counts ("发 2 到 3 条内容") are advice granularity, not data magnitudes,
+    # and must NOT trip the gate.
+    b = _bundle([_claim()])
+    b["first_screen"]["actions"] = ["围绕同一个 SKU 连续发 2 到 3 条内容，只改一个变量。"]
+    r = run_gate(b, _facts())
+    assert r.status == "PASS"
+
+
 def test_nonexistent_slice_hard_fails():
     facts = _facts()
     facts["facts"]["退款原因"] = {"rendered": "¥1", "metric_key": "reason", "direction": None,

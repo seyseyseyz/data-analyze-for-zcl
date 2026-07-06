@@ -55,6 +55,28 @@ def test_render_draft_command_fills_tokens(tmp_path):
     assert "人均产出 ¥8.7。" in out.read_text()
 
 
+def test_render_draft_default_target_is_state_dir_not_outputs(tmp_path, monkeypatch):
+    # draft.md is a cache checkpoint, not a deliverable — outputs/ stays a pure md+html surface.
+    monkeypatch.setenv("XHS_CA_PROJECT_ROOT", str(tmp_path))
+    result = runner.invoke(app, ["render-draft", str(_bundle_file(tmp_path)),
+                                 str(_facts_file(tmp_path))])
+    assert result.exit_code == 0, result.output
+    state = tmp_path / ".xhs-ceramics-analytics"
+    assert (state / "draft.md").exists()
+    assert not (state / "outputs" / "draft.md").exists()
+
+
+def test_finalize_default_target_is_state_dir_not_outputs(tmp_path, monkeypatch):
+    # frozen_narrative.json is a cache checkpoint, not a deliverable.
+    monkeypatch.setenv("XHS_CA_PROJECT_ROOT", str(tmp_path))
+    result = runner.invoke(app, ["finalize", str(_bundle_file(tmp_path)),
+                                 str(_facts_file(tmp_path))])
+    assert result.exit_code == 0, result.output
+    state = tmp_path / ".xhs-ceramics-analytics"
+    assert (state / "frozen_narrative.json").exists()
+    assert not (state / "outputs" / "frozen_narrative.json").exists()
+
+
 def test_finalize_then_render_frozen(tmp_path):
     frozen = tmp_path / "frozen.json"
     r1 = runner.invoke(app, ["finalize", str(_bundle_file(tmp_path)), str(_facts_file(tmp_path)),

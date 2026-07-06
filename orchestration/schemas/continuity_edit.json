@@ -1,5 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "continuity_edit.json",
   "title": "continuity_edit",
   "description": "Continuity pass output — prose-only edits. digit + {tN} multisets are invariant.",
   "type": "array",

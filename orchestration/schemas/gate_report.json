@@ -1,5 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "gate_report.json",
   "title": "gate_report",
   "description": "factcheck_gate output. HARD blocks render; WARN annotates; capped logs confidence caps.",
   "type": "object",

@@ -25,3 +25,9 @@ def test_empty_is_safe():
     ledger = non_additive_ledger([])
     assert ledger["rows"] == []
     assert ledger["net_total"] is None
+
+
+def test_none_pools_and_none_element_never_raise():
+    assert non_additive_ledger(None)["rows"] == []
+    ledger = non_additive_ledger([None, {"name": "b", "amount": 100.0, "controllability": "低"}])
+    assert [r["name"] for r in ledger["rows"]] == ["b"]

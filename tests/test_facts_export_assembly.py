@@ -8,6 +8,8 @@ from xhs_ceramics_analytics.reporting.facts_export import (
     Fact,
     build_factbook,
     render_cny,
+    render_count,
+    render_pct,
 )
 
 
@@ -15,6 +17,57 @@ def test_render_cny_wan_notation():
     assert render_cny(208364) == "¥20.8万"
     assert render_cny(4000) == "¥4,000"
     assert render_cny(None) == "—"
+
+
+def test_render_count_has_no_currency_sign():
+    assert render_count(250) == "250"
+    assert render_count(208364) == "20.8万"
+    assert render_count(None) == "—"
+
+
+def test_render_pct_scales_fraction():
+    assert render_pct(0.23) == "23.0%"
+    assert render_pct(1.0) == "100.0%"
+    # already a percentage-point value (>1) is not double-scaled
+    assert render_pct(23.0) == "23.0%"
+    assert render_pct(None) == "—"
+
+
+def _finding_with(key_numbers: dict) -> AnalysisResult:
+    return AnalysisResult(
+        task_id="mod",
+        title="mod",
+        findings=[
+            Finding(
+                title="t",
+                conclusion="c",
+                evidence_strength=EvidenceStrength.MEDIUM,
+                key_numbers=key_numbers,
+            )
+        ],
+    )
+
+
+def test_count_metric_is_not_rendered_as_money():
+    book = build_factbook([_finding_with({"posts": 250, "active_days": 12})])
+    posts = book.facts["mod.posts"]
+    assert posts.rendered == "250"  # NOT "¥250"
+    assert posts.unit == "count"
+    assert book.facts["mod.active_days"].rendered == "12"
+
+
+def test_rate_metric_is_rendered_as_percent_not_zero_cny():
+    book = build_factbook([_finding_with({"overall_conversion": 0.23})])
+    conv = book.facts["mod.overall_conversion"]
+    assert conv.rendered == "23.0%"  # NOT "¥0"
+    assert conv.unit == "percent"
+
+
+def test_money_metric_still_renders_as_cny():
+    book = build_factbook([_finding_with({"delta_gmv": -29000.0, "client_price": 85})])
+    assert book.facts["mod.delta_gmv"].rendered == "-¥2.9万"
+    assert book.facts["mod.delta_gmv"].unit == "cny"
+    assert book.facts["mod.client_price"].rendered == "¥85"  # 客单价-style key
 
 
 def _core_result() -> AnalysisResult:

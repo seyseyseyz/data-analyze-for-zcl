@@ -5,6 +5,7 @@ import pytest
 from xhs_ceramics_analytics.analytics.confidence import (
     MIN_ORDERS_FOR_RATE,
     bounded_rate,
+    mean_diff_test,
     min_detectable_effect,
     min_n_guard,
     rate_band,
@@ -67,6 +68,29 @@ def test_two_proportion_not_significant_overlapping():
 def test_two_proportion_guards_zero_n():
     r = two_proportion(0, 0, 5, 10)
     assert r == {"diff": None, "z": None, "significant": False, "ci_overlap": True}
+
+
+def test_two_proportion_zero_se_reports_diff_but_no_significance():
+    # Both rates are 0 → pooled SE is zero. The observed diff is still reported (0.0);
+    # only the z test and significance null out. This pins the contract the docstring
+    # describes (NOT "all-None", which only the non-positive-denominator case is).
+    r = two_proportion(0, 100, 0, 50)
+    assert r["diff"] == 0.0
+    assert r["z"] is None
+    assert r["significant"] is False
+
+
+def test_mean_diff_zero_variance_reports_means_but_no_significance():
+    # Both samples are constant → pooled SE is zero. The means and diff are observable
+    # and reported; only t/df/CI/significance null out. Contrasts with the <2-value
+    # case, which is the true all-None degradation.
+    r = mean_diff_test([5.0, 5.0, 5.0], [3.0, 3.0, 3.0])
+    assert r["diff"] == 2.0
+    assert r["mean_a"] == 5.0 and r["mean_b"] == 3.0
+    assert r["t"] is None and r["ci_low"] is None
+    assert r["significant"] is False
+    # The genuine all-None case:
+    assert mean_diff_test([5.0], [3.0])["diff"] is None
 
 
 def test_wilson_never_raises_when_k_exceeds_n():

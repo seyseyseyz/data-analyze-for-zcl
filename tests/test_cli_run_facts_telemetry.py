@@ -34,6 +34,25 @@ def test_run_emits_facts_json_into_state_dir(tmp_path, fixture_dir):
     assert len(data["facts_hash"]) == 64
 
 
+def test_run_survives_facts_json_failure(tmp_path, fixture_dir, monkeypatch):
+    # facts.json is a non-deliverable sidecar; if its build raises, the md/html
+    # deliverables must still land and the command must exit 0 (degrade, don't abort).
+    _build_db(tmp_path, fixture_dir)
+    import xhs_ceramics_analytics.reporting.facts_export as fx
+
+    def _boom(*a, **k):
+        raise RuntimeError("unexpected finding shape")
+
+    monkeypatch.setattr(fx, "build_factbook", _boom)
+    result = runner.invoke(app, ["run", "core_business_diagnosis", "--project-root", str(tmp_path),
+                                 "--name", "诊断"])
+    assert result.exit_code == 0, result.output
+    outputs = tmp_path / ".xhs-ceramics-analytics" / "outputs"
+    assert (outputs / "诊断.md").exists()
+    assert (outputs / "诊断.html").exists()
+    assert not (tmp_path / ".xhs-ceramics-analytics" / "facts.json").exists()
+
+
 def test_skeleton_appends_telemetry_record(tmp_path, fixture_dir):
     _build_db(tmp_path, fixture_dir)
     result = runner.invoke(app, ["skeleton", "core_business_diagnosis",

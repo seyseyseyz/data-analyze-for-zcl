@@ -24,7 +24,7 @@ const DOMAINS = ((args && args.domains) || []).slice(0, 6) // Fan is capped at 6
 // at script runtime. The gate (xhs-ca gate) is the real validator; these just shape agent output.
 const SPINE_BRIEF_SCHEMA = {
   type: 'object', additionalProperties: true,
-  required: ['decomposition_backbone', 'headline_candidate', 'broadcast_facts'],
+  required: ['decomposition_backbone', 'headline_candidate', 'section_callbacks', 'broadcast_facts'],
   properties: {
     decomposition_backbone: { type: 'array', items: { type: 'object' } },
     headline_candidate: { type: 'string' },
@@ -34,7 +34,7 @@ const SPINE_BRIEF_SCHEMA = {
 }
 const SECTION_BUNDLE_SCHEMA = {
   type: 'object', additionalProperties: true,
-  required: ['section_id', 'title', 'claims'],
+  required: ['section_id', 'title', 'claims', 'spine_callbacks'],
   properties: {
     section_id: { type: 'string' },
     title: { type: 'string' },

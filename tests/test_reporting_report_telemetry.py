@@ -15,6 +15,21 @@ def test_build_run_record_is_deterministic():
     assert a["degradation_reason"] is None
 
 
+def test_unknown_mode_marked_unknown_not_healthy_label():
+    # A mislabeled mode must stay visible in summarize_runs, not masquerade as "gate".
+    rec = rt.build_run_record(mode="skelaton", facts_hash="h", cache_hit=False)
+    assert rec["mode"] == "unknown"
+
+
+def test_summarize_runs_ignores_non_numeric_hard_fail_counts():
+    records = [
+        {"mode": "gate", "hard_fail_counts": {"X": None, "Y": 2}},
+        {"mode": "skeleton", "hard_fail_counts": {"Z": "oops"}},
+    ]
+    out = rt.summarize_runs(records)  # must not raise on non-numeric values
+    assert "2 gate hard-fail" in out
+
+
 def test_build_run_record_carries_skeleton_reason():
     rec = rt.build_run_record(mode="skeleton", facts_hash="h", cache_hit=False,
                               hard_fail_counts={"SUMMED_POOLS": 2},

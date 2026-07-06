@@ -24,7 +24,7 @@ from xhs_ceramics_analytics.analytics.confidence import (
 )
 from xhs_ceramics_analytics.analytics.benchmark import percentile_label, self_percentile
 from xhs_ceramics_analytics.analytics.decomposition import gmv_bridge
-from xhs_ceramics_analytics.analytics.periods import to_period_month
+from xhs_ceramics_analytics.analytics.periods import month_bounds, to_period_month
 from xhs_ceramics_analytics.analytics.timeseries import (
     anomaly_days,
     changepoints,
@@ -714,23 +714,59 @@ def _growth_attribution_finding(
         month = to_period_month(r.get("date"))
         if month is None:
             continue
-        agg = by_month.setdefault(month, {"gmv": 0.0, "visitors": 0.0, "buyers": 0.0})
+        agg = by_month.setdefault(
+            month, {"gmv": 0.0, "visitors": 0.0, "buyers": 0.0, "min_day": None, "max_day": None}
+        )
         agg["gmv"] += _num(r.get("gmv"))
         agg["visitors"] += _num(r.get("product_visitors"))
         agg["buyers"] += _num(r.get("paid_buyers"))
+        day = _to_yyyymmdd(r.get("date"))
+        if day is not None:
+            agg["min_day"] = day if agg["min_day"] is None else min(agg["min_day"], day)
+            agg["max_day"] = day if agg["max_day"] is None else max(agg["max_day"], day)
     months = sorted(by_month)
     if len(months) < 2:
         limitations.append("business_overview_daily 不足两个日历月，跳过增长归因（GMV 桥）。")
         return None, {}
-    first_month, last_month = months[0], months[-1]
+
+    # Prefer WHOLE calendar months at both endpoints: a boundary month that only
+    # covers part of its days (export started/ended mid-month) has a deflated GMV,
+    # which distorts the bridge and can even flip its direction. When two or more
+    # whole months exist we compare those and note any partial boundary we dropped;
+    # otherwise we keep the raw endpoints but say plainly the caliber isn't two
+    # full months.
+    def _is_whole_month(m: str) -> bool:
+        agg = by_month[m]
+        if agg["min_day"] is None or agg["max_day"] is None:
+            return False
+        start, end = month_bounds(m)
+        return agg["min_day"] <= start and agg["max_day"] >= end
+
+    whole_months = [m for m in months if _is_whole_month(m)]
+    if len(whole_months) >= 2:
+        first_month, last_month = whole_months[0], whole_months[-1]
+        dropped = [m for m in months if m < first_month or m > last_month]
+        both_whole = True
+    else:
+        first_month, last_month = months[0], months[-1]
+        dropped = []
+        both_whole = False
     p0, p1 = by_month[first_month], by_month[last_month]
     bridge = gmv_bridge(p0, p1)
     bridge_rows = _bridge_rows(bridge)
     factor_zh = bridge.get("dominant_factor_zh")
 
-    caveats = [
-        f"按日历月聚合，比较 {first_month} 与 {last_month} 两个整月之间的变化。",
-    ]
+    if both_whole:
+        caveats = [f"按日历月聚合，比较 {first_month} 与 {last_month} 两个完整日历月之间的变化。"]
+        if dropped:
+            caveats.append(
+                f"边界月 {'、'.join(dropped)} 数据不足整月，已排除以免口径失真。"
+            )
+    else:
+        caveats = [
+            f"按日历月聚合，比较 {first_month} 与 {last_month} 之间的变化；"
+            "这两个月的数据可能不足整月，变化幅度含边界残缺影响。"
+        ]
     bridge_method_notes = [
         "GMV = 访客数 × 支付转化率 × 客单价 的 LMDI 确定性分解，三项贡献之和≈ΔGMV，非因果。",
     ]
@@ -1231,6 +1267,19 @@ def _avg_rate(rows: list[dict], col: str) -> float | None:
 
 def _num(value) -> float:
     return to_finite_float(value, 0.0)
+
+
+def _to_yyyymmdd(value) -> int | None:
+    """Normalise an export date cell (int YYYYMMDD or ISO string) to int YYYYMMDD."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    digits = text.replace("-", "").replace("/", "")[:8]
+    if len(digits) == 8 and digits.isdigit():
+        return int(digits)
+    return None
 
 
 def _fetch_all(con, table: str) -> list[dict]:

@@ -57,3 +57,33 @@ def test_fact_schema_matches_facts_json_fields():
     for field in ("fact_id", "rendered", "metric_key", "direction", "pool_id",
                   "entity_type", "evidence_strength", "descriptive_reliability", "assumption"):
         assert field in props
+
+
+def _iter_refs(node):
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key == "$ref" and isinstance(value, str):
+                yield value
+            else:
+                yield from _iter_refs(value)
+    elif isinstance(node, list):
+        for item in node:
+            yield from _iter_refs(item)
+
+
+def test_every_schema_declares_id_matching_its_filename():
+    # Relative cross-file $refs (e.g. "claim.json") only resolve deterministically when
+    # each schema sets a $id as its base URI; without it resolution depends on the
+    # retrieval URI. Pin the $id to the filename so refs resolve the same everywhere.
+    for name in ROSTER:
+        assert _load(name).get("$id") == f"{name}.json", name
+
+
+def test_cross_file_refs_resolve_to_roster_schemas():
+    roster_files = {f"{name}.json" for name in ROSTER}
+    for name in ROSTER:
+        for ref in _iter_refs(_load(name)):
+            if ref.startswith("#"):  # intra-document pointer, always local
+                continue
+            base = ref.split("#", 1)[0]
+            assert base in roster_files, f"{name}: unresolvable $ref {ref}"

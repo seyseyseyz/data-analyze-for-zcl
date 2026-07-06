@@ -68,13 +68,17 @@ def cumulative_curve(values: list[float]) -> list[dict]:
     """Descending Pareto curve: cumulative value share as holders join largest-first.
 
     Each row is ``{rank, cum_item_frac, cum_value_share}`` so a report can state
-    "top X% of SKUs hold Y% of GMV". Drops None/non-finite/negative entries; an
-    empty or zero-total base returns ``[]``. Deterministic: ties keep a stable
-    descending order.
+    "top X% of SKUs hold Y% of GMV". Drops None/non-finite entries; a negative
+    entry makes the share base untrustworthy, so — like :func:`gini`/:func:`hhi` —
+    the whole series is rejected (``[]``) rather than silently computed on a
+    partial base. An empty or zero-total base also returns ``[]``. Deterministic:
+    ties keep a stable descending order.
     """
-    clean = [v for v in _clean(values) if v >= 0]
+    clean = _clean(values)
+    if not clean or any(v < 0 for v in clean):
+        return []
     total = sum(clean)
-    if not clean or total <= 0:
+    if total <= 0:
         return []
     ordered = sorted(clean, reverse=True)
     n = len(ordered)

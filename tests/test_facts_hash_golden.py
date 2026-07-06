@@ -40,6 +40,27 @@ def test_changed_rendered_string_changes_hash():
     assert facts_hash(_book(-29000.0, "-¥2.9万")) != facts_hash(_book(-29000.0, "-¥3.0万"))
 
 
+def _book_with_ledger(net_total: float) -> FactBook:
+    return FactBook(
+        facts={"core.delta_gmv": Fact(
+            fact_id="core.delta_gmv", value=-29000.0, rendered="-¥2.9万",
+            metric_key="delta_gmv", unit="cny",
+        )},
+        non_additive_ledger={"pools": [{"pool_id": "search", "amount": net_total}]},
+        domain_slices={"search": {"gmv": net_total}},
+    )
+
+
+def test_ledger_float_noise_does_not_change_hash():
+    # Raw floats inside non_additive_ledger / domain_slices must not thrash the cache.
+    assert facts_hash(_book_with_ledger(129000.0)) == facts_hash(_book_with_ledger(129000.0000001))
+
+
+def test_facts_hash_never_raises_on_unserializable_ledger():
+    book = FactBook(non_additive_ledger={"pools": {1, 2, 3}})  # a set is not JSON-native
+    assert isinstance(facts_hash(book), str)
+
+
 def test_value_excluded_from_canonical_payload():
     payload = canonical_payload(_book(-29000.0, "-¥2.9万"))
     text = repr(payload)

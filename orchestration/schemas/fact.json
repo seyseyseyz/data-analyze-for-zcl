@@ -1,5 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "fact.json",
   "title": "fact",
   "description": "L2 immutable fact — the only source of a number string. Mirrors facts.json entries.",
   "type": "object",

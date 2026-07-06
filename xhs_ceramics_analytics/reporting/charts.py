@@ -761,7 +761,8 @@ def _rank_bars(
         )
         for r in clean
     ]
-    return f'{_chart_badge(confidence, len(clean))}{_hbar(bar_rows, value_max=vmax, de_emphasize=de)}'
+    badge = _chart_badge(confidence, len(clean))
+    return f'{badge}{_hbar(bar_rows, value_max=vmax, de_emphasize=de)}'
 
 
 def _build_demand_funnel(result: AnalysisResult, confidence: ReaderConfidence) -> str:
