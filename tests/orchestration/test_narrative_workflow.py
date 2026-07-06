@@ -177,3 +177,120 @@ def test_advance_exhausted_gate_routes_to_deterministic(tmp_path, monkeypatch):
         if state["stage"] == "blocked":
             break
     assert called["reason"] == "gate_exhausted"
+
+
+def test_advance_gate_pass_flows_to_finalized_with_capped_bundle(tmp_path, monkeypatch):
+    """A PASS report's capped .bundle must be adopted at every gate check, not discarded."""
+    results, facts_json = _bundle_inputs(1)
+    nw.prepare_run(tmp_path, results=results, facts_json=facts_json, report_name="r")
+
+    capped_bundle = {"sections": [], "_capped_marker": "confidence-downgraded-by-gate"}
+
+    class _Pass:
+        status = "PASS"
+        hard_failures = []
+        bundle = capped_bundle
+
+    monkeypatch.setattr(nw, "run_gate", lambda bundle, facts: _Pass())
+
+    nw.ingest_output(tmp_path, stage="seed",
+                     text='{"sections":[{"section_id":"域0","title":"域0","body":"b"}]}')
+    nw.advance_run(tmp_path)  # fan
+    nw.ingest_output(tmp_path, stage="fan", text='{"section_id":"域0","title":"域0","body":"b"}')
+    nw.advance_run(tmp_path)  # synth
+    nw.ingest_output(tmp_path, stage="synth",
+                     text='{"sections":[{"section_id":"域0","title":"域0","body":"b"}]}')
+    state = nw.advance_run(tmp_path)  # gate: PASS -> continuity, must adopt report.bundle
+    assert state["stage"] == "continuity"
+    assert state["_bundle"] == capped_bundle
+
+    state = nw.advance_run(tmp_path)  # continuity recheck: PASS -> finalized
+    assert state["stage"] == "finalized"
+    # the capped bundle (not the stale pre-gate one) must be what's carried forward
+    assert state["_bundle"] == capped_bundle
+
+
+def test_advance_patch_round_recovers_after_one_gate_fail(tmp_path, monkeypatch):
+    """A patch round that fails once then passes must reach continuity, not blocked."""
+    results, facts_json = _bundle_inputs(1)
+    nw.prepare_run(tmp_path, results=results, facts_json=facts_json, report_name="r")
+
+    calls = {"n": 0}
+
+    class _Fail:
+        status = "FAIL"
+        hard_failures = [{"section_id": "域0", "reason": "number mismatch"}]
+        bundle = {"sections": []}
+
+    class _Pass:
+        status = "PASS"
+        hard_failures = []
+        bundle = {"sections": [], "_capped_marker": "patched-and-capped"}
+
+    def fake_run_gate(bundle, facts):
+        calls["n"] += 1
+        return _Fail() if calls["n"] == 1 else _Pass()
+
+    monkeypatch.setattr(nw, "run_gate", fake_run_gate)
+
+    nw.ingest_output(tmp_path, stage="seed",
+                     text='{"sections":[{"section_id":"域0","title":"域0","body":"b"}]}')
+    nw.advance_run(tmp_path)  # fan
+    nw.ingest_output(tmp_path, stage="fan", text='{"section_id":"域0","title":"域0","body":"b"}')
+    nw.advance_run(tmp_path)  # synth
+    nw.ingest_output(tmp_path, stage="synth",
+                     text='{"sections":[{"section_id":"域0","title":"域0","body":"b"}]}')
+    state = nw.advance_run(tmp_path)  # gate: FAIL (round 1) -> patch
+    assert state["stage"] == "patch"
+    assert state.get("degradation_reason") is None
+
+    nw.ingest_output(tmp_path, stage="patch",
+                     text='{"sections":[{"section_id":"域0","title":"域0","body":"patched"}]}')
+    state = nw.advance_run(tmp_path)  # gate: PASS (round 2) -> continuity, not blocked
+
+    assert state["stage"] == "continuity"
+    assert state.get("degradation_reason") is None
+    assert state["_bundle"] == _Pass.bundle
+
+
+def test_advance_continuity_gate_failure_routes_to_blocked(tmp_path, monkeypatch):
+    """The continuity recheck FAIL branch must route to deterministic/blocked, not raise."""
+    results, facts_json = _bundle_inputs(1)
+    nw.prepare_run(tmp_path, results=results, facts_json=facts_json, report_name="r")
+
+    class _Pass:
+        status = "PASS"
+        hard_failures = []
+        bundle = {"sections": []}
+
+    class _Fail:
+        status = "FAIL"
+        hard_failures = [{"section_id": "域0", "reason": "continuity edit introduced drift"}]
+        bundle = {"sections": []}
+
+    calls = {"n": 0}
+
+    def fake_run_gate(bundle, facts):
+        calls["n"] += 1
+        return _Pass() if calls["n"] == 1 else _Fail()
+
+    monkeypatch.setattr(nw, "run_gate", fake_run_gate)
+    called = {}
+    monkeypatch.setattr(
+        nw, "finalize_deterministic",
+        lambda rd, *, project_root=None, reason: called.setdefault("reason", reason) or {"stage": "blocked"},
+    )
+
+    nw.ingest_output(tmp_path, stage="seed",
+                     text='{"sections":[{"section_id":"域0","title":"域0","body":"b"}]}')
+    nw.advance_run(tmp_path)  # fan
+    nw.ingest_output(tmp_path, stage="fan", text='{"section_id":"域0","title":"域0","body":"b"}')
+    nw.advance_run(tmp_path)  # synth
+    nw.ingest_output(tmp_path, stage="synth",
+                     text='{"sections":[{"section_id":"域0","title":"域0","body":"b"}]}')
+    state = nw.advance_run(tmp_path)  # gate: PASS -> continuity
+    assert state["stage"] == "continuity"
+
+    state = nw.advance_run(tmp_path)  # continuity recheck: FAIL -> blocked, no exception raised
+    assert state["stage"] == "blocked"
+    assert called["reason"] == "continuity_gate_failed"

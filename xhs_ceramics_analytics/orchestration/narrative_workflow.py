@@ -162,6 +162,7 @@ def prepare_run(
         "report_name": report_name,
         "facts_hash": facts_json.get("facts_hash", ""),
         "merged_sections": merged,
+        "_section_order": [_slug(s["title"]) for s in capped],
         "sections": {},
         "history": ["prepared"],
         "degradation_reason": None,
@@ -280,8 +281,19 @@ def ingest_output(run_dir, *, stage: str, source=None, text=None, section_id=Non
 
 
 def _bundle_from_state(state: dict) -> dict:
-    """Assemble a narrative bundle from the sections recorded so far, in prepared order."""
-    return {"sections": list(state.get("sections", {}).values())}
+    """Assemble a narrative bundle from the sections recorded so far, in prepared order.
+
+    Ordered by the prepared slice order (recorded at ``prepare_run`` time), not by
+    ingestion-completion order — under parallel fan-out, sections can complete out of
+    order. Any recorded section whose id isn't in the prepared order (defensive) is
+    appended at the end, stably. Builds a new list; never mutates ``state``.
+    """
+    sections = state.get("sections", {})
+    order = state.get("_section_order", [])
+    ordered = [sections[sid] for sid in order if sid in sections]
+    ordered_ids = set(order)
+    extras = [section for sid, section in sections.items() if sid not in ordered_ids]
+    return {"sections": ordered + extras}
 
 
 def status_json(run_dir) -> dict:
@@ -310,6 +322,7 @@ def status_json(run_dir) -> dict:
 def _run_gate_stage(run_dir: Path, state: dict, facts_json: dict, project_root) -> dict:
     report = run_gate(state.get("_bundle", _bundle_from_state(state)), facts_json)
     if report.status == "PASS":
+        state["_bundle"] = report.bundle
         state["stage"] = "continuity"
         _write_state(run_dir, state)
         return state
@@ -365,11 +378,12 @@ def advance_run(run_dir, *, project_root=None) -> dict:
     elif stage == "continuity":
         edits = state.get("_continuity_edits", [])
         bundle = apply_continuity_edits(state.get("_bundle", _bundle_from_state(state)), edits)
-        state["_bundle"] = bundle
         report = run_gate(bundle, facts_json)
         if report.status == "PASS":
+            state["_bundle"] = report.bundle
             state["stage"] = "finalized"
         else:
+            state["_bundle"] = bundle
             return _route_deterministic(run_dir, state, project_root, "continuity_gate_failed")
     _write_state(run_dir, state)
     return state
