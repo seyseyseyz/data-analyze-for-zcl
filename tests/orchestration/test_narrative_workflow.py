@@ -74,3 +74,39 @@ def test_prepare_run_allows_overwrite_when_finalized(tmp_path):
     # no force needed once finalized/blocked
     state = nw.prepare_run(tmp_path, results=results, facts_json=facts_json, report_name="r")
     assert state["stage"] == "seed"
+
+
+def test_extract_json_raw():
+    assert nw.extract_json('{"a": 1}') == {"a": 1}
+
+
+def test_extract_json_fenced():
+    text = "prose before\n```json\n{\"a\": 2}\n```\ntrailing"
+    assert nw.extract_json(text) == {"a": 2}
+
+
+def test_extract_json_balanced_scan():
+    text = "the model said: {\"section_id\": \"x\", \"body\": \"hi 🍵\"} thanks!"
+    assert nw.extract_json(text) == {"section_id": "x", "body": "hi 🍵"}
+
+
+def test_extract_json_raises_when_absent():
+    with pytest.raises(ValueError):
+        nw.extract_json("no json here at all")
+
+
+def test_ingest_rejects_wrong_stage(tmp_path):
+    results, facts_json = _bundle_inputs(3)
+    nw.prepare_run(tmp_path, results=results, facts_json=facts_json, report_name="r")
+    # stage is 'seed'; ingesting a 'fan' result is out of order
+    with pytest.raises(ValueError):
+        nw.ingest_output(tmp_path, stage="fan", text='{"section_id": "域0", "body": "x"}')
+
+
+def test_ingest_seed_records_sections(tmp_path):
+    results, facts_json = _bundle_inputs(3)
+    nw.prepare_run(tmp_path, results=results, facts_json=facts_json, report_name="r")
+    payload = '{"sections": [{"section_id": "域0", "title": "域0", "body": "b0 🍶"}]}'
+    state = nw.ingest_output(tmp_path, stage="seed", text=payload)
+    assert "域0" in state["sections"]
+    assert state["sections"]["域0"]["body"] == "b0 🍶"

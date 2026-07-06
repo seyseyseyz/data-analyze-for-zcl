@@ -155,3 +155,103 @@ def prepare_run(
         json.dumps(facts_json, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     return state
+
+
+_FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL)
+
+_EXPECTED_STATUS = {
+    "seed": {"seed"},
+    "fan": {"fan"},
+    "synth": {"synth"},
+    "patch": {"patch"},
+    "continuity": {"continuity"},
+}
+
+
+def _scan_balanced(text: str):
+    for opener, closer in (("{", "}"), ("[", "]")):
+        start = text.find(opener)
+        if start == -1:
+            continue
+        depth = 0
+        for i in range(start, len(text)):
+            ch = text[i]
+            if ch == opener:
+                depth += 1
+            elif ch == closer:
+                depth -= 1
+                if depth == 0:
+                    candidate = text[start : i + 1]
+                    try:
+                        return json.loads(candidate)
+                    except json.JSONDecodeError:
+                        break
+    return None
+
+
+def extract_json(text: str):
+    """Parse JSON tolerantly: raw, then fenced, then first balanced block."""
+    stripped = text.strip()
+    try:
+        return json.loads(stripped)
+    except json.JSONDecodeError:
+        pass
+    for match in _FENCE_RE.finditer(text):
+        inner = match.group(1).strip()
+        try:
+            return json.loads(inner)
+        except json.JSONDecodeError:
+            continue
+    scanned = _scan_balanced(text)
+    if scanned is not None:
+        return scanned
+    raise ValueError("no parseable JSON found in text")
+
+
+def _record_section(state: dict, section: dict) -> None:
+    title = section.get("title") or section.get("section_id") or "section"
+    section_id = _slug(section.get("section_id") or title)
+    state["sections"][section_id] = {
+        "section_id": section_id,
+        "title": title,
+        "body": section.get("body", ""),
+    }
+
+
+def ingest_output(run_dir, *, stage: str, source=None, text=None, section_id=None) -> dict:
+    """Ingest a sub-agent result for the given stage, guarding stage order."""
+    run_dir = Path(run_dir)
+    state = _load_state(run_dir)
+    if state is None:
+        raise FileNotFoundError(f"no run at {run_dir}")
+
+    allowed = _EXPECTED_STATUS.get(stage)
+    if allowed is None:
+        raise ValueError(f"unknown stage {stage!r}")
+    if state["stage"] not in allowed:
+        raise ValueError(
+            f"cannot ingest {stage!r} while run is at stage {state['stage']!r}"
+        )
+
+    if text is None:
+        if source is None:
+            raise ValueError("provide either source or text")
+        text = Path(source).read_text(encoding="utf-8")
+    parsed = extract_json(text)
+
+    if isinstance(parsed, dict) and "sections" in parsed:
+        for section in parsed["sections"]:
+            _record_section(state, section)
+    elif isinstance(parsed, dict):
+        if section_id and "section_id" not in parsed:
+            parsed = {**parsed, "section_id": section_id}
+        _record_section(state, parsed)
+    elif isinstance(parsed, list):
+        for section in parsed:
+            _record_section(state, section)
+    else:
+        raise ValueError("ingested JSON is neither an object nor a list of sections")
+
+    state.setdefault("history", []).append(f"ingest:{stage}")
+    _write_state(run_dir, state)
+    return state
