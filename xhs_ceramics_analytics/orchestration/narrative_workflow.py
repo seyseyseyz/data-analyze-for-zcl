@@ -1,7 +1,7 @@
 """Passive, file-based narrative-workflow controller (host-neutral).
 
 The controller prepares durable briefs and state and ingests sub-agent JSON,
-but never spawns sub-agents. The host agent drives it (see codex_runbook.md).
+but never spawns sub-agents. The host agent drives it (see runbook.md).
 """
 from __future__ import annotations
 

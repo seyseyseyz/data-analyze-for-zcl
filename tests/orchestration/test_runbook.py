@@ -26,18 +26,18 @@ def test_dag_doc_declares_all_stages():
 
 
 def test_runbook_is_host_neutral():
-    body = _text("codex_runbook.md")
+    body = _text("runbook.md")
     for token in _BANNED:
         assert token not in body, f"runbook leaks host identity: {token}"
 
 
 def test_runbook_declares_the_control_loop():
-    body = _text("codex_runbook.md")
+    body = _text("runbook.md")
     for phrase in ("prepare", "authorize", "ingest", "advance", "status --json", "finalize-deterministic"):
         assert phrase in body
 
 
 def test_runbook_declares_fallback_on_blocked_or_denied():
-    body = _text("codex_runbook.md")
+    body = _text("runbook.md")
     assert "blocked" in body and "denied" in body
     assert "deterministic" in body
