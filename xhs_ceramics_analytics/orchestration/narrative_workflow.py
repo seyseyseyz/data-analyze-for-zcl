@@ -10,9 +10,14 @@ import re
 from pathlib import Path
 
 from xhs_ceramics_analytics.reporting.factcheck_gate import run_gate
+from xhs_ceramics_analytics.reporting.html import render_markdown_document_html
 from xhs_ceramics_analytics.reporting.narrative_render import (
     apply_continuity_edits,
     render_draft,
+)
+from xhs_ceramics_analytics.reporting.report_telemetry import (
+    append_run_record,
+    build_run_record,
 )
 
 MAX_FAN_AGENTS = 6
@@ -389,6 +394,105 @@ def advance_run(run_dir, *, project_root=None) -> dict:
     return state
 
 
-def finalize_deterministic(run_dir, *, project_root=None, reason):
-    """Deterministic skeleton fallback — full implementation lands in a later task."""
-    raise NotImplementedError("finalize_deterministic implemented in a later task")
+def _fmt_value(value):
+    """Render a fact value for the skeleton table: thousands-separated for numbers."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return f"{value:,}"
+    return str(value)
+
+
+def _deterministic_markdown(run_dir, facts_json: dict, report_name: str) -> str:
+    """Build the '确定性骨架版' markdown straight from capped slices + facts.
+
+    Preserves conclusions/actions/caveats verbatim (no paraphrasing) and lists
+    any blocked modules under an explicit "暂时答不了的问题" section. Never raises
+    on missing/partial data — absent fields are simply omitted.
+    """
+    run_dir = Path(run_dir)
+    slices_doc = json.loads((run_dir / "domain_slices.json").read_text(encoding="utf-8"))
+    capped = slices_doc.get("capped", [])
+
+    lines = [
+        f"# {report_name}（确定性骨架版）",
+        "",
+        "> 本报告为确定性骨架版：多智能体叙事流程未能完成，"
+        "以下内容直接来自确定性分析层（L1）与唯一数字源（L2），未经叙事改写。",
+        "",
+    ]
+    for s in capped:
+        title = s.get("title", "")
+        reading = s.get("reading") or {}
+        lines.append(f"## {title}")
+        lines.append("")
+        if reading.get("conclusion"):
+            lines.append(f"**结论：** {reading['conclusion']}")
+            lines.append("")
+        if reading.get("action"):
+            lines.append(f"**建议动作：** {reading['action']}")
+            lines.append("")
+        facts = s.get("facts") or []
+        if facts:
+            lines.append("| 指标 | 数值 |")
+            lines.append("| --- | --- |")
+            for f in facts:
+                lines.append(f"| {f.get('metric', '')} | {_fmt_value(f.get('value', ''))} |")
+            lines.append("")
+        caveats = reading.get("caveats") or []
+        for caveat in caveats:
+            lines.append(f"> 口径/证据说明：{caveat}")
+        if caveats:
+            lines.append("")
+
+    blocked = slices_doc.get("blocked_modules") or []
+    if blocked:
+        lines.append("## 暂时答不了的问题")
+        lines.append("")
+        for b in blocked:
+            slug = b.get("slug", "")
+            reason = b.get("reason", "")
+            lines.append(f"- {slug}：{reason}")
+        lines.append("")
+
+    return "\n".join(lines) + "\n"
+
+
+def finalize_deterministic(run_dir, *, project_root=None, reason) -> dict:
+    """Deterministic skeleton fallback — the delivery boundary that never fails open.
+
+    Writes <report_name>.md + .html under
+    <project_root>/.xhs-ceramics-analytics/outputs/, records skeleton-mode
+    telemetry, marks the run blocked with the given degradation reason, and
+    returns the updated state. Never raises on missing/partial slice or fact data.
+    """
+    run_dir = Path(run_dir)
+    state = _load_state(run_dir)
+    if state is None:
+        raise FileNotFoundError(f"no run at {run_dir}")
+    project_root = Path(project_root or state.get("project_root") or ".")
+    facts_json = json.loads((run_dir / "facts.json").read_text(encoding="utf-8"))
+    report_name = state["report_name"]
+
+    markdown = _deterministic_markdown(run_dir, facts_json, report_name)
+    html = render_markdown_document_html(markdown, title=f"{report_name}（确定性骨架版）")
+
+    out_dir = project_root / ".xhs-ceramics-analytics" / "outputs"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / f"{report_name}.md").write_text(markdown, encoding="utf-8")
+    (out_dir / f"{report_name}.html").write_text(html, encoding="utf-8")
+
+    record = build_run_record(
+        mode="skeleton",
+        facts_hash=facts_json.get("facts_hash", ""),
+        cache_hit=False,
+        degradation_reason=reason,
+    )
+    append_run_record(out_dir / "run_telemetry.jsonl", record)
+
+    state = {
+        **state,
+        "stage": "blocked",
+        "degradation_reason": reason,
+        "history": [*state.get("history", []), f"finalize_deterministic:{reason}"],
+    }
+    _write_state(run_dir, state)
+    return state

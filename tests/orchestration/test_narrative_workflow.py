@@ -294,3 +294,47 @@ def test_advance_continuity_gate_failure_routes_to_blocked(tmp_path, monkeypatch
     state = nw.advance_run(tmp_path)  # continuity recheck: FAIL -> blocked, no exception raised
     assert state["stage"] == "blocked"
     assert called["reason"] == "continuity_gate_failed"
+
+
+def test_finalize_deterministic_writes_two_artifacts(tmp_path):
+    results = {"domain_slices": [
+        {"title": "生意大盘", "facts": [{"metric": "GMV", "value": 12345}],
+         "reading": {"conclusion": "大盘平稳", "action": "维持投放", "caveats": ["口径：支付时间"]}},
+    ]}
+    facts_json = {"facts_hash": "h1", "numbers": {"GMV": 12345}}
+    project_root = tmp_path / "proj"
+    project_root.mkdir()
+    run_dir = tmp_path / "run"
+    nw.prepare_run(run_dir, results=results, facts_json=facts_json,
+                   report_name="确定性报告", project_root=project_root)
+
+    state = nw.finalize_deterministic(run_dir, project_root=project_root, reason="denied")
+    assert state["stage"] == "blocked"
+    assert state["degradation_reason"] == "denied"
+
+    out = project_root / ".xhs-ceramics-analytics" / "outputs"
+    md = out / "确定性报告.md"
+    html = out / "确定性报告.html"
+    assert md.exists() and html.exists()
+    body = md.read_text(encoding="utf-8")
+    assert "确定性骨架版" in body
+    assert "大盘平稳" in body       # conclusion preserved
+    assert "口径：支付时间" in body   # caveat preserved verbatim
+    assert "12,345" in body or "12345" in body  # fact rendered
+
+
+def test_deterministic_lists_unanswerable_questions(tmp_path):
+    results = {
+        "domain_slices": [{"title": "流量", "facts": [], "reading": {"conclusion": "c"}}],
+        "blocked_modules": [{"slug": "search_efficiency_diagnosis", "reason": "缺少搜索词表"}],
+    }
+    facts_json = {"facts_hash": "h2", "numbers": {}}
+    project_root = tmp_path / "proj"
+    project_root.mkdir()
+    run_dir = tmp_path / "run"
+    nw.prepare_run(run_dir, results=results, facts_json=facts_json,
+                   report_name="r", project_root=project_root)
+    nw.finalize_deterministic(run_dir, project_root=project_root, reason="unsupported")
+    body = (project_root / ".xhs-ceramics-analytics" / "outputs" / "r.md").read_text(encoding="utf-8")
+    assert "暂时答不了的问题" in body
+    assert "缺少搜索词表" in body
