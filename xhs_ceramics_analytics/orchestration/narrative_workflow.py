@@ -9,11 +9,29 @@ import json
 import re
 from pathlib import Path
 
+from xhs_ceramics_analytics.reporting.factcheck_gate import run_gate
+from xhs_ceramics_analytics.reporting.narrative_render import (
+    apply_continuity_edits,
+    render_draft,
+)
+
 MAX_FAN_AGENTS = 6
+MAX_GATE_ROUNDS = 2
 
 _STATE_FILE = "state.json"
 _SLUG_STRIP = re.compile(r"[^\w一-鿿]+")
 _TERMINAL_STAGES = {"finalized", "blocked"}
+
+_NEXT_ACTION = {
+    "seed": "read briefs/seed.md, spawn one sub-agent, ingest --stage seed, then advance",
+    "fan": "read briefs/fan_*.md, spawn one sub-agent per brief, ingest --stage fan each, then advance",
+    "synth": "read the recorded sections, spawn one sub-agent, ingest --stage synth, then advance",
+    "gate": "run advance to apply the deterministic fact-check gate",
+    "patch": "read gate failures, spawn one sub-agent, ingest --stage patch, then advance",
+    "continuity": "spawn one sub-agent to smooth transitions, ingest --stage continuity, then advance",
+    "finalized": "done — deliver <name>.md + <name>.html",
+    "blocked": "deterministic skeleton delivered — report degradation reason",
+}
 
 
 def _slug(title: str) -> str:
@@ -259,3 +277,104 @@ def ingest_output(run_dir, *, stage: str, source=None, text=None, section_id=Non
     state.setdefault("history", []).append(f"ingest:{stage}")
     _write_state(run_dir, state)
     return state
+
+
+def _bundle_from_state(state: dict) -> dict:
+    """Assemble a narrative bundle from the sections recorded so far, in prepared order."""
+    return {"sections": list(state.get("sections", {}).values())}
+
+
+def status_json(run_dir) -> dict:
+    """Machine-readable run status: stage, next action, pending briefs, degradation."""
+    run_dir = Path(run_dir)
+    state = _load_state(run_dir)
+    if state is None:
+        raise FileNotFoundError(f"no run at {run_dir}")
+    stage = state["stage"]
+    briefs_dir = run_dir / "briefs"
+    if stage == "seed":
+        briefs = [str(briefs_dir / "seed.md")]
+    elif stage == "fan":
+        briefs = [str(p) for p in sorted(briefs_dir.glob("fan_*.md"))]
+    else:
+        briefs = []
+    return {
+        "stage": stage,
+        "next_action": _NEXT_ACTION.get(stage, ""),
+        "briefs": briefs,
+        "degradation_reason": state.get("degradation_reason"),
+        "merged_sections": state.get("merged_sections", []),
+    }
+
+
+def _run_gate_stage(run_dir: Path, state: dict, facts_json: dict, project_root) -> dict:
+    report = run_gate(state.get("_bundle", _bundle_from_state(state)), facts_json)
+    if report.status == "PASS":
+        state["stage"] = "continuity"
+        _write_state(run_dir, state)
+        return state
+    rounds = state.get("_gate_rounds", 0) + 1
+    state["_gate_rounds"] = rounds
+    if rounds > MAX_GATE_ROUNDS:
+        return _route_deterministic(run_dir, state, project_root, "gate_exhausted")
+    state["_gate_failures"] = list(report.hard_failures)
+    state["stage"] = "patch"
+    _write_state(run_dir, state)
+    return state
+
+
+def _route_deterministic(run_dir: Path, state: dict, project_root, reason: str) -> dict:
+    finalize_deterministic(run_dir, project_root=project_root, reason=reason)
+    state["stage"] = "blocked"
+    state["degradation_reason"] = reason
+    _write_state(run_dir, state)
+    return state
+
+
+def advance_run(run_dir, *, project_root=None) -> dict:
+    """Move the run forward one step: seed→fan→synth→gate→(patch→gate)*→continuity→gate→finalized.
+
+    On gate exhaustion, routes to finalize_deterministic and sets stage to blocked.
+    Never raises a gate failure as an exception — degradation is always graceful.
+    """
+    run_dir = Path(run_dir)
+    state = _load_state(run_dir)
+    if state is None:
+        raise FileNotFoundError(f"no run at {run_dir}")
+    stage = state["stage"]
+    facts_json = json.loads((run_dir / "facts.json").read_text(encoding="utf-8"))
+    project_root = project_root or state.get("project_root")
+
+    if stage == "seed":
+        state["stage"] = "fan"
+    elif stage == "fan":
+        state["stage"] = "synth"
+    elif stage == "synth":
+        bundle = render_draft(_bundle_from_state(state), facts_json)
+        state["_bundle"] = bundle
+        state["_gate_rounds"] = 0
+        state["stage"] = "gate"
+        return _run_gate_stage(run_dir, state, facts_json, project_root)
+    elif stage == "gate":
+        return _run_gate_stage(run_dir, state, facts_json, project_root)
+    elif stage == "patch":
+        bundle = render_draft(_bundle_from_state(state), facts_json)
+        state["_bundle"] = bundle
+        state["stage"] = "gate"
+        return _run_gate_stage(run_dir, state, facts_json, project_root)
+    elif stage == "continuity":
+        edits = state.get("_continuity_edits", [])
+        bundle = apply_continuity_edits(state.get("_bundle", _bundle_from_state(state)), edits)
+        state["_bundle"] = bundle
+        report = run_gate(bundle, facts_json)
+        if report.status == "PASS":
+            state["stage"] = "finalized"
+        else:
+            return _route_deterministic(run_dir, state, project_root, "continuity_gate_failed")
+    _write_state(run_dir, state)
+    return state
+
+
+def finalize_deterministic(run_dir, *, project_root=None, reason):
+    """Deterministic skeleton fallback — full implementation lands in a later task."""
+    raise NotImplementedError("finalize_deterministic implemented in a later task")

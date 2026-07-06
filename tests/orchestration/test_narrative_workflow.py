@@ -1,5 +1,4 @@
 import json
-from pathlib import Path
 
 import pytest
 
@@ -128,3 +127,53 @@ def test_ingest_rejects_non_dict_section(tmp_path):
     nw.prepare_run(tmp_path, results=results, facts_json=facts_json, report_name="r")
     with pytest.raises(ValueError):
         nw.ingest_output(tmp_path, stage="seed", text='{"sections": ["not-a-dict"]}')
+
+
+def test_status_json_reports_next_action(tmp_path):
+    results, facts_json = _bundle_inputs(3)
+    nw.prepare_run(tmp_path, results=results, facts_json=facts_json, report_name="r")
+    status = nw.status_json(tmp_path)
+    assert status["stage"] == "seed"
+    assert "next_action" in status and status["next_action"]
+    assert status["briefs"]  # seed brief listed
+    assert status["merged_sections"] == []
+
+
+def test_advance_seed_to_fan(tmp_path):
+    results, facts_json = _bundle_inputs(3)
+    nw.prepare_run(tmp_path, results=results, facts_json=facts_json, report_name="r")
+    nw.ingest_output(tmp_path, stage="seed",
+                     text='{"sections":[{"section_id":"域0","title":"域0","body":"b"}]}')
+    state = nw.advance_run(tmp_path)
+    assert state["stage"] == "fan"
+
+
+def test_advance_exhausted_gate_routes_to_deterministic(tmp_path, monkeypatch):
+    results, facts_json = _bundle_inputs(3)
+    nw.prepare_run(tmp_path, results=results, facts_json=facts_json, report_name="r")
+
+    # force the gate to always FAIL so rounds exhaust
+    class _Fail:
+        status = "FAIL"
+        hard_failures = [{"section_id": "域0", "reason": "number mismatch"}]
+        bundle = {"sections": []}
+
+    monkeypatch.setattr(nw, "run_gate", lambda bundle, facts: _Fail())
+    called = {}
+    monkeypatch.setattr(
+        nw, "finalize_deterministic",
+        lambda rd, *, project_root=None, reason: called.setdefault("reason", reason) or {"stage": "blocked"},
+    )
+
+    # fast-forward to gate: seed→fan→synth
+    nw.ingest_output(tmp_path, stage="seed", text='{"sections":[{"section_id":"域0","title":"域0","body":"b"}]}')
+    nw.advance_run(tmp_path)  # fan
+    nw.ingest_output(tmp_path, stage="fan", text='{"section_id":"域0","title":"域0","body":"b"}')
+    nw.advance_run(tmp_path)  # synth
+    nw.ingest_output(tmp_path, stage="synth", text='{"sections":[{"section_id":"域0","title":"域0","body":"b"}]}')
+    # gate rounds: each advance re-fails; after MAX_GATE_ROUNDS → deterministic
+    for _ in range(nw.MAX_GATE_ROUNDS + 2):
+        state = nw.advance_run(tmp_path)
+        if state["stage"] == "blocked":
+            break
+    assert called["reason"] == "gate_exhausted"
