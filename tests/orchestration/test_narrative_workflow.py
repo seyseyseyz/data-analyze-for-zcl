@@ -381,3 +381,50 @@ def test_finalize_deterministic_preserves_emoji_verbatim(tmp_path):
     body = (project_root / ".xhs-ceramics-analytics" / "outputs" / "r.md").read_text(encoding="utf-8")
     assert "大盘冲刺 🚀 表现亮眼" in body
     assert "数据来源：门店后台 📊" in body
+
+
+def test_advance_exhaustion_preserves_finalize_history(tmp_path, monkeypatch):
+    """When gate exhausts and routes to finalize_deterministic, the history entry must survive.
+
+    Regression test for bug where _route_deterministic clobbered the history entry
+    appended by finalize_deterministic. The real finalize_deterministic (not monkeypatched)
+    must run and its history append must persist without being lost.
+    """
+    results, facts_json = _bundle_inputs(3)
+    project_root = tmp_path / "proj"
+    project_root.mkdir()
+    run_dir = tmp_path / "run"
+    nw.prepare_run(run_dir, results=results, facts_json=facts_json,
+                   report_name="r", project_root=project_root)
+
+    # Force gate to always FAIL so rounds exhaust; do NOT monkeypatch finalize_deterministic
+    class _Fail:
+        status = "FAIL"
+        hard_failures = [{"section_id": "域0", "reason": "number mismatch"}]
+        bundle = {"sections": []}
+
+    monkeypatch.setattr(nw, "run_gate", lambda bundle, facts: _Fail())
+
+    # Fast-forward to gate: seed→fan→synth
+    nw.ingest_output(run_dir, stage="seed",
+                     text='{"sections":[{"section_id":"域0","title":"域0","body":"b"}]}')
+    nw.advance_run(run_dir, project_root=project_root)  # fan
+    nw.ingest_output(run_dir, stage="fan", text='{"section_id":"域0","title":"域0","body":"b"}')
+    nw.advance_run(run_dir, project_root=project_root)  # synth
+    nw.ingest_output(run_dir, stage="synth",
+                     text='{"sections":[{"section_id":"域0","title":"域0","body":"b"}]}')
+
+    # Gate rounds: each advance re-fails; after MAX_GATE_ROUNDS → finalize_deterministic
+    for _ in range(nw.MAX_GATE_ROUNDS + 2):
+        state = nw.advance_run(run_dir, project_root=project_root)
+        if state["stage"] == "blocked":
+            break
+
+    # Assert stage is blocked and history entry was appended by finalize_deterministic
+    assert state["stage"] == "blocked"
+    assert state["history"][-1] == "finalize_deterministic:gate_exhausted"
+
+    # Reload state from disk to verify history persisted correctly
+    reloaded = nw._load_state(run_dir)
+    assert reloaded["stage"] == "blocked"
+    assert reloaded["history"][-1] == "finalize_deterministic:gate_exhausted"
