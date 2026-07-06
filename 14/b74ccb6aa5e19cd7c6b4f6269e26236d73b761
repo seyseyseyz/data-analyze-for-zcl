@@ -1,0 +1,104 @@
+xhs_ceramics_analytics/reporting/facts_export.py
+  s_6bd2349b4ebd4d::t_19a0268b5e67a2 247
+  s_6bd2349b4ebd4d::t_6cb0a177e05f7c 60-107,115,119,121
+  s_6bd2349b4ebd4d::t_ee50d140eb2243 191-204,206,214-215,220,222-223
+xhs_ceramics_analytics/cli.py
+  s_6bd2349b4ebd4d::t_c8e3e56c8b849e 171-172,175-184
+  s_6bd2349b4ebd4d::t_f3a3febf57443f 289
+  s_6bd2349b4ebd4d::t_a7bbd0ef16d04d 327
+.xhs-ceramics-analytics/report_writer_workflow.js
+  s_6bd2349b4ebd4d::t_fb426a755898ac 37
+  s_6bd2349b4ebd4d::t_8b2c43b3fbfb86 27
+tests/test_orchestration_schemas.py
+  s_6bd2349b4ebd4d::t_4e4988279c510a 60-89
+tests/test_reporting_narrative_render.py
+  s_6bd2349b4ebd4d::t_72814ad1f9cd60 94-107
+tests/test_reporting_money.py
+  s_6bd2349b4ebd4d::t_1ee2507ba028a5 41-48
+tests/test_reporting_report_telemetry.py
+  s_6bd2349b4ebd4d::t_77f2a9c191329f 18-32
+orchestration/schemas/spine_brief.json
+  s_6bd2349b4ebd4d::t_cecd7adf6d5382 3
+xhs_ceramics_analytics/reporting/report_telemetry.py
+  s_6bd2349b4ebd4d::t_d389248c61eb73 28
+  s_6bd2349b4ebd4d::t_91506454516689 51,54-55
+xhs_ceramics_analytics/reporting/money.py
+  s_6bd2349b4ebd4d::t_0dd639b19573af 48
+  s_6bd2349b4ebd4d::t_fe54ff9bbcf727 30
+xhs_ceramics_analytics/reporting/charts.py
+  s_6bd2349b4ebd4d::t_06f5b869bccf54 764-765
+orchestration/schemas/fact.json
+  s_6bd2349b4ebd4d::t_cecd7adf6d5382 3
+xhs_ceramics_analytics/analysis/core_business.py
+  s_6bd2349b4ebd4d::t_1a8bb8158474fb 27
+  s_6bd2349b4ebd4d::t_2b2654b1f7d339 1272-1284
+  s_6bd2349b4ebd4d::t_b6e87b3d50fdba 717-719,723-726,731-753,759-769
+tests/test_facts_export_assembly.py
+  s_6bd2349b4ebd4d::t_98c0a307b6abe2 11-12,22-70
+xhs_ceramics_analytics/reporting/frozen_narrative.py
+  s_6bd2349b4ebd4d::t_c1bc0892c5547f 64-65
+orchestration/schemas/gate_report.json
+  s_6bd2349b4ebd4d::t_cecd7adf6d5382 3
+orchestration/schemas/continuity_edit.json
+  s_6bd2349b4ebd4d::t_cecd7adf6d5382 3
+tests/test_cli_narrative.py
+  s_6bd2349b4ebd4d::t_ecba5e607ca93b 58-79
+tests/test_reporting_frozen_narrative.py
+  s_6bd2349b4ebd4d::t_8eb3031d4407b5 42-49
+tests/test_cli_run_facts_telemetry.py
+  s_6bd2349b4ebd4d::t_ef895e36764169 37-55
+tests/test_analytics_concentration.py
+  s_6bd2349b4ebd4d::t_8d1f8283456892 6
+  s_6bd2349b4ebd4d::t_a5af42fa87d478 73-87
+tests/test_reporting_money_ledger.py
+  s_6bd2349b4ebd4d::t_72a2a67b019093 28-33
+xhs_ceramics_analytics/analytics/concentration.py
+  s_6bd2349b4ebd4d::t_58f2ffe26ddd0c 71-75,77-79,81
+tests/test_facts_hash_golden.py
+  s_6bd2349b4ebd4d::t_5e42b0cedae6c5 43-63
+tests/test_reporting_factcheck_gate.py
+  s_6bd2349b4ebd4d::t_abffb93576834f 83-103
+  s_6bd2349b4ebd4d::t_5c3fedd3ee95ac 72-82
+xhs_ceramics_analytics/reporting/factcheck_gate.py
+  s_6bd2349b4ebd4d::t_a556ea8c4993c6 20-23
+  s_6bd2349b4ebd4d::t_0f348755cae09e 79-80,85-87
+  s_6bd2349b4ebd4d::t_e7131564b391ed 173-179
+tests/test_core_business_calendar_bridge.py
+  s_6bd2349b4ebd4d::t_eb66e8ee0cbb6f 47-85
+xhs_ceramics_analytics/reporting/money_ledger.py
+  s_6bd2349b4ebd4d::t_e598338e63fab0 17-19
+tests/test_report_writer_workflow.py
+  s_6bd2349b4ebd4d::t_8a432952731aff 2
+  s_6bd2349b4ebd4d::t_3090182c751123 44-58
+xhs_ceramics_analytics/reporting/narrative_render.py
+  s_6bd2349b4ebd4d::t_0be6ad0e204e93 46-51,56-58
+tests/test_analytics_confidence.py
+  s_6bd2349b4ebd4d::t_90f1849597d73b 8
+  s_6bd2349b4ebd4d::t_b4f11fc426f4ee 83-95
+  s_6bd2349b4ebd4d::t_bec06f6a12a44b 73-82
+xhs_ceramics_analytics/analytics/confidence.py
+  s_6bd2349b4ebd4d::t_e9e2a10eead1b9 71-74
+  s_6bd2349b4ebd4d::t_177bdf22b5a00a 218-225
+orchestration/schemas/claim.json
+  s_6bd2349b4ebd4d::t_cecd7adf6d5382 3
+orchestration/schemas/narrative_bundle.json
+  s_6bd2349b4ebd4d::t_cecd7adf6d5382 3
+orchestration/schemas/section_bundle.json
+  s_6bd2349b4ebd4d::t_cecd7adf6d5382 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.28-trip",
+  "base_commit_sha": "14b74ccb6aa5e19cd7c6b4f6269e26236d73b761",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
