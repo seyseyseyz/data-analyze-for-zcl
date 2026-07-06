@@ -56,19 +56,19 @@ def _section_finding(row: dict[str, object]) -> Finding:
         ),
         descriptive_reliability=score_reliability(evidence_count),
         key_numbers={"本周样本量": evidence_count},
-        caveats=["这是本周描述性汇总，反映已发生的数据，不能据此断定因果。"],
+        caveats=["这是本周的描述性汇总，只反映已经发生的数据；能看清现状，但不能据此断定因果。"],
     )
 
 
 def _no_data_finding() -> Finding:
     return Finding(
         title="每周复盘暂无可用数据",
-        conclusion="本周各复盘子段都缺少源数据，请先完成数据导入或埋点后再复盘。",
+        conclusion="本周几个复盘板块都还没有数据，先把数据导入或埋点补齐，之后再来复盘。",
         evidence_strength=score_evidence(0, has_controls=False, confounder_count=2),
         descriptive_reliability=score_reliability(0),
         key_numbers={"就绪子段": 0},
-        caveats=["没有任何子段就绪，无法给出本周经营叙事。"],
-        recommended_action="把缺失模块转成导入或埋点任务，补齐后再复盘。",
+        caveats=["所有板块都没有就绪数据，本周暂时给不出经营结论。"],
+        recommended_action="先把缺的那几块变成导数据或埋点的任务，补齐了再复盘。",
     )
 
 
@@ -257,7 +257,7 @@ def _product_opportunity_section(con) -> dict[str, object]:
         "value": round(float(units), 4) if units is not None else None,
         "evidence_count": int(sales_days),
         "summary": (
-            f"{sku_name} ({sku_id}) 在观测 SKU 销售中领先，销量 "
+            f"{sku_name} ({sku_id}) 在已观测到的 SKU 销售里卖得最好，销量 "
             f"{_display_number(_rounded(units))}，GMV {_display_number(_rounded(gmv, 2))}。"
         ),
     }

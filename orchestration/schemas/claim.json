@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "claim.json",
+  "title": "claim",
+  "description": "The atom. Sentence carries opaque {tN} tokens ONLY — no digits. Gate-validated.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["claim_id", "section_id", "claim_kind", "sentence", "number_tokens", "entity_refs", "confidence"],
+  "properties": {
+    "claim_id": {"type": "string"},
+    "section_id": {"type": "string"},
+    "claim_kind": {"enum": ["measurement", "mechanism", "sizing"]},
+    "sentence": {"type": "string", "description": "Opaque {tN} placeholders; NO digits anywhere."},
+    "number_tokens": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["token_id", "fact_id", "expected_metric_key"],
+        "properties": {
+          "token_id": {"type": "string", "pattern": "^t\\d+$"},
+          "fact_id": {"type": "string"},
+          "expected_metric_key": {"type": "string"},
+          "direction": {"enum": ["up", "down", "flat", null]}
+        }
+      }
+    },
+    "entity_refs": {"type": "array", "items": {"type": "string"}, "description": "MUST ⊆ entity_registry."},
+    "confidence": {"enum": ["强", "中", "弱"]},
+    "causal_link": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["from_entity_type", "to_entity_type", "quantified"],
+      "properties": {
+        "from_entity_type": {"type": "string"},
+        "to_entity_type": {"type": "string"},
+        "quantified": {"type": "boolean", "description": "true on an absent link → hard fail."}
+      }
+    },
+    "next_test": {"type": ["string", "null"]},
+    "spine_ref": {"type": ["string", "null"]}
+  }
+}

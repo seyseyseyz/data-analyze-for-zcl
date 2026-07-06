@@ -242,13 +242,13 @@ def test_gmv_trend_decomposition_reports_structure(tmp_path):
 
 def test_growth_attribution_identifies_traffic_driver(tmp_path):
     con, db_path = _con(tmp_path)
-    # Early two days vs late two days: visitors double, conversion & AOV flat →
-    # the GMV bridge (B1 LMDI) must attribute ΔGMV to traffic.
+    # 2026-05 (two days) vs 2026-06 (two days): visitors double, conversion & AOV
+    # flat → the GMV bridge (B1 LMDI) must attribute ΔGMV to traffic.
     rows = [
-        (20260401, 5000.0, 100.0, 100.0, 50.0, 3000.0, 2000.0, 60.0, 40.0, 1000.0, 100.0, 0.1),
-        (20260402, 5000.0, 100.0, 100.0, 50.0, 3000.0, 2000.0, 60.0, 40.0, 1000.0, 100.0, 0.1),
-        (20260403, 10000.0, 200.0, 200.0, 50.0, 6000.0, 4000.0, 120.0, 80.0, 2000.0, 200.0, 0.1),
-        (20260404, 10000.0, 200.0, 200.0, 50.0, 6000.0, 4000.0, 120.0, 80.0, 2000.0, 200.0, 0.1),
+        (20260501, 5000.0, 100.0, 100.0, 50.0, 3000.0, 2000.0, 60.0, 40.0, 1000.0, 100.0, 0.1),
+        (20260502, 5000.0, 100.0, 100.0, 50.0, 3000.0, 2000.0, 60.0, 40.0, 1000.0, 100.0, 0.1),
+        (20260601, 10000.0, 200.0, 200.0, 50.0, 6000.0, 4000.0, 120.0, 80.0, 2000.0, 200.0, 0.1),
+        (20260602, 10000.0, 200.0, 200.0, 50.0, 6000.0, 4000.0, 120.0, 80.0, 2000.0, 200.0, 0.1),
     ]
     _make_business_full(con, rows)
     con.close()
@@ -276,19 +276,19 @@ def test_growth_attribution_explains_caliber_and_offset(tmp_path):
     con, db_path = _con(tmp_path)
     # Traffic surges (visitors 4x) but conversion & AOV fall, so net GMV only nudges
     # up (+1000): the dominant factor (traffic) moves the same way as the net change
-    # yet far outweighs it — the bridge must (a) spell out the 前/后半程 caliber and
-    # (b) say the traffic gain was offset by the other factors.
+    # yet far outweighs it — the bridge must (a) spell out the calendar-month caliber
+    # and (b) say the traffic gain was offset by the other factors.
     rows = [
-        (20260401, 5000.0, 100.0, 100.0, 50.0, 3000.0, 2000.0, 60.0, 40.0, 1000.0, 100.0, 0.1),
-        (20260402, 5000.0, 100.0, 100.0, 50.0, 3000.0, 2000.0, 60.0, 40.0, 1000.0, 100.0, 0.1),
-        (20260403, 5500.0, 125.0, 125.0, 44.0, 3300.0, 2200.0, 75.0, 50.0, 4000.0, 125.0, 0.03125),
-        (20260404, 5500.0, 125.0, 125.0, 44.0, 3300.0, 2200.0, 75.0, 50.0, 4000.0, 125.0, 0.03125),
+        (20260501, 5000.0, 100.0, 100.0, 50.0, 3000.0, 2000.0, 60.0, 40.0, 1000.0, 100.0, 0.1),
+        (20260502, 5000.0, 100.0, 100.0, 50.0, 3000.0, 2000.0, 60.0, 40.0, 1000.0, 100.0, 0.1),
+        (20260601, 5500.0, 125.0, 125.0, 44.0, 3300.0, 2200.0, 75.0, 50.0, 4000.0, 125.0, 0.03125),
+        (20260602, 5500.0, 125.0, 125.0, 44.0, 3300.0, 2200.0, 75.0, 50.0, 4000.0, 125.0, 0.03125),
     ]
     _make_business_full(con, rows)
     con.close()
     result = run_task("core_business_diagnosis", db_path)
     bridge = next(f for f in result.findings if "增长归因" in f.title)
-    assert "前半程" in bridge.conclusion and "后半程" in bridge.conclusion
+    assert "2026-05" in bridge.conclusion and "2026-06" in bridge.conclusion
     assert "抵消" in bridge.conclusion
     assert bridge.key_numbers["dominant_factor"] == "流量"
 

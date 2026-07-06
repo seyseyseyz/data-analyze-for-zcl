@@ -68,8 +68,10 @@ def two_proportion(k1: float, n1: float, k2: float, n2: float) -> dict:
 
     Observational comparison of two observed rates k1/n1 vs k2/n2. Reports the
     difference, the z statistic, whether it is significant, and whether the two
-    Wilson intervals overlap. Not-judgable (all-None, not significant) when either
-    denominator is non-positive or the pooled standard error is zero.
+    Wilson intervals overlap. Two degradation modes: a non-positive denominator is
+    fully not-judgable (all-None, not significant); a zero pooled standard error
+    (both rates 0 or both 1) still reports the observed ``diff`` but nulls ``z`` and
+    leaves significance False, since the test statistic is undefined.
     """
     if n1 <= 0 or n2 <= 0:
         return {"diff": None, "z": None, "significant": False, "ci_overlap": True}
@@ -194,3 +196,59 @@ def min_detectable_effect(
         return None
     se = math.sqrt(p_base * (1 - p_base) * (1 / n1 + 1 / n2))
     return (_Z_ALPHA + _Z_POWER) * se
+
+
+def _finite(values: list[float]) -> list[float]:
+    return [x for x in (to_finite_float(v) for v in values) if x is not None]
+
+
+def _mean_var(values: list[float]) -> tuple[float, float, int]:
+    n = len(values)
+    mean = sum(values) / n
+    var = sum((x - mean) ** 2 for x in values) / (n - 1)  # sample variance
+    return mean, var, n
+
+
+def mean_diff_test(a: list[float], b: list[float], z: float = 1.96) -> dict:
+    """Welch's t-test for the difference of two means (a − b), plus a z-based CI.
+
+    Compares two independent samples without assuming equal variances (e.g. 5月 vs
+    6月 daily per-visitor GMV). Significance uses ``|t| >= z`` — with day-level n≈30
+    per month the t critical value is ≈1.99, so the codebase's hardcoded 1.96 normal
+    quantile is a deliberate, documented approximation (no scipy dependency). For a
+    very small sample (a handful of days) that normal approximation is optimistic —
+    the true t critical value is materially larger — so read a marginal ``|t|≈z`` as
+    suggestive, not decisive. The CI is the normal-approximation ``diff ± z·SE``.
+    Two degradation modes: fewer than two finite values in either sample is fully
+    not-judgable (all-None); a zero pooled SE (both samples constant) still reports
+    the means and ``diff`` but nulls ``t``/``df``/CI and leaves significance False.
+    Never raises.
+    """
+    fa, fb = _finite(a), _finite(b)
+    none = {
+        "mean_a": None, "mean_b": None, "diff": None, "t": None,
+        "df": None, "significant": False, "ci_low": None, "ci_high": None,
+    }
+    if len(fa) < 2 or len(fb) < 2:
+        return none
+    mean_a, var_a, na = _mean_var(fa)
+    mean_b, var_b, nb = _mean_var(fb)
+    diff = mean_a - mean_b
+    se = math.sqrt(var_a / na + var_b / nb)
+    if se == 0:
+        # Zero pooled variance: the difference is observable but t/CI are
+        # undefined, so report the means/diff yet leave significance unjudged.
+        return {
+            "mean_a": mean_a, "mean_b": mean_b, "diff": diff, "t": None,
+            "df": None, "significant": False, "ci_low": None, "ci_high": None,
+        }
+    t = diff / se
+    # Welch–Satterthwaite degrees of freedom (reported for honesty; not used in the
+    # normal-approx CI, but tells a reader how much the two variances differ).
+    num = (var_a / na + var_b / nb) ** 2
+    den = (var_a / na) ** 2 / (na - 1) + (var_b / nb) ** 2 / (nb - 1)
+    df = num / den if den > 0 else None
+    return {
+        "mean_a": mean_a, "mean_b": mean_b, "diff": diff, "t": t, "df": df,
+        "significant": abs(t) >= z, "ci_low": diff - z * se, "ci_high": diff + z * se,
+    }

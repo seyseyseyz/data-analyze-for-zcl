@@ -14,9 +14,8 @@ from collections.abc import Callable, Sequence
 from markupsafe import Markup, escape
 
 from xhs_ceramics_analytics.analysis.result import AnalysisResult
-from xhs_ceramics_analytics.evidence import EvidenceStrength
 from xhs_ceramics_analytics.reporting import labels
-from xhs_ceramics_analytics.reporting.confidence import reader_confidence
+from xhs_ceramics_analytics.reporting.confidence import ReaderConfidence, reader_confidence
 
 logger = logging.getLogger(__name__)
 
@@ -61,39 +60,34 @@ def _empty_state(width: int, height: int) -> str:
     )
 
 
-def _chart_badge(strength: EvidenceStrength, n: int) -> str:
-    """Evidence badge as an HTML tag span, reusing the report's tag CSS mapping."""
-    if strength == EvidenceStrength.WEAK:
-        # "弱" is the causal tier, not a sample-size verdict: many observational
-        # modules are inherently causal-weak yet carry a large n. Parallel the
-        # other tiers ("可信度 中/强") so a big-n directional chart never reads as
-        # "broken"; n is shown so a genuinely small sample is still visible.
-        cls, text = "weak", f"可信度 弱 · n={n}"
-    elif strength == EvidenceStrength.MEDIUM:
-        cls, text = "medium", f"可信度 中 · n={n}"
-    else:
-        cls, text = "strong", f"可信度 强 · n={n}"
-    return f'<span class="tag {cls} chart-badge">{_esc(text)}</span>'
+def _chart_badge(confidence: ReaderConfidence, n: int) -> str:
+    """置信度徽章 —— 复用报告里同一个面向商家的「置信度」。
+
+    与结论正文取同一个 :func:`reader_confidence`（折叠后的**描述可靠性**为主、因果强度
+    降为脚注），所以图表不会在正文写「置信度 高」时，自己却显示原始因果档「可信度 弱」而
+    自相矛盾。CSS 类沿用 high/medium/low 的 tag 映射；n 仍展示，让真正的小样本依然可见。
+    """
+    text = f"置信度 {confidence.label} · n={n}"
+    return f'<span class="tag {confidence.level} chart-badge">{_esc(text)}</span>'
 
 
 # Builder registry — populated in later tasks. Each builder:
-#   (result: AnalysisResult, strength: EvidenceStrength) -> str   ("" when not chartable)
-_BUILDERS: dict[str, Callable[[AnalysisResult, EvidenceStrength], str]] = {}
+#   (result: AnalysisResult, confidence: ReaderConfidence) -> str   ("" when not chartable)
+_BUILDERS: dict[str, Callable[[AnalysisResult, ReaderConfidence], str]] = {}
 
 
 def for_result(result: AnalysisResult) -> Markup:
     builder = _BUILDERS.get(result.task_id)
-    if builder is None:
+    if builder is None or not result.findings:
         return Markup("")
-    strength = (
-        result.findings[0].evidence_strength
-        if result.findings
-        else EvidenceStrength.NOT_JUDGABLE
-    )
-    if strength == EvidenceStrength.NOT_JUDGABLE:
+    # Single reader-facing 置信度, folded from the two evidence axes — the SAME
+    # primitive the prose/priority table use, so a chart's badge never contradicts
+    # its section. NOT_JUDGABLE (no actionable finding) suppresses the chart entirely.
+    confidence = reader_confidence(result.findings[0])
+    if confidence.level == "not_judgable":
         return Markup("")
     try:
-        html = builder(result, strength)
+        html = builder(result, confidence)
     except Exception:  # per-chart isolation: never blank a section, never abort render
         logger.exception("chart build failed for task_id=%s", result.task_id)
         return Markup("")
@@ -207,7 +201,7 @@ def evidence_distribution(evidence_counts: Sequence[dict]) -> Markup:
     present = [item for item in rows if int(item["count"]) > 0]
     width, height = _VIEW_W, 112
     track = width
-    parts: list[str] = [_title("结论可信度分布")]
+    parts: list[str] = [_title("结论置信度分布")]
     # Proportional bar carries the visual share only — a segment for a rare tier
     # (e.g. 高 2 of 31) is far too narrow to hold its caption, so the count lives
     # in the legend below instead of overflowing into the neighbouring segment.
@@ -235,7 +229,7 @@ def evidence_distribution(evidence_counts: Sequence[dict]) -> Markup:
             f'<text x="{_num(lx + 20)}" y="91" class="ca-num">{_esc(caption)}</text>'
         )
         lx += 14 + 6 + _legend_text_w(caption) + 24
-    return Markup(_frame("".join(parts), width, height, label="结论可信度分布图"))
+    return Markup(_frame("".join(parts), width, height, label="结论置信度分布图"))
 
 
 _MEASURE_TITLE = {"avg_reads": "平均阅读数", "avg_collects": "平均收藏数"}
@@ -287,6 +281,58 @@ def _vbar(
     return _frame("".join(body), width, height)
 
 
+def _waterfall(
+    cats: list[str],
+    values: list[float | None],
+    value_texts: list[str],
+    *,
+    title: str,
+    de_emphasize: bool,
+) -> str:
+    """Floating-bar waterfall: components stack top-down as a descent from the whole.
+
+    Each segment (发货前 / 发货后 …) is placed at its cumulative base so the bars read
+    as slices of one total rather than independent columns. Only computable segments
+    are drawn; ``None`` values are skipped. Never raises — empty input frames an
+    empty state. Reuses the _vbar geometry and hatch/opacity de-emphasis convention.
+    """
+    width, height = 308, 300
+    pad_t, pad_b, pad_x = 56, 64, 20
+    plot_h = height - pad_t - pad_b
+    top_y = pad_t
+    plotted = [
+        (c, v, t) for c, v, t in zip(cats, values, value_texts) if v is not None
+    ]
+    if not plotted:
+        return _frame(_title(title) + _empty_state(width, height), width, height)
+    total = sum(v for _, v, _ in plotted) or 1.0
+    slot = (width - 2 * pad_x) / len(plotted)
+    bw = min(slot * 0.6, 64)
+    fill = "url(#ca-hatch)" if de_emphasize else "var(--ink-strong)"
+    opacity = "0.55" if de_emphasize else "1"
+    body = [_title(title)]
+    running = 0.0
+    for i, (cat, value, text) in enumerate(plotted):
+        cx = pad_x + slot * (i + 0.5)
+        seg_h = (value / total) * plot_h
+        y = top_y + (running / total) * plot_h  # floats on the cumulative base
+        running += value
+        body.append(
+            f'<rect x="{_num(cx - bw / 2)}" y="{_num(y)}" '
+            f'width="{_num(bw)}" height="{_num(seg_h)}" rx="4" fill="{fill}" '
+            f'fill-opacity="{opacity}"><title>{_esc(cat)}：{_esc(text)}</title></rect>'
+        )
+        body.append(
+            f'<text x="{_num(cx)}" y="{_num(y + seg_h / 2)}" text-anchor="middle" '
+            f'class="ca-num">{_esc(text)}</text>'
+        )
+        body.append(
+            f'<text x="{_num(cx)}" y="{_num(top_y + plot_h + 20)}" text-anchor="middle" '
+            f'class="ca-cat">{_esc(cat)}</text>'
+        )
+    return _frame("".join(body), width, height)
+
+
 def _measure_panel(cats, rows, key, de_emphasize) -> str:
     values = [row.get(key) for row in rows]
     texts = [
@@ -295,7 +341,7 @@ def _measure_panel(cats, rows, key, de_emphasize) -> str:
     return _vbar(cats, values, texts, title=_MEASURE_TITLE[key], de_emphasize=de_emphasize)
 
 
-def _build_effect_pair(rows, category_key, strength, de_emphasize) -> str:
+def _build_effect_pair(rows, category_key, confidence, de_emphasize) -> str:
     if not rows:
         return ""
     cats = [labels.value_label(str(row.get(category_key))) for row in rows]
@@ -307,21 +353,21 @@ def _build_effect_pair(rows, category_key, strength, de_emphasize) -> str:
         return ""
     reads = _measure_panel(cats, rows, "avg_reads", de_emphasize)
     collects = _measure_panel(cats, rows, "avg_collects", de_emphasize)
-    badge = _chart_badge(strength, len(rows))
+    badge = _chart_badge(confidence, len(rows))
     return f'{badge}<div class="chart-multiples">{reads}{collects}</div>'
 
 
-def _build_cover(result: AnalysisResult, strength: EvidenceStrength) -> str:
+def _build_cover(result: AnalysisResult, confidence: ReaderConfidence) -> str:
     return _build_effect_pair(
         result.tables.get("cover_effects", []), "composition_type",
-        strength, _de_emphasize(result),
+        confidence, _de_emphasize(result),
     )
 
 
-def _build_copy(result: AnalysisResult, strength: EvidenceStrength) -> str:
+def _build_copy(result: AnalysisResult, confidence: ReaderConfidence) -> str:
     return _build_effect_pair(
         result.tables.get("copy_effects", []), "copy_angle",
-        strength, _de_emphasize(result),
+        confidence, _de_emphasize(result),
     )
 
 
@@ -329,7 +375,7 @@ _BUILDERS["cover_style_effect"] = _build_cover
 _BUILDERS["copy_angle_effect"] = _build_copy
 
 
-def _build_comment_demand(result: AnalysisResult, strength: EvidenceStrength) -> str:
+def _build_comment_demand(result: AnalysisResult, confidence: ReaderConfidence) -> str:
     rows = [r for r in result.tables.get("comment_demands", []) if int(r.get("comments") or 0) > 0]
     if not rows:
         return ""
@@ -345,7 +391,7 @@ def _build_comment_demand(result: AnalysisResult, strength: EvidenceStrength) ->
     ]
     de = _de_emphasize(result)
     body = _hbar(bar_rows, value_max=max(v for _, v, _, _ in bar_rows), de_emphasize=de)
-    return f'{_chart_badge(strength, total)}{body}'
+    return f'{_chart_badge(confidence, total)}{body}'
 
 
 _BUILDERS["comment_demand_mining"] = _build_comment_demand
@@ -364,6 +410,7 @@ def _line(
     x_labels: list[str],
     *,
     de_emphasize: bool,
+    suppress_aggregate: bool = False,
 ) -> str:
     width, height = _VIEW_W, 320
     pad_l, pad_r, pad_t, pad_b = 48, 24, 40, 56
@@ -408,7 +455,7 @@ def _line(
     dash = ' stroke-dasharray="4 3"' if de_emphasize else ""
     for name, ys in series:
         draw(ys, color="var(--muted)", opacity=line_opacity, dash=dash)
-    if len(series) > 1:  # bold aggregate = mean of non-null values at each x
+    if len(series) > 1 and not suppress_aggregate:  # bold aggregate = mean at each x
         agg: list[float | None] = []
         for i in range(n_x):
             col = [ys[i] for _, ys in series if ys[i] is not None]
@@ -417,7 +464,7 @@ def _line(
     return _frame("".join(body), width, height)
 
 
-def _build_response_curve(result: AnalysisResult, strength: EvidenceStrength) -> str:
+def _build_response_curve(result: AnalysisResult, confidence: ReaderConfidence) -> str:
     rows = result.tables.get("response_windows", [])
     if not rows:
         return ""
@@ -431,7 +478,7 @@ def _build_response_curve(result: AnalysisResult, strength: EvidenceStrength) ->
     ]
     de = _de_emphasize(result)
     body = _line(series, x_labels, de_emphasize=de)
-    return f'{_chart_badge(strength, len(rows))}{body}'
+    return f'{_chart_badge(confidence, len(rows))}{body}'
 
 
 _BUILDERS["content_response_curve"] = _build_response_curve
@@ -512,7 +559,7 @@ def _scatter(
     return _frame("".join(body), width, height)
 
 
-def _build_opportunity(result: AnalysisResult, strength: EvidenceStrength) -> str:
+def _build_opportunity(result: AnalysisResult, confidence: ReaderConfidence) -> str:
     rows = [
         r for r in result.tables.get("product_opportunities", [])
         if r.get("units") is not None and r.get("gmv") is not None
@@ -532,7 +579,7 @@ def _build_opportunity(result: AnalysisResult, strength: EvidenceStrength) -> st
         for r in rows
     ]
     body = _scatter(points, x_label="销量", y_label="成交金额", median_lines=True)
-    return f'{_chart_badge(strength, len(points))}{body}'
+    return f'{_chart_badge(confidence, len(points))}{body}'
 
 
 _BUDGET_TONE = {
@@ -543,7 +590,7 @@ _BUDGET_TONE = {
 }
 
 
-def _build_paid(result: AnalysisResult, strength: EvidenceStrength) -> str:
+def _build_paid(result: AnalysisResult, confidence: ReaderConfidence) -> str:
     rows = result.tables.get("paid_traffic_efficiency", [])
     total_spend = sum(float(r.get("spend") or 0) for r in rows)
     plotted = [
@@ -576,7 +623,7 @@ def _build_paid(result: AnalysisResult, strength: EvidenceStrength) -> str:
             }
         )
     body = _scatter(points, x_label="消耗", y_label="投产比 ROAS", median_lines=True)
-    return f'{_chart_badge(strength, len(points))}{body}'
+    return f'{_chart_badge(confidence, len(points))}{body}'
 
 
 _BUILDERS["product_opportunity_matrix"] = _build_opportunity
@@ -693,7 +740,7 @@ def _rank_bars(
     label_key: str,
     value_key: str,
     value_fmt: Callable[[float], str],
-    strength: EvidenceStrength,
+    confidence: ReaderConfidence,
     de_emphasize: bool,
     top_n: int = 8,
 ) -> str:
@@ -714,10 +761,11 @@ def _rank_bars(
         )
         for r in clean
     ]
-    return f'{_chart_badge(strength, len(clean))}{_hbar(bar_rows, value_max=vmax, de_emphasize=de)}'
+    badge = _chart_badge(confidence, len(clean))
+    return f'{badge}{_hbar(bar_rows, value_max=vmax, de_emphasize=de)}'
 
 
-def _build_demand_funnel(result: AnalysisResult, strength: EvidenceStrength) -> str:
+def _build_demand_funnel(result: AnalysisResult, confidence: ReaderConfidence) -> str:
     rows = [
         r for r in result.tables.get("demand_funnel_trend", [])
         if r.get("add_to_cart_users") is not None
@@ -739,10 +787,10 @@ def _build_demand_funnel(result: AnalysisResult, strength: EvidenceStrength) -> 
         value_fmt=labels.format_percent, de_emphasize=de,
         title="加购→成交转化率趋势",
     )
-    return f'{_chart_badge(strength, int(total_cart))}{funnel}{trend}'
+    return f'{_chart_badge(confidence, int(total_cart))}{funnel}{trend}'
 
 
-def _build_core_business(result: AnalysisResult, strength: EvidenceStrength) -> str:
+def _build_core_business(result: AnalysisResult, confidence: ReaderConfidence) -> str:
     rows = [r for r in result.tables.get("business_trend", []) if r.get("gmv") is not None]
     if not rows:
         return ""
@@ -753,37 +801,37 @@ def _build_core_business(result: AnalysisResult, strength: EvidenceStrength) -> 
         value_fmt=labels.format_money, de_emphasize=de,
         title="成交金额(GMV)趋势", changepoint_dates=changepoints,
     )
-    return f'{_chart_badge(strength, len(rows))}{body}'
+    return f'{_chart_badge(confidence, len(rows))}{body}'
 
 
-def _build_channel(result: AnalysisResult, strength: EvidenceStrength) -> str:
+def _build_channel(result: AnalysisResult, confidence: ReaderConfidence) -> str:
     return _rank_bars(
         result.tables.get("channel_scale", []),
         label_key="carrier_zh", value_key="gmv",
-        value_fmt=labels.format_money, strength=strength,
+        value_fmt=labels.format_money, confidence=confidence,
         de_emphasize=_de_emphasize(result),
     )
 
 
-def _build_sku_l2(result: AnalysisResult, strength: EvidenceStrength) -> str:
+def _build_sku_l2(result: AnalysisResult, confidence: ReaderConfidence) -> str:
     return _rank_bars(
         result.tables.get("sku_category_l2_mix", []),
         label_key="category_l2", value_key="gmv",
-        value_fmt=labels.format_money, strength=strength,
+        value_fmt=labels.format_money, confidence=confidence,
         de_emphasize=_de_emphasize(result),
     )
 
 
-def _build_refund_category(result: AnalysisResult, strength: EvidenceStrength) -> str:
+def _build_refund_category(result: AnalysisResult, confidence: ReaderConfidence) -> str:
     return _rank_bars(
         result.tables.get("refund_by_category", []),
         label_key="category_l1", value_key="refund_orders",
-        value_fmt=labels.format_number, strength=strength,
+        value_fmt=labels.format_number, confidence=confidence,
         de_emphasize=_de_emphasize(result),
     )
 
 
-def _build_audience(result: AnalysisResult, strength: EvidenceStrength) -> str:
+def _build_audience(result: AnalysisResult, confidence: ReaderConfidence) -> str:
     # findings[0] is the 人群转化对比 finding, so prefer the conversion table; fall
     # back to GMV composition share when conversion data is absent.
     conversion = [
@@ -793,13 +841,13 @@ def _build_audience(result: AnalysisResult, strength: EvidenceStrength) -> str:
     if conversion:
         return _rank_bars(
             conversion, label_key="audience_type", value_key="conversion",
-            value_fmt=labels.format_percent, strength=strength,
+            value_fmt=labels.format_percent, confidence=confidence,
             de_emphasize=_de_emphasize(result),
         )
     return _rank_bars(
         result.tables.get("audience_composition", []),
         label_key="audience_segment", value_key="gmv_share",
-        value_fmt=labels.format_percent, strength=strength,
+        value_fmt=labels.format_percent, confidence=confidence,
         de_emphasize=_de_emphasize(result),
     )
 

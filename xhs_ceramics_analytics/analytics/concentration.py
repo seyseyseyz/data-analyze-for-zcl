@@ -62,3 +62,35 @@ def concentration_trend(period_to_values: dict) -> list[dict]:
         vals = period_to_values[period]
         rows.append({"period": period, "gini": gini(vals), "hhi": hhi(vals)})
     return rows
+
+
+def cumulative_curve(values: list[float]) -> list[dict]:
+    """Descending Pareto curve: cumulative value share as holders join largest-first.
+
+    Each row is ``{rank, cum_item_frac, cum_value_share}`` so a report can state
+    "top X% of SKUs hold Y% of GMV". Drops None/non-finite entries; a negative
+    entry makes the share base untrustworthy, so — like :func:`gini`/:func:`hhi` —
+    the whole series is rejected (``[]``) rather than silently computed on a
+    partial base. An empty or zero-total base also returns ``[]``. Deterministic:
+    ties keep a stable descending order.
+    """
+    clean = _clean(values)
+    if not clean or any(v < 0 for v in clean):
+        return []
+    total = sum(clean)
+    if total <= 0:
+        return []
+    ordered = sorted(clean, reverse=True)
+    n = len(ordered)
+    rows: list[dict] = []
+    running = 0.0
+    for i, v in enumerate(ordered):
+        running += v
+        rows.append(
+            {
+                "rank": i + 1,
+                "cum_item_frac": (i + 1) / n,
+                "cum_value_share": running / total,
+            }
+        )
+    return rows

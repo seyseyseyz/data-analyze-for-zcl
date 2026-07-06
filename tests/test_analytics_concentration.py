@@ -3,6 +3,7 @@ import pytest
 
 from xhs_ceramics_analytics.analytics.concentration import (
     concentration_trend,
+    cumulative_curve,
     gini,
     hhi,
     top_share,
@@ -69,3 +70,18 @@ def test_gini_and_hhi_ignore_nan_instead_of_returning_nan():
 def test_gini_is_order_independent_with_dirty_entries():
     # NaN dropped before sorted() → result cannot depend on input order.
     assert gini([3.0, 1.0, float("nan"), 2.0]) == gini([1.0, 2.0, 3.0, float("nan")])
+
+
+def test_cumulative_curve_rejects_negative_base_like_gini_and_hhi():
+    # A negative entry makes the concentration base untrustworthy. gini/hhi return None
+    # on it; cumulative_curve must not silently drop it and report a partial-base Pareto
+    # curve — that would misstate "top X% hold Y%". Reject the whole series (→ []).
+    assert gini([5.0, -1.0, 3.0]) is None
+    assert hhi([5.0, -1.0, 3.0]) is None
+    assert cumulative_curve([5.0, -1.0, 3.0]) == []
+
+
+def test_cumulative_curve_clean_base_still_works():
+    curve = cumulative_curve([3.0, 1.0])
+    assert curve[-1]["cum_value_share"] == pytest.approx(1.0)
+    assert curve[0]["cum_value_share"] == pytest.approx(0.75)

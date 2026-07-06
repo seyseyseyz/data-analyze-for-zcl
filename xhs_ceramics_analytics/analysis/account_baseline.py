@@ -69,8 +69,8 @@ def run(db_path: Path) -> AnalysisResult:
         Finding(
             title="发布基线",
             conclusion=(
-                f"当前数据包含 {qty(sample_size)} 篇笔记，覆盖 "
-                f"{qty(len(daily_posts))} 个有发布记录的日期。"
+                f"目前手上有 {qty(sample_size)} 篇笔记，分布在 "
+                f"{qty(len(daily_posts))} 个发过内容的日子里。"
             ),
             evidence_strength=score_evidence(
                 sample_size, has_controls=False, confounder_count=1
@@ -78,7 +78,7 @@ def run(db_path: Path) -> AnalysisResult:
             descriptive_reliability=score_reliability(sample_size),
             key_numbers={"posts": sample_size, "active_days": len(daily_posts)},
             caveats=[
-                "样本量和对照上下文有限，这个基线只能做描述性判断。"
+                "这个基线只能做描述性判断：样本量和对照上下文都有限。"
             ],
         )
     ]
@@ -146,9 +146,9 @@ def _posting_window_finding(con, columns: set[str]):
     best = rows[0]
     n_posts = int(sum(r["posts"] for r in rows))
     conclusion = (
-        f"以{metric_label}衡量，去除笔记时长累积效应后，"
-        f"「{best['publish_window']}」是当前表现最好的发布窗口"
-        f"（{qty(best['posts'])} 篇，较窗口均值高 {best['perf_lift']}）。"
+        f"按{metric_label}来看，把笔记时长累积（发得越久看的人自然越多）这层影响刨掉后，"
+        f"「{best['publish_window']}」是目前发得最好的时间段"
+        f"（{qty(best['posts'])} 篇，比各时段平均水平高 {best['perf_lift']}）。"
     )
     return (
         Finding(
@@ -167,10 +167,10 @@ def _posting_window_finding(con, columns: set[str]):
             caveats=[
                 M.causal_disclaimer("不同时段的选题、投放和节假日")
                 + "不能读作「换个时间发就会更好」。",
-                "缺具体发布小时时，时段维度会退化为按日归入夜间，仅周几维度可靠。",
+                "如果导出里没带具体发布小时，这些笔记会被统一归到夜间，所以这时先只看「周几」这个结论，时段维度暂时别太当真。",
             ],
             recommended_action=(
-                "把选题与投放向高表现窗口集中做一轮对照测试，再据实际抬升决定是否固化排期。"
+                "这周就能上手：把准备发的选题和投放，先往表现最好的那个窗口集中一轮，其余保持原样做对照；跑一段时间后看实际抬升，真的更好再把这个排期固定下来。"
             ),
             evidence_reason=(
                 "按 (周几·时段) 把笔记分组，求各窗口去趋势后的平均表现，"
@@ -275,10 +275,10 @@ def _missing_result(reason: str) -> AnalysisResult:
         findings=[
             Finding(
                 title="发布基线不可计算",
-                conclusion="需要带发布时间的笔记导出数据后，才能计算账号基线。",
+                conclusion="账号基线暂时算不出：需要带发布时间的笔记导出数据。",
                 evidence_strength=EvidenceStrength.NOT_JUDGABLE,
                 key_numbers={"posts": 0, "active_days": 0},
-                caveats=["基线数据缺失应视为导入缺口。"],
+                caveats=["没有基线数据，多半是导入的时候漏掉了。"],
                 recommended_action="导出包含 publish_time 和 reads 的 notes 数据，然后重新构建。"
             )
         ],

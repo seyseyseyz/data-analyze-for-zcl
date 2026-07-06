@@ -30,10 +30,10 @@ from xhs_ceramics_analytics.evidence import EvidenceStrength, score_evidence, sc
 TASK_ID = "refund_root_cause_diagnosis"
 TITLE = "退款根因诊断"
 
-_LEVER_PRE_SHIP = "发货前退款为主：排查物流时效承诺、悔单率与价保规则。"
-_LEVER_POST_SHIP = "发货后退款为主：排查商品质量、描述一致性与尺寸/包装。"
-_LEVER_CATEGORY = "高退款品类：复核该品类详情页描述、尺寸表与质检标准，优先跟进 BH-FDR 显著品类。"
-_LEVER_PRICE_BAND = "高退款价位带：核对价格与预期落差，复核该价位带的赠品/活动政策。"
+_LEVER_PRE_SHIP = "发货前退款为主：这周先把发货前退款的订单逐单翻一遍看原因，对照物流时效承诺、悔单率与价保规则，挑最集中的那条先改。"
+_LEVER_POST_SHIP = "发货后退款为主：这周先集中看发货后退款的退货留言和差评，对照商品质量、描述一致性与尺寸/包装，找出被吐槽最多的那点先补。"
+_LEVER_CATEGORY = "高退款品类：优先跟进 BH-FDR 显著品类，再复核其详情页描述、尺寸表与质检标准。"
+_LEVER_PRICE_BAND = "高退款价位带：这周先想清楚这档价位买家为什么觉得不值——核对价格与预期落差，再复核该价位带的赠品/活动政策。"
 
 _SHIP_CONFOUNDERS = ["品类与尺寸结构", "物流与时效", "描述一致性"]
 _CATEGORY_CONFOUNDERS = ["品类内价格带混合", "尺寸与包装", "季节与活动"]
@@ -99,7 +99,7 @@ def _ship_stage_finding(
         )
         finding = Finding(
             title="发货前后退款分解",
-            conclusion="缺少发货前/发货后退款率列，无法判断退款阶段分布。",
+            conclusion="导出数据里没有发货前、发货后的退款率，看不出退款主要发生在发货前还是发货后。",
             evidence_strength=EvidenceStrength.NOT_JUDGABLE,
             key_numbers={
                 "pre_ship_rate": None,
@@ -107,7 +107,7 @@ def _ship_stage_finding(
                 "dominant_stage": None,
                 "source": None,
             },
-            caveats=["缺少发货前/发货后退款率列，暂无法判断退款阶段结构。"],
+            caveats=["导出数据里没有发货前、发货后的退款率，暂时看不出退款主要卡在哪个阶段。"],
             confounders=list(_SHIP_CONFOUNDERS),
             evidence_reason=M.methodology_note(
                 "business_overview_daily 与 sku_performance 均无发货前后退款率列，无法计算。",
@@ -141,7 +141,7 @@ def _ship_stage_finding(
 
     caveats = [
         M.causal_disclaimer("品类结构、物流时效和描述一致性不同"),
-        "本节为订单加权退款率口径；退款金额份额口径见退款结构诊断，分渠道退款率见渠道结构与健康诊断，三者非重复。",
+        "这里算的是按订单数加权的退款率；退款金额的占比见退款结构诊断，分渠道的退款率见渠道结构与健康诊断，这三处算的不是一回事、并不重复。",
     ]
     if dominant_stage is not None:
         dominant_zh = _SHIP_STAGE_ZH[dominant_stage]
@@ -153,12 +153,12 @@ def _ship_stage_finding(
         recommended_action = _LEVER_PRE_SHIP if dominant_stage == "pre_ship" else _LEVER_POST_SHIP
     elif pre_rate is not None and post_rate is not None:
         conclusion = (
-            f"发货前 {round(pre_rate * 100, 1)}% 与发货后 {round(post_rate * 100, 1)}% 退款率相近，未见明显阶段集中。"
+            f"发货前后退款率相近（发货前 {round(pre_rate * 100, 1)}% vs 发货后 {round(post_rate * 100, 1)}%），未见明显阶段集中。"
         )
         recommended_action = None
     else:
         limitations.append("发货前后退款分解可用列存在但样本 paid_orders 合计为 0，无法计算阶段占比。")
-        conclusion = "发货前后退款率列存在但样本量为 0，无法判断阶段分布。"
+        conclusion = "有发货前后的退款率，但对应的订单数是 0，看不出退款集中在哪个阶段。"
         recommended_action = None
 
     ship_rows = [
@@ -270,7 +270,7 @@ def _category_finding(
             f"{fdr_clause}。"
         )
     else:
-        conclusion = "sku_performance 品类数据不足，无法判断最高退款品类。"
+        conclusion = "SKU 数据里的品类信息不足，判断不出退款最高的是哪个品类。"
 
     finding = Finding(
         title="品类退款分解",
@@ -381,7 +381,7 @@ def _price_band_finding(
         )
     else:
         limitations.append("各价格带样本量均不足 30 或退款率不可计算，无法判断最高退款价位带。")
-        conclusion = "各价格带样本量不足，无法判断最高退款价位带。"
+        conclusion = "各价位段的订单太少，看不出哪个价位退款最高。"
 
     finding = Finding(
         title="价格带退款分解",
@@ -440,7 +440,7 @@ def _missing_result(reason: str) -> AnalysisResult:
                 conclusion="需要导出 sku_performance（SKU 表现）数据后才能诊断退款根因。",
                 evidence_strength=EvidenceStrength.NOT_JUDGABLE,
                 key_numbers={},
-                caveats=["SKU 表现缺失应视为导入缺口。"],
+                caveats=["没有 SKU 表现数据，应当视为导出时漏掉了、需要补齐。"],
                 recommended_action="导出 SKU 表现（含品类、aov、发货前后退款率、退款订单数）后重新构建。",
             )
         ],

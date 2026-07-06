@@ -160,6 +160,28 @@ def run(
     report_title = name.replace("_", " ").strip() if name else None
     markdown_out.write_text(render_markdown(results, title=report_title), encoding="utf-8")
     typer.echo(f"Wrote report: {markdown_out}")
+
+    from xhs_ceramics_analytics.reporting.facts_export import (
+        build_factbook as _build_factbook,
+        factbook_to_json as _factbook_to_json,
+    )
+
+    # facts.json is the cache-key + writer-handoff sidecar, NOT a deliverable — it lives in
+    # the state dir beside analytics.duckdb / mapping_overrides.yaml / report_runs.jsonl, so
+    # outputs/ stays a pure two-file (md+html) delivery surface. Its build must never abort an
+    # already-written report: like the HTML path below, a sidecar failure degrades to a warning.
+    blocked = tuple(t for t in TASKS if t not in task_ids)
+    facts_out = state_dir(project_root) / "facts.json"
+    try:
+        facts_out.write_text(
+            _factbook_to_json(_build_factbook(results, blocked_modules=blocked)), encoding="utf-8"
+        )
+        typer.echo(f"Wrote facts: {facts_out}")
+    except Exception as exc:
+        typer.echo(
+            f"facts.json build failed; kept report and skipped the sidecar: {exc}",
+            err=True,
+        )
     if html_out.exists():
         html_out.unlink()
     try:
@@ -179,6 +201,224 @@ def run(
     typer.echo(f"Wrote report: {html_out}")
     if errors_out.exists():
         errors_out.unlink()
+
+
+@app.command()
+def facts(
+    tasks: Annotated[
+        list[str] | None,
+        typer.Argument(help="Task ids, or 'auto' for the producible set. Emits facts.json."),
+    ] = None,
+    db: Annotated[Path | None, typer.Option(help="Override DuckDB file path.")] = None,
+    project_root: Annotated[
+        Path | None, typer.Option(help="Override local state/output root.")
+    ] = None,
+) -> None:
+    """Build the deterministic FactBook and write facts.json into the state dir (0 agents)."""
+    from xhs_ceramics_analytics.analysis.coverage import producible_task_ids
+    from xhs_ceramics_analytics.analysis.registry import TASKS, run_task
+    from xhs_ceramics_analytics.reporting.facts_export import (
+        build_factbook,
+        facts_hash,
+        factbook_to_json,
+    )
+
+    db_path = db or state_dir(project_root) / "analytics.duckdb"
+    requested = list(tasks) if tasks else ["auto"]
+    if requested == ["auto"]:
+        task_ids = list(producible_task_ids(db_path))
+    elif requested == ["all"]:
+        task_ids = list(TASKS)
+    else:
+        task_ids = [t for t in requested if t in TASKS]
+    results = [run_task(task_id, db_path) for task_id in task_ids]
+    blocked = tuple(t for t in TASKS if t not in task_ids)
+    book = build_factbook(results, blocked_modules=blocked)
+    out = state_dir(project_root) / "facts.json"
+    out.write_text(factbook_to_json(book), encoding="utf-8")
+    typer.echo(f"Wrote facts: {out}")
+    typer.echo(f"facts_hash: {facts_hash(book)}")
+
+
+@app.command()
+def gate(
+    bundle: Annotated[Path, typer.Argument(help="narrative_bundle.json to validate.")],
+    facts: Annotated[Path, typer.Argument(help="facts.json from `xhs-ca facts`.")],
+    out: Annotated[Path | None, typer.Option("--out", help="Where to write gate_report.json.")]
+    = None,
+) -> None:
+    """Validate a narrative_bundle against the FactBook. Exits 1 on any HARD failure."""
+    import json as _json
+
+    from xhs_ceramics_analytics.reporting.factcheck_gate import gate_report_to_json, run_gate
+
+    bundle_data = _json.loads(Path(bundle).read_text(encoding="utf-8"))
+    facts_data = _json.loads(Path(facts).read_text(encoding="utf-8"))
+    report = run_gate(bundle_data, facts_data)
+    report_json = gate_report_to_json(report)
+    if out is not None:
+        Path(out).write_text(report_json, encoding="utf-8")
+        typer.echo(f"Wrote gate report: {out}")
+    typer.echo(f"gate: {report.status} "
+               f"({len(report.hard_failures)} hard, {len(report.warnings)} warn)")
+    if report.status != "PASS":
+        for failure in report.hard_failures:
+            typer.echo(f"  HARD {failure['code']}: {failure['detail']}", err=True)
+        raise typer.Exit(code=1)
+
+
+@app.command(name="render-draft")
+def render_draft_command(
+    bundle: Annotated[Path, typer.Argument(help="narrative_bundle.json.")],
+    facts: Annotated[Path, typer.Argument(help="facts.json.")],
+    out: Annotated[Path | None, typer.Option("--out", help="Where to write the draft markdown.")]
+    = None,
+) -> None:
+    """Fill {tN} tokens from fact.rendered and write a draft markdown (no numbers invented)."""
+    import json as _json
+
+    from xhs_ceramics_analytics.reporting.narrative_render import (
+        bundle_to_markdown,
+        render_draft,
+    )
+
+    bundle_data = _json.loads(Path(bundle).read_text(encoding="utf-8"))
+    facts_data = _json.loads(Path(facts).read_text(encoding="utf-8"))
+    drafted = render_draft(bundle_data, facts_data)
+    md = bundle_to_markdown(drafted, facts_data)
+    target = out or (state_dir(None) / "draft.md")
+    Path(target).write_text(md, encoding="utf-8")
+    typer.echo(f"Wrote draft: {target}")
+
+
+@app.command()
+def finalize(
+    bundle: Annotated[Path, typer.Argument(help="narrative_bundle.json.")],
+    facts: Annotated[Path, typer.Argument(help="facts.json.")],
+    edits: Annotated[Path | None, typer.Option("--edits", help="continuity_edits.json (list).")]
+    = None,
+    out: Annotated[Path | None, typer.Option("--out", help="Where to write frozen_narrative.json.")]
+    = None,
+) -> None:
+    """Draft → apply continuity edits → re-gate (must PASS) → freeze the narrative override."""
+    import json as _json
+
+    from xhs_ceramics_analytics.reporting.factcheck_gate import run_gate
+    from xhs_ceramics_analytics.reporting.frozen_narrative import write_frozen
+    from xhs_ceramics_analytics.reporting.narrative_render import (
+        apply_continuity_edits,
+        render_draft,
+    )
+
+    bundle_data = _json.loads(Path(bundle).read_text(encoding="utf-8"))
+    facts_data = _json.loads(Path(facts).read_text(encoding="utf-8"))
+    report = run_gate(bundle_data, facts_data)
+    if report.status != "PASS":
+        typer.echo(f"gate FAIL — cannot finalize: {report.hard_failures}", err=True)
+        raise typer.Exit(code=1)
+    drafted = render_draft(report.bundle, facts_data)
+    if edits is not None:
+        edit_list = _json.loads(Path(edits).read_text(encoding="utf-8"))
+        try:
+            drafted = apply_continuity_edits(drafted, edit_list)
+        except ValueError as exc:
+            typer.echo(f"continuity edit rejected: {exc}", err=True)
+            raise typer.Exit(code=1) from exc
+    target = out or (state_dir(None) / "frozen_narrative.json")
+    write_frozen(target, facts_data.get("facts_hash", ""), drafted)
+    typer.echo(f"Wrote frozen narrative: {target}")
+
+
+@app.command(name="render-frozen")
+def render_frozen_command(
+    frozen: Annotated[Path, typer.Argument(help="frozen_narrative.json.")],
+    facts: Annotated[Path, typer.Argument(help="facts.json.")],
+    name: Annotated[Path | None, typer.Option("--name", "-n", help="Output basename (no suffix).")]
+    = None,
+) -> None:
+    """Render md+html from a frozen narrative; re-gates and checks facts_hash (tamper evidence)."""
+    import json as _json
+
+    from xhs_ceramics_analytics.reporting.narrative_render import render_frozen
+
+    frozen_data = _json.loads(Path(frozen).read_text(encoding="utf-8"))
+    facts_data = _json.loads(Path(facts).read_text(encoding="utf-8"))
+    try:
+        md, html = render_frozen(frozen_data, facts_data)
+    except ValueError as exc:
+        typer.echo(f"render-frozen refused: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    base = name or (outputs_dir(None) / "经营诊断报告")
+    Path(f"{base}.md").write_text(md, encoding="utf-8")
+    Path(f"{base}.html").write_text(html, encoding="utf-8")
+    typer.echo(f"Wrote report: {base}.md")
+    typer.echo(f"Wrote report: {base}.html")
+
+    from xhs_ceramics_analytics.reporting.report_telemetry import (
+        append_run_record,
+        build_run_record,
+    )
+
+    record = build_run_record(
+        mode="frozen", facts_hash=facts_data.get("facts_hash", ""), cache_hit=True,
+    )
+    try:
+        append_run_record(state_dir(None) / "report_runs.jsonl", record)
+    except Exception:
+        pass  # telemetry is best-effort; never break the report
+
+
+@app.command()
+def skeleton(
+    tasks: Annotated[list[str] | None, typer.Argument(help="Task ids or 'auto'.")] = None,
+    db: Annotated[Path | None, typer.Option(help="Override DuckDB file path.")] = None,
+    project_root: Annotated[Path | None, typer.Option(help="Override state/output root.")] = None,
+    name: Annotated[str | None, typer.Option("--name", "-n", help="Output basename.")] = None,
+) -> None:
+    """Deterministic 0-agent skeleton report (facts + tables + charts + tags), md+html."""
+    from xhs_ceramics_analytics.analysis.coverage import producible_task_ids
+    from xhs_ceramics_analytics.analysis.registry import TASKS, run_task
+    from xhs_ceramics_analytics.reporting.html import render_markdown_document_html
+    from xhs_ceramics_analytics.reporting.narrative_render import skeleton_markdown
+
+    db_path = db or state_dir(project_root) / "analytics.duckdb"
+    requested = list(tasks) if tasks else ["auto"]
+    if requested == ["auto"]:
+        task_ids = list(producible_task_ids(db_path))
+    elif requested == ["all"]:
+        task_ids = list(TASKS)
+    else:
+        task_ids = [t for t in requested if t in TASKS]
+    results = [run_task(task_id, db_path) for task_id in task_ids]
+    basename = name or "经营诊断报告"
+    report_title = basename.replace("_", " ").strip()
+    md = skeleton_markdown(results, title=report_title)
+    output_dir = outputs_dir(project_root)
+    (output_dir / f"{basename}.md").write_text(md, encoding="utf-8")
+    (output_dir / f"{basename}.html").write_text(
+        render_markdown_document_html(md, title=report_title), encoding="utf-8"
+    )
+    typer.echo(f"Wrote skeleton report: {output_dir / f'{basename}.md'}")
+    typer.echo(f"Wrote skeleton report: {output_dir / f'{basename}.html'}")
+
+    from xhs_ceramics_analytics.reporting.facts_export import (
+        build_factbook as _build_factbook,
+        facts_hash as _facts_hash,
+    )
+    from xhs_ceramics_analytics.reporting.report_telemetry import (
+        append_run_record,
+        build_run_record,
+    )
+
+    book = _build_factbook(results, blocked_modules=tuple(t for t in TASKS if t not in task_ids))
+    record = build_run_record(
+        mode="skeleton", facts_hash=_facts_hash(book), cache_hit=False,
+        degradation_reason="skeleton_cli",
+    )
+    try:
+        append_run_record(state_dir(project_root) / "report_runs.jsonl", record)
+    except Exception:
+        pass  # telemetry is best-effort; never break the report
 
 
 @app.command()
