@@ -61,8 +61,8 @@ def load_frozen(path) -> dict | None:
         return None
     try:
         data = json.loads(p.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"frozen_narrative is not valid JSON: {exc}") from exc
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
+        raise ValueError(f"frozen_narrative could not be read as JSON: {exc}") from exc
     if not isinstance(data, dict) or any(k not in data for k in _REQUIRED_KEYS):
         raise ValueError(f"frozen_narrative missing required keys {_REQUIRED_KEYS}")
     return data

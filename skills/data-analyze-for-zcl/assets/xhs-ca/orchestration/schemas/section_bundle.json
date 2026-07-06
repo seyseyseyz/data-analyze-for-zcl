@@ -1,5 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "section_bundle.json",
   "title": "section_bundle",
   "description": "Writer → synthesizer. One report section's claims plus its spine alignment.",
   "type": "object",

@@ -1,5 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "narrative_bundle.json",
   "title": "narrative_bundle",
   "description": "Synthesizer output — what the gate validates and freezes.",
   "type": "object",

@@ -43,11 +43,19 @@ def _all_claim_lists(bundle: dict):
 
 
 def render_draft(bundle: dict, facts_json: dict) -> dict:
-    """Return a new bundle where every claim carries a filled ``rendered_sentence``."""
+    """Return a new bundle where every claim carries a filled ``rendered_sentence``.
+
+    An already-rendered sentence (e.g. one a Continuity pass polished before freezing)
+    is preserved — it is only (re)filled when absent or still holding an unfilled {tN}.
+    This lets a frozen bundle re-render at 0 LLM calls without reverting its edits.
+    """
     bundle = copy.deepcopy(bundle)
     facts = facts_json.get("facts") or {}
     for claims in _all_claim_lists(bundle):
         for claim in claims:
+            existing = str(claim.get("rendered_sentence") or "")
+            if existing and not _TOKEN_RE.search(existing):
+                continue  # already rendered (e.g. continuity-edited) — keep it verbatim
             claim["rendered_sentence"] = fill_sentence(
                 str(claim.get("sentence") or ""), claim.get("number_tokens"), facts
             )

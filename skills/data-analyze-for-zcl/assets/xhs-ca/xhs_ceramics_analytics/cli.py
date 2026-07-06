@@ -168,13 +168,20 @@ def run(
 
     # facts.json is the cache-key + writer-handoff sidecar, NOT a deliverable — it lives in
     # the state dir beside analytics.duckdb / mapping_overrides.yaml / report_runs.jsonl, so
-    # outputs/ stays a pure two-file (md+html) delivery surface.
+    # outputs/ stays a pure two-file (md+html) delivery surface. Its build must never abort an
+    # already-written report: like the HTML path below, a sidecar failure degrades to a warning.
     blocked = tuple(t for t in TASKS if t not in task_ids)
     facts_out = state_dir(project_root) / "facts.json"
-    facts_out.write_text(
-        _factbook_to_json(_build_factbook(results, blocked_modules=blocked)), encoding="utf-8"
-    )
-    typer.echo(f"Wrote facts: {facts_out}")
+    try:
+        facts_out.write_text(
+            _factbook_to_json(_build_factbook(results, blocked_modules=blocked)), encoding="utf-8"
+        )
+        typer.echo(f"Wrote facts: {facts_out}")
+    except Exception as exc:
+        typer.echo(
+            f"facts.json build failed; kept report and skipped the sidecar: {exc}",
+            err=True,
+        )
     if html_out.exists():
         html_out.unlink()
     try:
@@ -279,7 +286,7 @@ def render_draft_command(
     facts_data = _json.loads(Path(facts).read_text(encoding="utf-8"))
     drafted = render_draft(bundle_data, facts_data)
     md = bundle_to_markdown(drafted, facts_data)
-    target = out or (outputs_dir(None) / "draft.md")
+    target = out or (state_dir(None) / "draft.md")
     Path(target).write_text(md, encoding="utf-8")
     typer.echo(f"Wrote draft: {target}")
 
@@ -317,7 +324,7 @@ def finalize(
         except ValueError as exc:
             typer.echo(f"continuity edit rejected: {exc}", err=True)
             raise typer.Exit(code=1) from exc
-    target = out or (outputs_dir(None) / "frozen_narrative.json")
+    target = out or (state_dir(None) / "frozen_narrative.json")
     write_frozen(target, facts_data.get("facts_hash", ""), drafted)
     typer.echo(f"Wrote frozen narrative: {target}")
 

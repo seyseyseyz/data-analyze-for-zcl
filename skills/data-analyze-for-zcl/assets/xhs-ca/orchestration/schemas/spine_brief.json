@@ -1,5 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "spine_brief.json",
   "title": "spine_brief",
   "description": "Seed → writers+synthesizer. Accounting backbone (arithmetic identities) + broadcast set.",
   "type": "object",

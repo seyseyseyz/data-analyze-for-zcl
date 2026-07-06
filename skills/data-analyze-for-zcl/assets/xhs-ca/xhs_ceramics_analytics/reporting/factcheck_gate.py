@@ -17,6 +17,10 @@ from dataclasses import dataclass, field
 
 _TOKEN_RE = re.compile(r"\{t\d+\}")
 _DIGIT_RE = re.compile(r"\d")
+# first_screen.actions are writer free-text (no token mechanism), so the {tN} gate can't
+# cover them. We can't ban every digit — advice legitimately says "发 2 到 3 条内容" — but a
+# currency / percent / 万·亿 figure there is an un-anchored data magnitude the writer invented.
+_ACTION_MAGNITUDE_RE = re.compile(r"[¥￥$%]|\d+(?:\.\d+)?\s*[万亿]")
 _TAG_RANK = {"弱": 1, "中": 2, "强": 3}
 _RANK_TAG = {1: "弱", 2: "中", 3: "强"}
 
@@ -72,11 +76,15 @@ def _check_tokens(claim: dict, facts: dict, absent: set, hard: list) -> None:
     # MAGNITUDE_UNBOUND — declared tokens must match {tN} in the sentence exactly,
     # and no bare digit may survive token removal (writer never emits a number).
     in_sentence = set(_TOKEN_RE.findall(sentence))
-    declared = {"{" + str(t.get("token_id")) + "}" for t in tokens}
+    token_ids = [str(t.get("token_id")) for t in tokens]
+    declared = {"{" + tid + "}" for tid in token_ids}
     if in_sentence != declared:
         hard.append(_fail("MAGNITUDE_UNBOUND", cid,
                           f"token mismatch: sentence {sorted(in_sentence)} vs declared "
                           f"{sorted(declared)}"))
+    if len(token_ids) != len(set(token_ids)):
+        hard.append(_fail("MAGNITUDE_UNBOUND", cid,
+                          "duplicate token_id within a claim (only the first would fill)"))
     if _DIGIT_RE.search(_TOKEN_RE.sub("", sentence)):
         hard.append(_fail("MAGNITUDE_UNBOUND", cid, "bare digit outside a {tN} token"))
     for tok in tokens:
@@ -161,6 +169,13 @@ def run_gate(bundle: dict, facts_json: dict) -> GateReport:
             claim["confidence"] = allowed
             capped.append({"claim_id": cid, "from": stated, "to": allowed})
             warnings.append(_fail("CONFIDENCE_CAPPED", cid, f"{stated} -> {allowed}"))
+
+    # first_screen.actions: writer free-text with no token anchor — reject a fabricated
+    # data magnitude (¥/%/万) that would otherwise reach the reader un-gated.
+    for idx, action in enumerate((bundle.get("first_screen") or {}).get("actions") or []):
+        if _ACTION_MAGNITUDE_RE.search(str(action)):
+            hard.append(_fail("MAGNITUDE_UNBOUND", f"first_screen.action[{idx}]",
+                              "action free-text carries an un-anchored ¥/%/万 magnitude"))
 
     # Cross-section: dangling callbacks + missing callbacks
     for section in bundle.get("sections") or []:

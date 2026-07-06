@@ -91,6 +91,20 @@ def test_render_frozen_roundtrip():
     assert "<html" in html.lower()
 
 
+def test_render_frozen_preserves_continuity_edits():
+    # A frozen bundle carries continuity-edited prose; re-rendering it at 0 LLM calls
+    # must serve that prose, NOT re-fill from the raw {tN} sentence (which would revert it).
+    drafted = nr.render_draft(_bundle(), _facts())
+    edited = nr.apply_continuity_edits(drafted, [
+        {"claim_id": "c0", "old": "人均产出从 ¥10.0 回落到 ¥8.7。",
+         "new": "人均产出由 ¥10.0 一路滑到 ¥8.7。"}])
+    frozen = {"schema_version": "v", "facts_hash": "h", "renderer_version": "r",
+              "narrative_bundle": edited}
+    md, _ = nr.render_frozen(frozen, _facts())
+    assert "一路滑到" in md          # the frozen polished prose survives
+    assert "回落到" not in md        # the raw-token wording did not come back
+
+
 def test_render_frozen_rejects_hash_mismatch():
     drafted = nr.render_draft(_bundle(), _facts())
     frozen = {"schema_version": "v", "facts_hash": "STALE", "renderer_version": "r",

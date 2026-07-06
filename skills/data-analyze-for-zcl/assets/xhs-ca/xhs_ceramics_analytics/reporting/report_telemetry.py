@@ -25,7 +25,7 @@ def build_run_record(
 ) -> dict:
     """Deterministic run record. mode ∈ {frozen, skeleton, gate}. No timestamp by design."""
     return {
-        "mode": mode if mode in _VALID_MODES else "gate",
+        "mode": mode if mode in _VALID_MODES else "unknown",
         "facts_hash": facts_hash,
         "cache_hit": bool(cache_hit),
         "hard_fail_counts": dict(hard_fail_counts or {}),
@@ -48,9 +48,11 @@ def summarize_runs(records: list[dict]) -> str:
     """One-line human summary for the skill's step-9 delivery note."""
     modes = Counter(str(r.get("mode")) for r in records if isinstance(r, dict))
     hard = sum(
-        sum((r.get("hard_fail_counts") or {}).values())
+        v
         for r in records
         if isinstance(r, dict)
+        for v in (r.get("hard_fail_counts") or {}).values()
+        if isinstance(v, (int, float)) and not isinstance(v, bool)
     )
     parts = [f"{n} {mode}" for mode, n in sorted(modes.items())]
     tail = f" ({hard} gate hard-fail)" if hard else ""

@@ -38,3 +38,11 @@ def test_preship_recoverable_never_estimates_recovery_rate():
     assert pool["amount"] == pytest.approx(129019.0)
     assert pool["recovery_rate"] is None
     assert "发货前" in pool["caliber"]
+
+
+def test_primitives_never_raise_on_none():
+    # "pure and never raise" — a missing refund/bridge slice commonly surfaces as None.
+    assert per_visitor_gmv(None, None) is None
+    assert efficiency_ceiling(None) == {"ceiling_gmv": 0.0, "factors": [], "label": "上限（乐观估计）"}
+    assert preship_recoverable(None)["amount"] is None
+    assert preship_recoverable(None)["recovery_rate"] is None

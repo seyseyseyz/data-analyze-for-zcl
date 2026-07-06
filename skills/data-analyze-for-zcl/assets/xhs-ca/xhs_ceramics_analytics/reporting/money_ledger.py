@@ -14,7 +14,9 @@ _BANNER = "各池口径不同，不可相加为单一净额"
 def non_additive_ledger(pools: list[dict]) -> dict:
     """Sort pools by amount desc; drop dirty amounts; never compute a net total."""
     rows = []
-    for pool in pools:
+    for pool in pools or []:
+        if not isinstance(pool, dict):
+            continue
         amount = to_finite_float(pool.get("amount"))
         if amount is None:
             continue

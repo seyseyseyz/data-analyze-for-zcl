@@ -27,6 +27,7 @@ def efficiency_ceiling(bridge: dict) -> dict:
     LMDI bridge — what GMV would return if both drags were fully reversed. It is an
     upper bound, labelled as such, never a projection.
     """
+    bridge = bridge or {}
     total = 0.0
     factors: list[str] = []
     for key, zh in _FACTOR_ZH.items():
@@ -44,7 +45,7 @@ def preship_recoverable(refund_row: dict) -> dict:
     would be fabricated — we report the poolsize and explicitly decline to size the
     recoverable fraction.
     """
-    amount = to_finite_float(refund_row.get("pre_ship_refund_amount"))
+    amount = to_finite_float((refund_row or {}).get("pre_ship_refund_amount"))
     return {
         "amount": amount,
         "caliber": "发货前退款池（可拦截上限，恢复率未知、不估算）",
