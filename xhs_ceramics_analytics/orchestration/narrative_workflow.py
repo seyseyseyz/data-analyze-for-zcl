@@ -9,6 +9,7 @@ import json
 import re
 from pathlib import Path
 
+from xhs_ceramics_analytics.paths import outputs_dir, state_dir
 from xhs_ceramics_analytics.reporting.factcheck_gate import run_gate
 from xhs_ceramics_analytics.reporting.html import render_markdown_document_html
 from xhs_ceramics_analytics.reporting.narrative_render import (
@@ -342,11 +343,17 @@ def _run_gate_stage(run_dir: Path, state: dict, facts_json: dict, project_root) 
 
 
 def _route_deterministic(run_dir: Path, state: dict, project_root, reason: str) -> dict:
-    finalize_deterministic(run_dir, project_root=project_root, reason=reason)
-    state["stage"] = "blocked"
-    state["degradation_reason"] = reason
-    _write_state(run_dir, state)
-    return state
+    """Adopt the state finalize_deterministic returns rather than re-deriving one.
+
+    Defensively re-asserts stage/degradation_reason on top of the returned dict so
+    a monkeypatched finalize_deterministic (which may return a minimal stand-in
+    without degradation_reason) still yields a correctly-routed state. Builds one
+    new dict and persists it exactly once — never double-writes state.json.
+    """
+    result = finalize_deterministic(run_dir, project_root=project_root, reason=reason)
+    result = {**result, "stage": "blocked", "degradation_reason": reason}
+    _write_state(run_dir, result)
+    return result
 
 
 def advance_run(run_dir, *, project_root=None) -> dict:
@@ -459,10 +466,14 @@ def _deterministic_markdown(run_dir, facts_json: dict, report_name: str) -> str:
 def finalize_deterministic(run_dir, *, project_root=None, reason) -> dict:
     """Deterministic skeleton fallback — the delivery boundary that never fails open.
 
-    Writes <report_name>.md + .html under
-    <project_root>/.xhs-ceramics-analytics/outputs/, records skeleton-mode
-    telemetry, marks the run blocked with the given degradation reason, and
-    returns the updated state. Never raises on missing/partial slice or fact data.
+    Writes <report_name>.md unconditionally under outputs_dir(project_root), then
+    best-effort renders <report_name>.html and appends skeleton-mode telemetry to
+    state_dir(project_root)/"report_runs.jsonl" (the canonical telemetry file cli.py
+    also writes to, read by summarize_runs). HTML render/write and telemetry are
+    each wrapped so a failure there can never prevent the .md artifact from landing
+    or prevent this function from returning the blocked state. Marks the run
+    blocked with the given degradation reason and returns the updated state. Never
+    raises on missing/partial slice or fact data.
     """
     run_dir = Path(run_dir)
     state = _load_state(run_dir)
@@ -473,20 +484,25 @@ def finalize_deterministic(run_dir, *, project_root=None, reason) -> dict:
     report_name = state["report_name"]
 
     markdown = _deterministic_markdown(run_dir, facts_json, report_name)
-    html = render_markdown_document_html(markdown, title=f"{report_name}（确定性骨架版）")
-
-    out_dir = project_root / ".xhs-ceramics-analytics" / "outputs"
-    out_dir.mkdir(parents=True, exist_ok=True)
+    out_dir = outputs_dir(project_root)
     (out_dir / f"{report_name}.md").write_text(markdown, encoding="utf-8")
-    (out_dir / f"{report_name}.html").write_text(html, encoding="utf-8")
 
-    record = build_run_record(
-        mode="skeleton",
-        facts_hash=facts_json.get("facts_hash", ""),
-        cache_hit=False,
-        degradation_reason=reason,
-    )
-    append_run_record(out_dir / "run_telemetry.jsonl", record)
+    try:
+        html = render_markdown_document_html(markdown, title=f"{report_name}（确定性骨架版）")
+        (out_dir / f"{report_name}.html").write_text(html, encoding="utf-8")
+    except Exception:
+        pass  # HTML rendering is best-effort; the markdown artifact must still land
+
+    try:
+        record = build_run_record(
+            mode="skeleton",
+            facts_hash=facts_json.get("facts_hash", ""),
+            cache_hit=False,
+            degradation_reason=reason,
+        )
+        append_run_record(state_dir(project_root) / "report_runs.jsonl", record)
+    except Exception:
+        pass  # telemetry is best-effort; never break the report
 
     state = {
         **state,

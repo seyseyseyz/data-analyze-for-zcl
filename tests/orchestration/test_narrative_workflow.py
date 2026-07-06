@@ -160,10 +160,12 @@ def test_advance_exhausted_gate_routes_to_deterministic(tmp_path, monkeypatch):
 
     monkeypatch.setattr(nw, "run_gate", lambda bundle, facts: _Fail())
     called = {}
-    monkeypatch.setattr(
-        nw, "finalize_deterministic",
-        lambda rd, *, project_root=None, reason: called.setdefault("reason", reason) or {"stage": "blocked"},
-    )
+
+    def _fake_finalize(rd, *, project_root=None, reason):
+        called["reason"] = reason
+        return {"stage": "blocked"}
+
+    monkeypatch.setattr(nw, "finalize_deterministic", _fake_finalize)
 
     # fast-forward to gate: seed→fan→synth
     nw.ingest_output(tmp_path, stage="seed", text='{"sections":[{"section_id":"域0","title":"域0","body":"b"}]}')
@@ -276,10 +278,12 @@ def test_advance_continuity_gate_failure_routes_to_blocked(tmp_path, monkeypatch
 
     monkeypatch.setattr(nw, "run_gate", fake_run_gate)
     called = {}
-    monkeypatch.setattr(
-        nw, "finalize_deterministic",
-        lambda rd, *, project_root=None, reason: called.setdefault("reason", reason) or {"stage": "blocked"},
-    )
+
+    def _fake_finalize(rd, *, project_root=None, reason):
+        called["reason"] = reason
+        return {"stage": "blocked"}
+
+    monkeypatch.setattr(nw, "finalize_deterministic", _fake_finalize)
 
     nw.ingest_output(tmp_path, stage="seed",
                      text='{"sections":[{"section_id":"域0","title":"域0","body":"b"}]}')
@@ -338,3 +342,42 @@ def test_deterministic_lists_unanswerable_questions(tmp_path):
     body = (project_root / ".xhs-ceramics-analytics" / "outputs" / "r.md").read_text(encoding="utf-8")
     assert "暂时答不了的问题" in body
     assert "缺少搜索词表" in body
+
+
+def test_finalize_deterministic_handles_slice_with_no_reading_key(tmp_path):
+    """A slice missing the 'reading' key entirely must not raise; both artifacts still land."""
+    results = {"domain_slices": [
+        {"title": "流量", "facts": [{"metric": "曝光", "value": 100}]},
+    ]}
+    facts_json = {"facts_hash": "h3", "numbers": {}}
+    project_root = tmp_path / "proj"
+    project_root.mkdir()
+    run_dir = tmp_path / "run"
+    nw.prepare_run(run_dir, results=results, facts_json=facts_json,
+                   report_name="r", project_root=project_root)
+
+    state = nw.finalize_deterministic(run_dir, project_root=project_root, reason="denied")
+    assert state["stage"] == "blocked"
+
+    out = project_root / ".xhs-ceramics-analytics" / "outputs"
+    assert (out / "r.md").exists()
+    assert (out / "r.html").exists()
+
+
+def test_finalize_deterministic_preserves_emoji_verbatim(tmp_path):
+    """Emoji in merchant conclusion/caveat text must survive verbatim, never stripped."""
+    results = {"domain_slices": [
+        {"title": "生意大盘", "facts": [{"metric": "GMV", "value": 999}],
+         "reading": {"conclusion": "大盘冲刺 🚀 表现亮眼", "caveats": ["数据来源：门店后台 📊"]}},
+    ]}
+    facts_json = {"facts_hash": "h4", "numbers": {"GMV": 999}}
+    project_root = tmp_path / "proj"
+    project_root.mkdir()
+    run_dir = tmp_path / "run"
+    nw.prepare_run(run_dir, results=results, facts_json=facts_json,
+                   report_name="r", project_root=project_root)
+
+    nw.finalize_deterministic(run_dir, project_root=project_root, reason="denied")
+    body = (project_root / ".xhs-ceramics-analytics" / "outputs" / "r.md").read_text(encoding="utf-8")
+    assert "大盘冲刺 🚀 表现亮眼" in body
+    assert "数据来源：门店后台 📊" in body
