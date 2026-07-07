@@ -1,9 +1,11 @@
+import json as _json
 from pathlib import Path
 from typing import Annotated
 
 import typer
 
 from xhs_ceramics_analytics.doctor import has_blocking_failures, next_steps, run_checks
+from xhs_ceramics_analytics.orchestration import narrative_workflow as _nw
 from xhs_ceramics_analytics.paths import outputs_dir, state_dir
 
 app = typer.Typer(
@@ -13,6 +15,9 @@ app = typer.Typer(
         "(exits non-zero on blocking failures)."
     )
 )
+
+narrative_app = typer.Typer(help="Drive the file-based narrative workflow.")
+app.add_typer(narrative_app, name="narrative")
 
 
 @app.command()
@@ -450,6 +455,99 @@ def coverage(
         slugs = " ".join(row.task_id for row in producible)
         typer.echo(f"\n建议：xhs-ca run {slugs} --name <表意名称>")
         typer.echo("或直接：xhs-ca run auto --name <表意名称>")
+
+
+def _read_json_input(path: Path, label: str) -> dict:
+    if not path.exists():
+        raise typer.BadParameter(f"{label} file not found: {path}")
+    return _json.loads(path.read_text(encoding="utf-8"))
+
+
+@narrative_app.command("prepare")
+def narrative_prepare(
+    run_dir: Annotated[Path, typer.Option("--run-dir")],
+    results: Annotated[Path, typer.Option("--results")],
+    facts: Annotated[Path, typer.Option("--facts")],
+    name: Annotated[str, typer.Option("--name")],
+    project_root: Annotated[Path | None, typer.Option("--project-root")] = None,
+    force: Annotated[bool, typer.Option("--force")] = False,
+) -> None:
+    """Initialize a run directory from results.json + facts.json."""
+    results_doc = _read_json_input(results, "results")
+    facts_doc = _read_json_input(facts, "facts")
+    try:
+        state = _nw.prepare_run(
+            run_dir, results=results_doc, facts_json=facts_doc,
+            report_name=name, project_root=project_root, force=force,
+        )
+    except FileExistsError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(f"prepared: stage={state['stage']} merged={state['merged_sections']}")
+
+
+@narrative_app.command("status")
+def narrative_status(
+    run_dir: Annotated[Path, typer.Option("--run-dir")],
+    as_json: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Show the current stage and next action for a run."""
+    try:
+        payload = _nw.status_json(run_dir)
+    except FileNotFoundError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    if as_json:
+        typer.echo(_json.dumps(payload, ensure_ascii=False))
+    else:
+        typer.echo(f"stage={payload['stage']}  next={payload['next_action']}")
+
+
+@narrative_app.command("ingest")
+def narrative_ingest(
+    run_dir: Annotated[Path, typer.Option("--run-dir")],
+    stage: Annotated[str, typer.Option("--stage")],
+    source: Annotated[Path | None, typer.Option("--source")] = None,
+    section_id: Annotated[str | None, typer.Option("--section-id")] = None,
+) -> None:
+    """Ingest a sub-agent's JSON output for the given stage."""
+    if source is not None and not source.exists():
+        raise typer.BadParameter(f"source file not found: {source}")
+    try:
+        state = _nw.ingest_output(run_dir, stage=stage, source=source, section_id=section_id)
+    except (ValueError, FileNotFoundError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(f"ingested {stage}: {len(state['sections'])} section(s) recorded")
+
+
+@narrative_app.command("advance")
+def narrative_advance(
+    run_dir: Annotated[Path, typer.Option("--run-dir")],
+    project_root: Annotated[Path | None, typer.Option("--project-root")] = None,
+) -> None:
+    """Advance the run one step through the stage machine."""
+    try:
+        state = _nw.advance_run(run_dir, project_root=project_root)
+    except FileNotFoundError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(f"stage={state['stage']}")
+
+
+@narrative_app.command("finalize-deterministic")
+def narrative_finalize_deterministic(
+    run_dir: Annotated[Path, typer.Option("--run-dir")],
+    reason: Annotated[str, typer.Option("--reason")],
+    project_root: Annotated[Path | None, typer.Option("--project-root")] = None,
+) -> None:
+    """Deliver the deterministic skeleton fallback report and mark the run blocked."""
+    try:
+        state = _nw.finalize_deterministic(run_dir, project_root=project_root, reason=reason)
+    except FileNotFoundError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(f"stage={state['stage']} reason={state['degradation_reason']}")
 
 
 if __name__ == "__main__":
