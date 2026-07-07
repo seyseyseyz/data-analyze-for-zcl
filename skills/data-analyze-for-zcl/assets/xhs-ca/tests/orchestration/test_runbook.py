@@ -1,6 +1,8 @@
 from pathlib import Path
 
-ORCH = Path(__file__).resolve().parents[2] / "xhs_ceramics_analytics" / "orchestration"
+# The host-facing orchestration contract (dag.md, runbook.md, prompts/, schemas/)
+# lives at the repo-root orchestration/; the package orchestration/ holds only code.
+ORCH = Path(__file__).resolve().parents[2] / "orchestration"
 
 # Banned: any host/vendor/model identity leaking into shipped docs.
 _BANNED = ("claude", "codex", "gpt", "opus", "sonnet", "anthropic", "openai")
