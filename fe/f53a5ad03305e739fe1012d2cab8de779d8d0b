@@ -1,0 +1,21 @@
+xhs_ceramics_analytics/reporting/curated_view.py
+  s_6bd2349b4ebd4d::t_7bf23626e94f7f 1-254
+tests/reporting/test_curated_view.py
+  s_6bd2349b4ebd4d::t_972852d69d53df 1-227
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.28-trip",
+  "base_commit_sha": "fef53a5ad03305e739fe1012d2cab8de779d8d0b",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
