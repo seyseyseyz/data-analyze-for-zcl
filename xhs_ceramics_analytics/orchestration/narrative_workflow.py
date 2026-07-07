@@ -24,21 +24,99 @@ from xhs_ceramics_analytics.reporting.report_telemetry import (
 
 MAX_FAN_AGENTS = 6
 MAX_GATE_ROUNDS = 2
+# Review-stage patch budget (spec §Multi-Reviewer Review): a view whose 3 reviewers
+# reach no keep/drop majority is re-authored at most this many times; a view still
+# unconverged after the budget is spent is dropped, never blocking the report.
+MAX_REVIEW_PATCH_ROUNDS = 2
 
 _STATE_FILE = "state.json"
+_RESULT_TABLES_FILE = "result_tables.json"
 _SLUG_STRIP = re.compile(r"[^\w一-鿿]+")
 _TERMINAL_STAGES = {"finalized", "blocked"}
+
+# The three adversarial reviewer lenses (spec §Multi-Reviewer Review). Each is a
+# distinct failure-mode lens — not a redundant voter. Prose only, no digits.
+_REVIEW_LENSES: tuple[tuple[str, str], ...] = (
+    ("价值", "能让商家做出一个动作吗?还是内部统计琐碎?默认拒绝无行动价值的视图。"),
+    ("可读性", "非分析师商家 5 秒看得懂吗?列太多/列名黑话/该用趋势线却用表,默认拒绝。"),
+    ("支撑", "真的证明了 supports_claim 那条结论吗?无关或方向相反,默认拒绝。"),
+)
+
+# Verdict vocabulary a reviewer may return (spec: keep / revise / drop). Anything
+# outside this set counts toward neither keep nor drop, pushing the tally to patch.
+_KEEP_VERDICT = "keep"
+_DROP_VERDICT = "drop"
+_KNOWN_VERDICTS: frozenset[str] = frozenset({"keep", "revise", "drop"})
 
 _NEXT_ACTION = {
     "seed": "read briefs/seed.md, spawn one sub-agent, ingest --stage seed, then advance",
     "fan": "read briefs/fan_*.md, spawn one sub-agent per brief, ingest --stage fan each, then advance",
     "synth": "read the recorded sections, spawn one sub-agent, ingest --stage synth, then advance",
     "gate": "run advance to apply the deterministic fact-check gate",
-    "patch": "read gate failures, spawn one sub-agent, ingest --stage patch, then advance",
+    "patch": "read the patch brief, spawn one sub-agent, ingest --stage patch, then advance",
+    "review": "read briefs/review_*.md, spawn 3 reviewers (价值/可读性/支撑) per domain, "
+              "ingest --stage review each verdict, then advance",
     "continuity": "spawn one sub-agent to smooth transitions, ingest --stage continuity, then advance",
     "finalized": "done — deliver <name>.md + <name>.html",
     "blocked": "deterministic skeleton delivered — report degradation reason",
 }
+
+
+def tally_votes(verdicts) -> str:
+    """Resolve one curated view's 3 reviewer verdicts to ``keep`` / ``drop`` / ``patch``.
+
+    PURE and total: the exact strict precedence of spec §Multi-Reviewer Review, so
+    every verdict combination maps to exactly one outcome:
+
+    1. ``drop >= 2`` → ``drop`` (a clear majority to remove wins first).
+    2. else ``keep >= 2`` → ``keep`` (2 keep + 1 drop, or 2 keep + 1 revise → keep).
+    3. else → ``patch`` (any mix with no majority, incl. empty / all-revise).
+
+    Tolerant of missing/garbled input and NEVER raises: a non-list, non-string
+    elements, and unrecognized tokens (``revise`` or noise) simply count toward
+    neither keep nor drop — they push the tally to ``patch``. Case- and
+    whitespace-insensitive.
+    """
+    keep = drop = 0
+    if isinstance(verdicts, (list, tuple)):
+        for verdict in verdicts:
+            if not isinstance(verdict, str):
+                continue
+            token = verdict.strip().lower()
+            if token == _DROP_VERDICT:
+                drop += 1
+            elif token == _KEEP_VERDICT:
+                keep += 1
+    if drop >= 2:
+        return "drop"
+    if keep >= 2:
+        return "keep"
+    return "patch"
+
+
+def _view_action(verdicts, *, patch_rounds: int) -> str:
+    """Final fate of one curated view: ``keep`` / ``drop`` / ``patch``. Never raises.
+
+    Layers stage policy on the pure :func:`tally_votes`:
+
+    - Missing / garbled reviewer input (no recognized keep/revise/drop verdict at
+      all) degrades to ``drop`` — the adversarial default is "prefer fewer visuals
+      over a dump", and a view no reviewer could judge is dropped, not kept.
+    - A ``patch`` outcome whose patch budget is already spent degrades to ``drop``
+      (bounded to ``MAX_REVIEW_PATCH_ROUNDS``), so an unconvergeable view never
+      blocks the report.
+    - ``keep`` / ``drop`` pass through.
+    """
+    recognized = [
+        v for v in (verdicts or [])
+        if isinstance(v, str) and v.strip().lower() in _KNOWN_VERDICTS
+    ]
+    if not recognized:
+        return "drop"
+    outcome = tally_votes(recognized)
+    if outcome == "patch" and patch_rounds >= MAX_REVIEW_PATCH_ROUNDS:
+        return "drop"
+    return outcome
 
 
 def _slug(title: str) -> str:
@@ -180,7 +258,40 @@ def prepare_run(
     (run_dir / "facts.json").write_text(
         json.dumps(facts_json, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+    # persist the already-computed result.tables (numeric-trust source for the
+    # curated-view engine + gate). Absent/garbage degrades to {} → prose-only.
+    tables = results.get("result_tables")
+    if not isinstance(tables, dict):
+        tables = results.get("tables") if isinstance(results.get("tables"), dict) else {}
+    (run_dir / _RESULT_TABLES_FILE).write_text(
+        json.dumps(tables, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     return state
+
+
+def _load_result_tables(run_dir: Path) -> dict:
+    """Load the persisted ``result.tables``. Missing/garbage degrades to ``{}`` so
+    the curated-view path silently falls back to prose-only. Never raises."""
+    path = Path(run_dir) / _RESULT_TABLES_FILE
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _run_gate(bundle: dict, facts_json: dict, result_tables: dict):
+    """Call ``run_gate`` with ``result_tables`` only when there are tables to police.
+
+    When no tables were provided (today's prose-only runs, and the existing test
+    suite's 2-arg ``run_gate`` monkeypatches), this stays a 2-arg call so the gate's
+    behavior and signature expectations are unchanged. When tables ARE present the
+    3rd arg lets the gate enforce the curated-view trust/anti-dump rules."""
+    if result_tables:
+        return run_gate(bundle, facts_json, result_tables)
+    return run_gate(bundle, facts_json)
 
 
 _FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL)
@@ -190,6 +301,7 @@ _EXPECTED_STATUS = {
     "fan": {"fan"},
     "synth": {"synth"},
     "patch": {"patch"},
+    "review": {"review"},
     "continuity": {"continuity"},
 }
 
@@ -241,11 +353,18 @@ def _record_section(state: dict, section: dict) -> None:
         raise ValueError(f"section entry must be a JSON object, got {type(section).__name__}")
     title = section.get("title") or section.get("section_id") or "section"
     section_id = _slug(section.get("section_id") or title)
-    state["sections"][section_id] = {
+    recorded = {
         "section_id": section_id,
         "title": title,
         "body": section.get("body", ""),
     }
+    # Preserve the agent-emitted curated view-specs so they survive into the
+    # bundle (via _bundle_from_state) and reach the gate / review / render. Only
+    # added when present, so prose-only sections are byte-identical to before.
+    views = section.get("curated_views")
+    if isinstance(views, (list, tuple)):
+        recorded["curated_views"] = [v for v in views]
+    state["sections"][section_id] = recorded
 
 
 def ingest_output(run_dir, *, stage: str, source=None, text=None, section_id=None) -> dict:
@@ -267,6 +386,20 @@ def ingest_output(run_dir, *, stage: str, source=None, text=None, section_id=Non
         if source is None:
             raise ValueError("provide either source or text")
         text = Path(source).read_text(encoding="utf-8")
+
+    if stage == "review":
+        # Reviewer verdicts, not sections. Parse tolerantly — garbled/unparseable
+        # reviewer output records nothing (never raises); the advance step then
+        # degrades any view with no usable verdict to a drop.
+        try:
+            parsed = extract_json(text)
+        except ValueError:
+            parsed = None
+        _ingest_review_verdicts(state, parsed)
+        state.setdefault("history", []).append("ingest:review")
+        _write_state(run_dir, state)
+        return state
+
     parsed = extract_json(text)
 
     if isinstance(parsed, dict) and "sections" in parsed:
@@ -303,6 +436,275 @@ def _bundle_from_state(state: dict) -> dict:
     return {"sections": ordered + extras}
 
 
+# ---- curated-view review stage (spec §Multi-Reviewer Review) --------------
+
+
+def _view_key(section_id, view, idx: int) -> str:
+    """Stable identity for one curated view: its ``view_id`` when present, else a
+    positional ``{section_id}#{idx}`` fallback. Used to key reviewer verdicts."""
+    if isinstance(view, dict):
+        vid = view.get("view_id")
+        if isinstance(vid, str) and vid.strip():
+            return vid.strip()
+    return f"{section_id}#{idx}"
+
+
+def _iter_curated_views(bundle):
+    """Yield ``(section_id, idx, view)`` for every curated view in the bundle.
+    Never raises — malformed sections/views are skipped."""
+    for section in (bundle or {}).get("sections") or []:
+        if not isinstance(section, dict):
+            continue
+        section_id = section.get("section_id")
+        views = section.get("curated_views")
+        if not isinstance(views, (list, tuple)):
+            continue
+        for idx, view in enumerate(views):
+            yield section_id, idx, view
+
+
+def _bundle_has_curated_views(bundle) -> bool:
+    """True iff at least one section carries a (dict) curated view to review."""
+    for _sid, _idx, view in _iter_curated_views(bundle):
+        if isinstance(view, dict):
+            return True
+    return False
+
+
+def _iter_verdict_items(parsed):
+    """Yield the per-view verdict dicts from a tolerant range of shapes. Never raises.
+
+    Accepts ``{"verdicts": [...]}`` / ``{"views": [...]}`` / ``{"reviews": [...]}``,
+    a bare list of verdict dicts, or a single ``{"verdict": ...}`` object.
+    """
+    if isinstance(parsed, dict):
+        for field_name in ("verdicts", "views", "reviews"):
+            seq = parsed.get(field_name)
+            if isinstance(seq, (list, tuple)):
+                for item in seq:
+                    if isinstance(item, dict):
+                        yield item
+                return
+        if "verdict" in parsed:
+            yield parsed
+    elif isinstance(parsed, (list, tuple)):
+        for item in parsed:
+            if isinstance(item, dict):
+                yield item
+
+
+def _ingest_review_verdicts(state: dict, parsed) -> None:
+    """Accumulate one reviewer's verdicts into ``state['_reviews']`` (view_key →
+    list[str]) and their reasons into ``state['_review_reasons']``. Never raises —
+    entries lacking a view id or verdict string are skipped."""
+    reviews = state.setdefault("_reviews", {})
+    reasons = state.setdefault("_review_reasons", {})
+    for item in _iter_verdict_items(parsed):
+        key = item.get("view_id") or item.get("view_key")
+        verdict = item.get("verdict")
+        if not (isinstance(key, str) and key):
+            continue
+        if not isinstance(verdict, str) or not verdict.strip():
+            continue
+        reviews.setdefault(key, []).append(verdict)
+        reason = item.get("reason")
+        if isinstance(reason, str) and reason.strip():
+            reasons.setdefault(key, []).append(reason.strip())
+
+
+def _resolve_section_views(section_id, views, reviews: dict, patch_rounds: int):
+    """Decide each view's fate for one section. Returns ``(kept_views, patched_keys)``.
+
+    ``kept_views`` retains keep AND patch views (a patch view is re-authored in
+    place); dropped views are omitted. ``patched_keys`` lists views still needing a
+    patch round. Never raises."""
+    kept: list = []
+    patched: list[str] = []
+    if not isinstance(views, (list, tuple)):
+        return kept, patched
+    for idx, view in enumerate(views):
+        key = _view_key(section_id, view, idx)
+        action = _view_action(reviews.get(key, []), patch_rounds=patch_rounds)
+        if action == "drop":
+            continue
+        kept.append(view)
+        if action == "patch":
+            patched.append(key)
+    return kept, patched
+
+
+def _sync_recorded_curated_views(state: dict, reviews: dict, patch_rounds: int) -> None:
+    """Apply the same drop decisions to ``state['sections']`` so a later patch
+    rebuild (via :func:`_bundle_from_state`) does not resurrect a dropped view.
+    Rebuilds each ``curated_views`` list; never raises."""
+    for sid, section in (state.get("sections") or {}).items():
+        if not isinstance(section, dict):
+            continue
+        views = section.get("curated_views")
+        if not isinstance(views, (list, tuple)) or not views:
+            continue
+        kept, _patched = _resolve_section_views(
+            section.get("section_id", sid), views, reviews, patch_rounds
+        )
+        section["curated_views"] = kept
+
+
+def _write_review_briefs(run_dir: Path, bundle: dict) -> None:
+    """Write one reviewer brief per (domain, lens) — 3 lenses per domain, each
+    judging that domain's curated views through its single failure-mode lens. Prose
+    + column names only (no numbers — the gate already locked those). Never raises."""
+    briefs_dir = run_dir / "briefs"
+    briefs_dir.mkdir(parents=True, exist_ok=True)
+    by_section: dict = {}
+    for section_id, idx, view in _iter_curated_views(bundle):
+        by_section.setdefault(section_id, []).append((idx, view))
+    for section_id, views in by_section.items():
+        payload_views = []
+        for idx, view in views:
+            v = view if isinstance(view, dict) else {}
+            payload_views.append(
+                {
+                    "view_id": _view_key(section_id, view, idx),
+                    "template": v.get("template", ""),
+                    "title": v.get("title", ""),
+                    "columns": list(v.get("columns") or []),
+                    "how_to_read": v.get("how_to_read", ""),
+                    "why_it_matters": v.get("why_it_matters", ""),
+                    "supports_claim": v.get("supports_claim", ""),
+                }
+            )
+        for lens, question in _REVIEW_LENSES:
+            lines = [
+                f"# Review brief — 域『{section_id}』· 视角『{lens}』",
+                "",
+                f"你是「{lens}」评审员。只问一件事:{question}",
+                "对下面每个策展视图给出 keep / revise / drop 之一 + 一句理由。",
+                "你只评判价值/可读性/支撑,不能改数字(确定性 gate 已锁定数值)。",
+                "宁可少放视图,也不要堆砌。返回 JSON:",
+                '{"section_id","lens","verdicts":[{"view_id","verdict":"keep|revise|drop","reason"}]}',
+                "",
+                "```json",
+                json.dumps(
+                    {"section_id": section_id, "lens": lens, "views": payload_views},
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                "```",
+            ]
+            path = briefs_dir / f"review_{_slug(str(section_id))}_{_slug(lens)}.md"
+            path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _write_review_patch_brief(
+    run_dir: Path, bundle: dict, patched_keys, reasons: dict
+) -> None:
+    """Write the patch brief for views the reviewers could not converge on. The
+    patch agent re-authors only the view-spec (template/columns/rows/source/prose)
+    using the merged reviewer reasons — never writes a number. Never raises."""
+    briefs_dir = run_dir / "briefs"
+    briefs_dir.mkdir(parents=True, exist_ok=True)
+    targets = set(patched_keys)
+    payload = []
+    for section_id, idx, view in _iter_curated_views(bundle):
+        key = _view_key(section_id, view, idx)
+        if key not in targets:
+            continue
+        v = view if isinstance(view, dict) else {}
+        payload.append(
+            {
+                "view_id": key,
+                "section_id": section_id,
+                "template": v.get("template", ""),
+                "title": v.get("title", ""),
+                "columns": list(v.get("columns") or []),
+                "supports_claim": v.get("supports_claim", ""),
+                "merged_reasons": list(reasons.get(key, [])),
+            }
+        )
+    lines = [
+        "# Patch brief — 评审未收敛的策展视图",
+        "",
+        "以下视图三位评审投票无多数(既非 keep 也非 drop)。请按 merged_reasons 重挑列/减列/",
+        "换模板/换源表后重写其 view-spec。只改 view-spec,不得写入任何数值(确定性引擎从源表填数)。",
+        '返回 JSON:{"sections":[{"section_id","title","body","curated_views":[...]}]}',
+        "",
+        "```json",
+        json.dumps({"views_to_repatch": payload}, ensure_ascii=False, indent=2),
+        "```",
+    ]
+    (briefs_dir / "review_patch.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _enter_review_or_continuity(run_dir: Path, state: dict) -> dict:
+    """Post-gate router: a bundle carrying curated views goes to the ``review``
+    stage (fresh verdict slate + reviewer briefs); a prose-only bundle skips
+    straight to ``continuity`` (today's behavior). Persists + returns state."""
+    bundle = state.get("_bundle") or {}
+    if _bundle_has_curated_views(bundle):
+        state["_reviews"] = {}
+        state["_review_reasons"] = {}
+        state.setdefault("_review_patch_rounds", 0)
+        state.pop("_review_patch_pending", None)
+        _write_review_briefs(run_dir, bundle)
+        state["stage"] = "review"
+    else:
+        state["stage"] = "continuity"
+    _write_state(run_dir, state)
+    return state
+
+
+def _resolve_review_stage(run_dir: Path, state: dict) -> dict:
+    """Tally each curated view's verdicts and route: drop → remove; keep → retain;
+    no-majority → patch (bounded to ``MAX_REVIEW_PATCH_ROUNDS``, then dropped).
+
+    When any view still needs a patch round, routes to the existing ``patch`` stage
+    with a re-author brief and a fresh verdict slate. Otherwise applies the drops
+    and advances to ``continuity``. Never raises; a section left with zero views
+    degrades to prose-only, and the report still finalizes."""
+    reviews = state.get("_reviews") or {}
+    reasons = state.get("_review_reasons") or {}
+    patch_rounds = state.get("_review_patch_rounds", 0)
+    bundle = state.get("_bundle") or _bundle_from_state(state)
+
+    patched_keys: list[str] = []
+    new_sections: list = []
+    for section in bundle.get("sections") or []:
+        if not isinstance(section, dict):
+            new_sections.append(section)
+            continue
+        views = section.get("curated_views")
+        if not isinstance(views, (list, tuple)) or not views:
+            new_sections.append(section)
+            continue
+        kept, patched = _resolve_section_views(
+            section.get("section_id"), views, reviews, patch_rounds
+        )
+        patched_keys.extend(patched)
+        new_sections.append({**section, "curated_views": kept})
+
+    new_bundle = {**bundle, "sections": new_sections}
+    state["_bundle"] = new_bundle
+    # keep the recorded sections in sync so a patch rebuild preserves the drops
+    _sync_recorded_curated_views(state, reviews, patch_rounds)
+
+    if patched_keys:
+        state["_review_patch_rounds"] = patch_rounds + 1
+        state["_reviews"] = {}
+        state["_review_reasons"] = {}
+        state["_review_patch_pending"] = list(patched_keys)
+        _write_review_patch_brief(run_dir, new_bundle, patched_keys, reasons)
+        state["stage"] = "patch"
+        _write_state(run_dir, state)
+        return state
+
+    state["_reviews"] = {}
+    state["_review_reasons"] = {}
+    state.pop("_review_patch_pending", None)
+    state["stage"] = "continuity"
+    _write_state(run_dir, state)
+    return state
+
+
 def status_json(run_dir) -> dict:
     """Machine-readable run status: stage, next action, pending briefs, degradation."""
     run_dir = Path(run_dir)
@@ -315,6 +717,10 @@ def status_json(run_dir) -> dict:
         briefs = [str(briefs_dir / "seed.md")]
     elif stage == "fan":
         briefs = [str(p) for p in sorted(briefs_dir.glob("fan_*.md"))]
+    elif stage == "review":
+        briefs = [str(p) for p in sorted(briefs_dir.glob("review_*.md")) if p.name != "review_patch.md"]
+    elif stage == "patch" and state.get("_review_patch_pending"):
+        briefs = [str(briefs_dir / "review_patch.md")]
     else:
         briefs = []
     return {
@@ -327,12 +733,13 @@ def status_json(run_dir) -> dict:
 
 
 def _run_gate_stage(run_dir: Path, state: dict, facts_json: dict, project_root) -> dict:
-    report = run_gate(state.get("_bundle", _bundle_from_state(state)), facts_json)
+    result_tables = _load_result_tables(run_dir)
+    report = _run_gate(state.get("_bundle", _bundle_from_state(state)), facts_json, result_tables)
     if report.status == "PASS":
         state["_bundle"] = report.bundle
-        state["stage"] = "continuity"
-        _write_state(run_dir, state)
-        return state
+        # numeric trust is now locked; a bundle with curated views goes to the
+        # adversarial review stage, a prose-only bundle straight to continuity.
+        return _enter_review_or_continuity(run_dir, state)
     rounds = state.get("_gate_rounds", 0) + 1
     state["_gate_rounds"] = rounds
     if rounds > MAX_GATE_ROUNDS:
@@ -379,6 +786,7 @@ def advance_run(run_dir, *, project_root=None) -> dict:
         bundle = render_draft(_bundle_from_state(state), facts_json)
         state["_bundle"] = bundle
         state["_gate_rounds"] = 0
+        state["_review_patch_rounds"] = 0
         state["stage"] = "gate"
         return _run_gate_stage(run_dir, state, facts_json, project_root)
     elif stage == "gate":
@@ -388,10 +796,13 @@ def advance_run(run_dir, *, project_root=None) -> dict:
         state["_bundle"] = bundle
         state["stage"] = "gate"
         return _run_gate_stage(run_dir, state, facts_json, project_root)
+    elif stage == "review":
+        # Passive multi-reviewer resolution: tally per view, route keep/drop/patch.
+        return _resolve_review_stage(run_dir, state)
     elif stage == "continuity":
         edits = state.get("_continuity_edits", [])
         bundle = apply_continuity_edits(state.get("_bundle", _bundle_from_state(state)), edits)
-        report = run_gate(bundle, facts_json)
+        report = _run_gate(bundle, facts_json, _load_result_tables(run_dir))
         if report.status == "PASS":
             state["_bundle"] = report.bundle
             _write_state(run_dir, state)
@@ -487,8 +898,14 @@ def finalize_narrative(run_dir, *, project_root=None) -> dict:
     facts_json = json.loads((run_dir / "facts.json").read_text(encoding="utf-8"))
     report_name = state["report_name"]
     bundle = state.get("_bundle") or _bundle_from_state(state)
+    result_tables = _load_result_tables(run_dir)
 
-    markdown = bundle_to_markdown(bundle, facts_json, title=report_name)
+    # Pass result_tables so each retained curated view's numbers are filled by the
+    # deterministic engine from the source table (the numeric-trust boundary). With
+    # no tables the views degrade to prose-only — the report still delivers.
+    markdown = bundle_to_markdown(
+        bundle, facts_json, title=report_name, result_tables=result_tables
+    )
     out_dir = outputs_dir(project_root)
     (out_dir / f"{report_name}.md").write_text(markdown, encoding="utf-8")
 
