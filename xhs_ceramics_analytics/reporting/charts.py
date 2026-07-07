@@ -858,3 +858,102 @@ _BUILDERS["channel_structure_diagnosis"] = _build_channel
 _BUILDERS["sku_structure_diagnosis"] = _build_sku_l2
 _BUILDERS["refund_root_cause_diagnosis"] = _build_refund_category
 _BUILDERS["audience_structure_diagnosis"] = _build_audience
+
+
+# --- Spec-driven template renderers (agent-curated visuals) ----------------
+#
+# The task-keyed _BUILDERS above own the DETERMINISTIC report path and stay
+# untouched. The curation path is different: a curation agent emits only a
+# declarative view-spec (template + column binding), and this pure renderer fills
+# the SVG from already-selected/ordered rows, reusing the very same SVG primitives
+# (_line / _waterfall / _vbar). The agent decides *what it looks like*; the engine
+# decides *what the numbers are* — no numeric value is ever authored by the agent.
+#
+# Contract: byte-deterministic (the primitives use no random ids/timestamps and a
+# stable, input-driven element order) and NEVER-RAISE — any malformed template,
+# binding, or row degrades to an empty Markup so a single bad view drops without
+# blocking the report.
+
+# chart-only whitelist (table templates render as HTML elsewhere, not here).
+_CHART_TEMPLATES: frozenset[str] = frozenset(
+    {"trend_line", "breakdown_waterfall", "share_bar"}
+)
+
+# confidence tags/levels that should render the chart de-emphasised (hatched /
+# dashed). Covers the view-spec 强/中/弱 axis, the reader-facing 高/中/低 axis, and
+# their English keys, so either confidence model maps consistently.
+_WEAK_CONFIDENCE: frozenset[str] = frozenset(
+    {"弱", "低", "暂不下定论", "weak", "low", "not_judgable"}
+)
+
+
+def _cell(row: object, key: object) -> object:
+    """Read a column from a row, tolerating non-dict rows (returns None)."""
+    return row.get(key) if isinstance(row, dict) else None
+
+
+def _as_float(value: object) -> float | None:
+    """Coerce a cell to float, or None when it is not a finite number. bool is
+    treated as non-numeric so a True/False cell never becomes a 1/0 bar."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        num = float(value)
+    except (TypeError, ValueError):
+        return None
+    return num if num == num and num not in (float("inf"), float("-inf")) else None
+
+
+def _confidence_de_emphasize(confidence: object) -> bool:
+    """Map an optional confidence (ReaderConfidence, a 强/中/弱 tag, or None) to the
+    boolean de-emphasis flag the primitives expect. Never raises."""
+    if confidence is None:
+        return False
+    if isinstance(confidence, ReaderConfidence):
+        return bool(confidence.de_emphasize)
+    return str(confidence) in _WEAK_CONFIDENCE
+
+
+def render_chart_template(
+    template: str,
+    rows: list[dict],
+    binding: dict,
+    *,
+    confidence: object = None,
+) -> Markup:
+    """Render one curated chart template to deterministic inline SVG.
+
+    ``binding`` carries the ``{x, y}`` column keys; ``rows`` are already selected
+    and ordered by the caller (no aggregation happens here). Displayed numbers are
+    filled from the rows via :mod:`labels`, never from agent text. Returns an empty
+    :class:`Markup` for an unknown template, an incomplete binding, or empty/garbage
+    rows — the report degrades gracefully rather than raising.
+    """
+    try:
+        if template not in _CHART_TEMPLATES:
+            return Markup("")
+        if not isinstance(rows, (list, tuple)) or not rows:
+            return Markup("")
+        if not isinstance(binding, dict):
+            return Markup("")
+        x_key, y_key = binding.get("x"), binding.get("y")
+        if not x_key or not y_key:
+            return Markup("")
+
+        de = _confidence_de_emphasize(confidence)
+        cats = [labels.value_label(str(_cell(r, x_key))) for r in rows]
+        values = [_as_float(_cell(r, y_key)) for r in rows]
+        texts = [
+            labels.format_number(v) if v is not None else "暂无数据" for v in values
+        ]
+
+        if template == "share_bar":
+            svg = _vbar(cats, values, texts, title="", de_emphasize=de)
+        elif template == "breakdown_waterfall":
+            svg = _waterfall(cats, values, texts, title="", de_emphasize=de)
+        else:  # trend_line — a single metric over the bound x column
+            svg = _line([(str(y_key), values)], cats, de_emphasize=de)
+        return Markup(svg)
+    except Exception:  # never-raise: a bad view drops, the report still renders
+        logger.exception("render_chart_template failed for template=%r", template)
+        return Markup("")
