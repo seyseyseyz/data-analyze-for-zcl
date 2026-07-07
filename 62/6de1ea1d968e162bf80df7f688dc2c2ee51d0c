@@ -1,0 +1,22 @@
+tests/orchestration/test_narrative_cli.py
+  s_6bd2349b4ebd4d::t_11b0a815d94673 1-70
+xhs_ceramics_analytics/cli.py
+  s_6bd2349b4ebd4d::t_9ba45d851ef7f5 1,8,19-20
+  s_6bd2349b4ebd4d::t_eb28bd0b6c61c4 460-552
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.28-trip",
+  "base_commit_sha": "626de1ea1d968e162bf80df7f688dc2c2ee51d0c",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
