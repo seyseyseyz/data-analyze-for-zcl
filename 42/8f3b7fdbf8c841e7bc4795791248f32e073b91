@@ -1,0 +1,23 @@
+xhs_ceramics_analytics/reporting/report_telemetry.py
+  s_6bd2349b4ebd4d::t_dca6cac0d6c25b 15
+  s_6bd2349b4ebd4d::t_20471ef377d7a7 4
+  s_6bd2349b4ebd4d::t_eaafafc8c3ed1f 26
+tests/reporting/test_report_telemetry.py
+  s_6bd2349b4ebd4d::t_3afd82479af190 1-21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.28-trip",
+  "base_commit_sha": "428f3b7fdbf8c841e7bc4795791248f32e073b91",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
