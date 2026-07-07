@@ -53,6 +53,10 @@ def test_runbook_authorization_is_a_blocking_wait_gate():
     assert "wait" in body
     # "no answer yet" is a third state, distinct from denied/unsupported.
     assert "no answer yet" in body
+    # The ask must be a distinct question, never smuggled into a progress update
+    # then run past — the exact self-rationalization the live host admitted to.
+    assert "distinct question" in body
+    assert "progress update" in body
 
 
 def test_runbook_prepare_wires_results_and_facts_inputs():
