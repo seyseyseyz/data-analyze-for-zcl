@@ -424,8 +424,12 @@ def test_producer_output_feeds_finalize_deterministic_without_crash(tmp_path):
             findings=[Finding(title="t", conclusion="大盘走弱", evidence_strength=EvidenceStrength.WEAK, key_numbers={"gmv": 1})],
         )
     ]
-    results = build_narrative_results(analysis, blocked_modules=("note_funnel", "paid_traffic_efficiency"))
-    assert all(isinstance(b, str) for b in results["blocked_modules"])  # contract: strings
+    results = build_narrative_results(
+        analysis,
+        blocked_modules=[("note_funnel", "笔记表缺少 impressions 字段"), "paid_traffic_efficiency"],
+    )
+    # contract: normalized to {slug, reason} dicts — the skeleton reader consumes this.
+    assert all(isinstance(b, dict) and "slug" in b for b in results["blocked_modules"])
     facts_json = {"facts_hash": "h", "numbers": {}}
     project_root = tmp_path / "proj"
     project_root.mkdir()
@@ -434,6 +438,8 @@ def test_producer_output_feeds_finalize_deterministic_without_crash(tmp_path):
     nw.finalize_deterministic(run_dir, project_root=project_root, reason="unsupported")
     body = (project_root / ".xhs-ceramics-analytics" / "outputs" / "r.md").read_text(encoding="utf-8")
     assert "note_funnel" in body and "paid_traffic_efficiency" in body
+    # the coverage reason must reach the skeleton, not just the bare slug.
+    assert "笔记表缺少 impressions 字段" in body
 
 
 def test_finalize_deterministic_handles_slice_with_no_reading_key(tmp_path):

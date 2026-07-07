@@ -45,6 +45,16 @@ def test_runbook_declares_fallback_on_blocked_or_denied():
     assert "deterministic" in body
 
 
+def test_runbook_authorization_is_a_blocking_wait_gate():
+    body = _text("runbook.md")
+    # After asking you STOP and wait for the reply (it comes in a later turn); you
+    # must NOT ask-and-degrade in the same turn — the observed live failure.
+    assert "blocking gate" in body
+    assert "wait" in body
+    # "no answer yet" is a third state, distinct from denied/unsupported.
+    assert "no answer yet" in body
+
+
 def test_runbook_prepare_wires_results_and_facts_inputs():
     body = _text("runbook.md")
     # prepare must consume a domain-sliced results.json plus facts.json — not just

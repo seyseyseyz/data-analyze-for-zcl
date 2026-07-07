@@ -6,14 +6,22 @@ This runbook is the control loop the host agent follows to drive the narrative
 workflow. The controller is passive: it prepares briefs and durable state and
 ingests results, but never spawns. You (the host) own spawning.
 
-## Authorization — ask once, every run (asking is not spawning)
+## Authorization — ask once, every run (a blocking gate; asking is not spawning)
 
 Asking the user to authorize the narrative writer is a **required first step**,
 and **asking is not spawning**. A host whose policy forbids spawning sub-agents
 without an explicit user request still MUST ask: the user's "yes" is that
 explicit request. Never skip the question, and never treat "the user has not
 asked for sub-agents yet" as "this host cannot spawn" — that is the mislabel to
-avoid. Ask, then branch:
+avoid.
+
+**Authorization is a blocking gate.** After you ask, STOP and wait for the
+user's reply — it arrives in a *later* turn. Do NOT run `prepare`, `advance`, or
+`finalize-deterministic` in the same turn you ask. Asking and then degrading in
+one turn (the observed live failure) silently denies the user the narrative path
+they were never given the chance to accept. "No answer yet" is a third state: it
+is **not** `denied` and **not** `unsupported` — it just means keep waiting. Only
+once the reply is in hand do you branch:
 
 - **Authorized** → proceed to the loop below and spawn.
 - **Declined** → deterministic fallback, `--reason denied` (see "Degradation").

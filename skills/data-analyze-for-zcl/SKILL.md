@@ -41,7 +41,10 @@ automatically so it can never fail open:
    sub-agents without an explicit user request, you must still ask: the user's
    "yes" IS that request. Do not skip the question, and do not treat "the user
    has not asked for sub-agents" as "this host cannot spawn" and silently
-   degrade — ask first.
+   degrade — ask first. **This is a blocking gate:** after asking, STOP and wait
+   for the reply — it comes in a *later* turn. Do not run `prepare`, `advance`,
+   or `finalize-deterministic` in the same turn you ask. "No answer yet" is not a
+   decline; only branch once the user has actually answered.
 3. **If authorized**, drive the narrative workflow instead of composing
    directly. Follow `assets/xhs-ca/orchestration/runbook.md` exactly:
    `prepare` → `status --json` → map briefs to spawns → `ingest` each result →

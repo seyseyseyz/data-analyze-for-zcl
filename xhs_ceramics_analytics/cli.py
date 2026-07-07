@@ -20,21 +20,28 @@ narrative_app = typer.Typer(help="Drive the file-based narrative workflow.")
 app.add_typer(narrative_app, name="narrative")
 
 
-def _write_narrative_results(results, blocked_modules, project_root) -> None:
+def _write_narrative_results(results, blocked_modules, project_root, block_reasons=None) -> None:
     """Emit results.json (the narrative `--results` input) beside facts.json.
 
     Like the facts.json / HTML paths, this is a sidecar: a failure here must never
     abort an already-produced fact layer — it degrades to a warning. results.json is
     the domain-sliced document `xhs-ca narrative prepare --results` consumes; facts.json
     cannot serve that role (its ``domain_slices`` is an always-empty cache dict).
+
+    ``block_reasons`` (slug → why-blocked, from coverage) enriches ``blocked_modules``
+    so the deterministic skeleton can explain what data unlocks each blocked module.
+    When absent (curated multi-slug runs, where coverage was not swept), reasons are
+    empty and the skeleton still lists the bare slugs.
     """
     from xhs_ceramics_analytics.reporting.narrative_results import build_narrative_results
 
+    block_reasons = block_reasons or {}
+    blocked = [{"slug": s, "reason": block_reasons.get(s, "")} for s in blocked_modules]
     out = state_dir(project_root) / "results.json"
     try:
         out.write_text(
             _json.dumps(
-                build_narrative_results(results, blocked_modules=blocked_modules),
+                build_narrative_results(results, blocked_modules=blocked),
                 ensure_ascii=False,
                 indent=2,
             ),
@@ -161,13 +168,20 @@ def run(
 
     db_path = db or state_dir(project_root) / "analytics.duckdb"
     requested = list(tasks) if tasks else ["weekly_business_review"]
+    # slug → why-blocked, harvested from the single coverage sweep in the auto path so
+    # the narrative skeleton can explain what data unlocks each blocked module.
+    block_reasons: dict[str, str] = {}
     if requested == ["all"]:
         task_ids = list(TASKS)
         basename = name or "all"
     elif requested == ["auto"]:
-        from xhs_ceramics_analytics.analysis.coverage import producible_task_ids
+        from xhs_ceramics_analytics.analysis.coverage import assess_coverage
 
-        task_ids = producible_task_ids(db_path)
+        coverage = assess_coverage(db_path)
+        task_ids = [c.task_id for c in coverage if c.producible]
+        block_reasons = {
+            c.task_id: "；".join(c.reasons) for c in coverage if not c.producible
+        }
         if not task_ids:
             raise typer.BadParameter(
                 "no task is producible on this database — run `xhs-ca coverage` to see why."
@@ -215,7 +229,7 @@ def run(
             f"facts.json build failed; kept report and skipped the sidecar: {exc}",
             err=True,
         )
-    _write_narrative_results(results, blocked, project_root)
+    _write_narrative_results(results, blocked, project_root, block_reasons)
     if html_out.exists():
         html_out.unlink()
     try:
@@ -249,7 +263,7 @@ def facts(
     ] = None,
 ) -> None:
     """Build the deterministic FactBook and write facts.json into the state dir (0 agents)."""
-    from xhs_ceramics_analytics.analysis.coverage import producible_task_ids
+    from xhs_ceramics_analytics.analysis.coverage import assess_coverage
     from xhs_ceramics_analytics.analysis.registry import TASKS, run_task
     from xhs_ceramics_analytics.reporting.facts_export import (
         build_factbook,
@@ -259,8 +273,14 @@ def facts(
 
     db_path = db or state_dir(project_root) / "analytics.duckdb"
     requested = list(tasks) if tasks else ["auto"]
+    # slug → why-blocked, harvested from the single coverage sweep in the auto path.
+    block_reasons: dict[str, str] = {}
     if requested == ["auto"]:
-        task_ids = list(producible_task_ids(db_path))
+        coverage = assess_coverage(db_path)
+        task_ids = [c.task_id for c in coverage if c.producible]
+        block_reasons = {
+            c.task_id: "；".join(c.reasons) for c in coverage if not c.producible
+        }
     elif requested == ["all"]:
         task_ids = list(TASKS)
     else:
@@ -271,7 +291,7 @@ def facts(
     out = state_dir(project_root) / "facts.json"
     out.write_text(factbook_to_json(book), encoding="utf-8")
     typer.echo(f"Wrote facts: {out}")
-    _write_narrative_results(results, blocked, project_root)
+    _write_narrative_results(results, blocked, project_root, block_reasons)
     typer.echo(f"facts_hash: {facts_hash(book)}")
 
 

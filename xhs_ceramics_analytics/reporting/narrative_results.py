@@ -38,6 +38,27 @@ def _reading(findings: list[Finding]) -> dict[str, str]:
     return {"conclusion": "；".join(conclusions)}
 
 
+def _normalize_blocked(blocked_modules) -> list[dict[str, str]]:
+    """规范每个阻断项为 ``{"slug", "reason"}``,让骨架能说清「缺什么」。
+
+    容忍三种输入:裸字符串 slug(原因留空)、``(slug, reason)`` 二元组(coverage
+    带原因的常见形态)、以及已成形的 dict。统一成 dict 后,确定性骨架 fallback 里
+    ``_deterministic_markdown`` 就能渲染出「- note_funnel：笔记表缺少 impressions 字段」。
+    """
+    out: list[dict[str, str]] = []
+    for item in blocked_modules:
+        if isinstance(item, dict):
+            out.append(
+                {"slug": str(item.get("slug", "")), "reason": str(item.get("reason", ""))}
+            )
+        elif isinstance(item, (tuple, list)) and len(item) == 2:
+            slug, reason = item
+            out.append({"slug": str(slug), "reason": str(reason)})
+        else:
+            out.append({"slug": str(item), "reason": ""})
+    return out
+
+
 def build_narrative_results(
     results: list[AnalysisResult],
     *,
@@ -45,9 +66,11 @@ def build_narrative_results(
 ) -> dict[str, object]:
     """构造叙事控制器的 results.json 文档。Never-raise。
 
-    返回 ``{"domain_slices": [{"title", "facts", "reading"}], "blocked_modules": [...]}``。
-    切片顺序即 :data:`domains.DOMAINS` 的域顺序;facts 逐条来自 Finding.key_numbers,
-    绝不造数;某域无 key_numbers 时 facts 为空但切片仍保留(标题 + 结论仍有价值)。
+    返回 ``{"domain_slices": [{"title", "facts", "reading"}], "blocked_modules":
+    [{"slug", "reason"}]}``。切片顺序即 :data:`domains.DOMAINS` 的域顺序;facts 逐条来自
+    Finding.key_numbers,绝不造数;某域无 key_numbers 时 facts 为空但切片仍保留(标题 +
+    结论仍有价值)。``blocked_modules`` 被规范成 ``{slug, reason}`` dict(见
+    :func:`_normalize_blocked`),原因供确定性骨架说明「缺什么」。
     """
     slices: list[dict[str, object]] = []
     for group in group_by_domain(results):
@@ -60,4 +83,4 @@ def build_narrative_results(
                 "reading": _reading(findings),
             }
         )
-    return {"domain_slices": slices, "blocked_modules": list(blocked_modules)}
+    return {"domain_slices": slices, "blocked_modules": _normalize_blocked(blocked_modules)}

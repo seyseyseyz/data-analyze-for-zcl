@@ -30,7 +30,25 @@ def test_returns_domain_slices_and_blocked_modules_keys():
     doc = build_narrative_results([], blocked_modules=("note_funnel",))
     assert set(doc) == {"domain_slices", "blocked_modules"}
     assert doc["domain_slices"] == []
-    assert doc["blocked_modules"] == ["note_funnel"]
+    # blocked_modules is normalized to {slug, reason} dicts so the skeleton can
+    # explain what is missing; a bare string gets an empty reason.
+    assert doc["blocked_modules"] == [{"slug": "note_funnel", "reason": ""}]
+
+
+def test_blocked_modules_carry_coverage_reason_when_given_as_pairs():
+    doc = build_narrative_results(
+        [], blocked_modules=[("note_funnel", "笔记表缺少 impressions 字段")]
+    )
+    assert doc["blocked_modules"] == [
+        {"slug": "note_funnel", "reason": "笔记表缺少 impressions 字段"}
+    ]
+
+
+def test_blocked_modules_accepts_dicts_verbatim():
+    doc = build_narrative_results(
+        [], blocked_modules=[{"slug": "note_funnel", "reason": "缺表"}]
+    )
+    assert doc["blocked_modules"] == [{"slug": "note_funnel", "reason": "缺表"}]
 
 
 def test_slice_shape_matches_narrative_consumer():

@@ -38,6 +38,23 @@ def test_run_writes_results_json_with_domain_slices(tmp_path, fixture_dir):
     doc = json.loads(results_json.read_text(encoding="utf-8"))
     assert doc["domain_slices"], "results.json domain_slices must be non-empty"
     assert set(doc) == {"domain_slices", "blocked_modules"}
+    # blocked_modules are {slug, reason} dicts (explicit-slug run → reasons empty).
+    assert all(set(b) == {"slug", "reason"} for b in doc["blocked_modules"])
+
+
+def test_run_auto_enriches_blocked_modules_with_coverage_reasons(tmp_path, fixture_dir):
+    _build_db(tmp_path, fixture_dir)
+    result = CliRunner().invoke(
+        app, ["run", "auto", "--project-root", str(tmp_path), "--name", "店铺经营诊断报告"]
+    )
+    assert result.exit_code == 0, result.output
+    doc = json.loads(
+        (tmp_path / ".xhs-ceramics-analytics" / "results.json").read_text(encoding="utf-8")
+    )
+    blocked = doc["blocked_modules"]
+    assert blocked, "auto run over a thin export must report blocked modules"
+    # at least one blocked module carries a non-empty coverage reason (what unlocks it).
+    assert any(b["reason"] for b in blocked), "auto path must enrich block reasons"
 
 
 def test_results_json_drives_prepare_to_capped_gt_zero(tmp_path, fixture_dir):
