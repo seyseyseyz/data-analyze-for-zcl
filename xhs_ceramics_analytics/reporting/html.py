@@ -30,9 +30,15 @@ from xhs_ceramics_analytics.reporting import charts
 # table/chart HTML (built by reporting.curated_view, whose cells are already
 # stdlib-escaped) in these sentinels so _markdown_document_body emits the block
 # verbatim instead of escaping its angle brackets — otherwise a <table>/<svg> would
-# ship as visible source. Only content the engine itself wraps passes through; all
-# agent-authored prose still goes through the normal escaping path, so this is not an
-# XSS bypass. Host-neutral HTML comments, invisible in any markdown viewer.
+# ship as visible source. Host-neutral HTML comments, invisible in any markdown viewer.
+#
+# SECURITY INVARIANT: these are in-band text sentinels, so they are trustworthy ONLY
+# because their sole producer — narrative_render._raw_html_block — is the sole path
+# that emits them, and narrative_render._strip_raw_html_markers neutralizes the tokens
+# in EVERY agent-authored string before assembly. A forged standalone marker in agent
+# prose would otherwise flip this converter into unescaped passthrough (XSS bypass +
+# numeric-trust breach). Do not emit agent-derived text into this converter without
+# that neutralization.
 RAW_HTML_OPEN = "<!--raw-html-->"
 RAW_HTML_CLOSE = "<!--/raw-html-->"
 

@@ -187,3 +187,71 @@ def test_garbage_curated_views_never_raise():
         md = nr.bundle_to_markdown(b, _facts(), result_tables=_tables())
         # prose always survives; a pathological view never blocks the report
         assert "GMV 回落。" in md
+
+
+# ---- raw-HTML passthrough sentinel is non-forgeable by agent prose --------
+#
+# The narrative HTML converter treats a standalone ``<!--raw-html-->`` line as the
+# start of an UNESCAPED verbatim block (used to inline the deterministic curated
+# table/chart HTML). The ONLY legitimate producer is ``_raw_html_block``; if any
+# agent-authored string could carry the marker, a forged line would flip the
+# converter into passthrough and let a following ``<script>`` (or a fabricated
+# number) ship raw — an XSS bypass and a numeric-trust breach.
+
+def test_forged_marker_in_how_to_read_cannot_open_passthrough():
+    # A curated view whose how_to_read forges the open marker must not turn its
+    # own why_it_matters <script> into live, unescaped HTML.
+    attack = _table_view(
+        how_to_read=nr.RAW_HTML_OPEN,
+        why_it_matters="<script>xss</script>",
+    )
+    md = nr.bundle_to_markdown(_bundle([attack]), _facts(), result_tables=_tables())
+    html = render_markdown_document_html(md)
+    # the script is escaped, never executable
+    assert "<script>xss</script>" not in html
+    assert "&lt;script&gt;xss" in html
+    # the fix did not over-strip: the legit deterministic table still passed through
+    assert "<table>" in html
+    assert "12000" in html
+
+
+def test_forged_marker_in_claim_sentence_cannot_open_passthrough():
+    # A bare claim (no confidence tag) whose sentence equals the open marker must
+    # not flip a following claim's <script> into unescaped passthrough.
+    forged = {**_claim(), "claim_id": "cf", "confidence": None,
+              "rendered_sentence": nr.RAW_HTML_OPEN}
+    payload = {**_claim(), "claim_id": "cp", "confidence": None,
+               "rendered_sentence": "<script>xss</script>"}
+    b = _bundle([])
+    b["sections"][0]["claims"] = [forged, payload]
+    md = nr.bundle_to_markdown(b, _facts(), result_tables=_tables())
+    html = render_markdown_document_html(md)
+    assert "<script>xss</script>" not in html
+    assert "&lt;script&gt;xss" in html
+
+
+def test_agent_markers_stripped_from_every_field_only_engine_block_remains():
+    # Stuff the sentinels into every agent-authored surface; after rendering, the
+    # ONLY raw-HTML markers left must be the single legit engine table block, so no
+    # forged (standalone or inline) marker can survive into the .md transport.
+    view = _table_view(
+        title=f"标题{nr.RAW_HTML_OPEN}",
+        how_to_read=nr.RAW_HTML_OPEN,
+        why_it_matters=f"钩子{nr.RAW_HTML_CLOSE}",
+    )
+    b = _bundle([view])
+    b["headline"] = f"大标题{nr.RAW_HTML_OPEN}"
+    b["sections"][0]["title"] = f"生意大盘{nr.RAW_HTML_CLOSE}"
+    b["sections"][0]["claims"] = [
+        {**_claim(), "confidence": None, "rendered_sentence": nr.RAW_HTML_OPEN}
+    ]
+    b["cannot_say"] = [f"疑问{nr.RAW_HTML_OPEN}"]
+    md = nr.bundle_to_markdown(b, _facts(), title=f"报告{nr.RAW_HTML_CLOSE}",
+                               result_tables=_tables())
+    # exactly one legit engine block (a ranking_table view → one table, no chart)
+    assert md.count(nr.RAW_HTML_OPEN) == 1
+    assert md.count(nr.RAW_HTML_CLOSE) == 1
+    # and that lone block still round-trips through the converter as a real table
+    html = render_markdown_document_html(md)
+    assert "<table>" in html
+    assert "12000" in html
