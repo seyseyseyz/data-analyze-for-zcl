@@ -14,8 +14,18 @@ import copy
 import json
 import re
 from dataclasses import dataclass, field
+from html import escape
+
+from xhs_ceramics_analytics.reporting.curated_view import render_view
+from xhs_ceramics_analytics.reporting.view_spec import count_view_kinds, validate_view_spec
 
 _TOKEN_RE = re.compile(r"\{t\d+\}")
+_TD_RE = re.compile(r"<td[^>]*>(.*?)</td>", re.DOTALL)
+
+# Anti-dump cap (spec §Trust & anti-dump rules, rule 4): ≤2 tables + ≤1 chart per
+# domain section. Over-cap is a hard failure, not a silent drop.
+_MAX_TABLES_PER_SECTION = 2
+_MAX_CHARTS_PER_SECTION = 1
 _DIGIT_RE = re.compile(r"\d")
 # first_screen.actions are writer free-text (no token mechanism), so the {tN} gate can't
 # cover them. We can't ban every digit — advice legitimately says "发 2 到 3 条内容" — but a
@@ -126,9 +136,141 @@ def _check_causal(claim: dict, absent_links: set, hard: list) -> None:
                           f"quantified attribution on absent link {key}"))
 
 
-def run_gate(bundle: dict, facts_json: dict) -> GateReport:
-    """Validate + confidence-cap a narrative_bundle. Returns a new (capped) bundle."""
+# ---- curated-view policing (spec §Trust & anti-dump rules) ----------------
+
+
+def _all_claim_ids(bundle: dict) -> set[str]:
+    """Every real claim_id in the bundle — the anti-dump anchor set for rule 3."""
+    ids: set[str] = set()
+    for claim in _iter_claims(bundle):
+        cid = claim.get("claim_id")
+        if isinstance(cid, str) and cid:
+            ids.add(cid)
+    return ids
+
+
+def _view_label(view: object, section_id: object, idx: int) -> str:
+    """Human-readable id for a view failure (view_id, else positional fallback)."""
+    if isinstance(view, dict):
+        vid = view.get("view_id")
+        if isinstance(vid, str) and vid:
+            return vid
+    return f"{section_id}:curated_view[{idx}]"
+
+
+def _source_cell_strings(view: dict, result_tables: dict) -> set[str]:
+    """Every source cell value (for the selected columns), escaped exactly as the
+    engine escapes a rendered ``<td>``. The value-match set the display must be a
+    subset of — numbers come only from here, never from agent text."""
+    source = view.get("source") if isinstance(view.get("source"), dict) else {}
+    rows = result_tables.get(source.get("table"))
+    if not isinstance(rows, (list, tuple)):
+        return set()
+    columns = view.get("columns")
+    columns = list(columns) if isinstance(columns, (list, tuple)) else []
+    cells: set[str] = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        for col in columns:
+            value = row.get(col)
+            cells.add("" if value is None else escape(str(value)))
+    return cells
+
+
+def _view_value_matches(rendered: object, view: dict, result_tables: dict) -> bool:
+    """rule 2 (VALUE-MATCH): every number the engine would display must come from
+    the source table — never from agent-authored cells. We delegate the fill to the
+    deterministic engine (:func:`render_view`) and independently re-check that every
+    displayed cell traces back to ``result_tables``.
+
+    A degraded render (engine could not fill trustworthy numbers), a vacuous render
+    (zero source-derived values to back the claim), or any displayed value absent
+    from the source all fail the match. Never raises.
+    """
+    if getattr(rendered, "degraded", True):
+        return False
+    table_html = getattr(rendered, "table_html", None)
+    if not isinstance(table_html, str) or not table_html:
+        return False
+    displayed = _TD_RE.findall(table_html)
+    non_empty = [cell for cell in displayed if cell != ""]
+    if not non_empty:
+        return False  # nothing to value-match — the view backs its claim with no data
+    source_cells = _source_cell_strings(view, result_tables)
+    return all(cell in source_cells for cell in non_empty)
+
+
+def _check_one_view(
+    view: object, section_id: object, idx: int, claim_ids: set[str],
+    result_tables: dict, hard: list,
+) -> None:
+    """Apply rules 1-3 to a single curated view. Never raises."""
+    label = _view_label(view, section_id, idx)
+
+    # rule 3: supports_claim must reference a REAL claim in the bundle. Checked
+    # independently of rule 1 so a structurally-valid view with a dangling claim
+    # ref still fails distinctly. (An empty/missing supports_claim is rule 1's job.)
+    sc = view.get("supports_claim") if isinstance(view, dict) else None
+    if isinstance(sc, str) and sc.strip() and sc not in claim_ids:
+        hard.append(_fail("VIEW_SUPPORTS_UNKNOWN_CLAIM", label,
+                          f"supports_claim {sc!r} 不是 bundle 中的真实 claim_id"))
+
+    # rule 1: structural validity against the real result.tables (refs real, columns
+    # subset, no aggregation, supports_claim present, no invented digits in captions).
+    errors = validate_view_spec(view, result_tables)
+    if errors:
+        hard.append(_fail("VIEW_SPEC_INVALID", label, "; ".join(errors)))
+        return  # an invalid spec cannot be value-matched — stop here for this view
+
+    # rule 2: value-match the engine's output against the source table.
+    rendered = render_view(view, result_tables)
+    if not _view_value_matches(rendered, view, result_tables):
+        detail = getattr(rendered, "reason", None) or "显示数值无法与源表核对"
+        hard.append(_fail("VIEW_VALUE_MISMATCH", label,
+                          f"数值一致性核对失败:{detail}"))
+
+
+def _check_curated_views(bundle: dict, result_tables: dict, hard: list) -> None:
+    """Police every section's ``curated_views`` (rules 1-4). Never raises — a
+    malformed section/view degrades to a hard failure or is skipped, but the gate
+    still returns a report (the whole report must still produce its artifacts)."""
+    claim_ids = _all_claim_ids(bundle)
+    for section in bundle.get("sections") or []:
+        if not isinstance(section, dict):
+            continue
+        section_id = section.get("section_id")
+        views = section.get("curated_views")
+
+        # rule 4: per-domain cap (≤2 tables + ≤1 chart). count_view_kinds tolerates
+        # garbage entries, so this is safe even when `views` is not a clean list.
+        counts = count_view_kinds(views)
+        if counts["tables"] > _MAX_TABLES_PER_SECTION or counts["charts"] > _MAX_CHARTS_PER_SECTION:
+            hard.append(_fail("VIEW_OVERCAP", section_id,
+                              f"每域上限 ≤{_MAX_TABLES_PER_SECTION} 表 + "
+                              f"≤{_MAX_CHARTS_PER_SECTION} 图,实为 {counts['tables']} 表 + "
+                              f"{counts['charts']} 图"))
+
+        if not isinstance(views, (list, tuple)):
+            continue
+        for idx, view in enumerate(views):
+            try:
+                _check_one_view(view, section_id, idx, claim_ids, result_tables, hard)
+            except Exception:  # never-raise: a pathological view drops, gate survives
+                hard.append(_fail("VIEW_SPEC_INVALID", _view_label(view, section_id, idx),
+                                  "视图校验发生内部错误"))
+
+
+def run_gate(bundle: dict, facts_json: dict, result_tables: dict | None = None) -> GateReport:
+    """Validate + confidence-cap a narrative_bundle. Returns a new (capped) bundle.
+
+    ``result_tables`` is the already-computed ``result.tables`` used to police each
+    section's ``curated_views`` (the numeric-trust boundary). It defaults to ``{}``
+    so existing 2-arg callers keep working; a bundle with no ``curated_views`` is
+    unaffected.
+    """
     bundle = copy.deepcopy(bundle)  # never mutate the caller's bundle
+    result_tables = result_tables if isinstance(result_tables, dict) else {}
     facts = facts_json.get("facts") or {}
     registry = set(facts_json.get("entity_registry") or [])
     absent = set(facts_json.get("absent_link_registry") or [])
@@ -201,6 +343,10 @@ def run_gate(bundle: dict, facts_json: dict) -> GateReport:
                 warnings.append(_fail("REDUNDANT_HEADLINE", claim.get("claim_id"),
                                       "headline duplicates a section claim"))
                 break
+
+    # Curated-view policing (spec §Trust & anti-dump rules). Additive — every rule
+    # above is preserved; view failures join the same hard-failure list.
+    _check_curated_views(bundle, result_tables, hard)
 
     status = "FAIL" if hard else "PASS"
     return GateReport(status=status, hard_failures=hard, warnings=warnings,
