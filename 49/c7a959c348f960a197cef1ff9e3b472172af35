@@ -1,0 +1,35 @@
+orchestration/dag.md
+  s_6bd2349b4ebd4d::t_5ea630ae741668 64-72,74,77
+  s_6bd2349b4ebd4d::t_e904927e54eadf 85-88
+  s_6bd2349b4ebd4d::t_522a7d21edef73 35
+skills/data-analyze-for-zcl/SKILL.md
+  s_6bd2349b4ebd4d::t_077ab7022db46b 65-71
+orchestration/runbook.md
+  s_6bd2349b4ebd4d::t_5c79ec5fcd8c34 50-52
+  s_6bd2349b4ebd4d::t_15932e52312898 66-106
+tests/test_skill_wiring.py
+  s_6bd2349b4ebd4d::t_79f9133ac1fe69 47-61
+skills/data-analyze-for-zcl/assets/xhs-ca/orchestration/runbook.md
+  s_6bd2349b4ebd4d::t_7ec7aa0c5d388a 52-54,68-107
+skills/data-analyze-for-zcl/assets/xhs-ca/orchestration/dag.md
+  s_6bd2349b4ebd4d::t_7ec7aa0c5d388a 37,66-74,76,79,87-90
+tests/orchestration/test_runbook.py
+  s_6bd2349b4ebd4d::t_7dc55fc6df0633 26,30-34
+  s_6bd2349b4ebd4d::t_2d0bbdbcc0a011 87-124
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.28-trip",
+  "base_commit_sha": "49c7a959c348f960a197cef1ff9e3b472172af35",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    }
+  }
+}
