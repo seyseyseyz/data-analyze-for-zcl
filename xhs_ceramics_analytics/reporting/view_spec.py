@@ -270,9 +270,11 @@ def _check_chart(spec: dict, real_columns: set[str], errors: list[str]) -> None:
 
 
 def _check_no_digits(spec: dict, errors: list[str]) -> None:
-    """rule 2: title / how_to_read / column_labels are prose — no bare digits.
-    Displayed numbers live only in table cells, filled by the deterministic engine."""
-    for field_name in ("title", "how_to_read"):
+    """rule 2: title / how_to_read / why_it_matters / column_labels are prose — no
+    bare digits. Every agent-authored caption is scanned so no path lets a fabricated
+    number reach the merchant view; displayed numbers live only in table cells,
+    filled by the deterministic engine."""
+    for field_name in ("title", "how_to_read", "why_it_matters"):
         value = spec.get(field_name)
         if value is not None and _DIGIT_RE.search(str(value)):
             errors.append(f"{field_name} 含裸数字(数字只能出现在表格单元格中)")

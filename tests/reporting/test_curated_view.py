@@ -225,3 +225,13 @@ def test_titles_and_captions_pass_through():
     assert view.title == "标题 🚀"
     assert view.how_to_read == "怎么读"
     assert view.why_it_matters == "为什么重要"
+
+
+def test_why_it_matters_with_fabricated_number_degrades():
+    # why_it_matters is agent-authored prose; a bare digit would carry a fabricated
+    # number into the merchant view, breaching the numeric-trust boundary. Such a
+    # spec must degrade (no html) rather than surfacing the fabricated text.
+    spec = _table_spec(why_it_matters="被抵消了 9999 元,占 50%")
+    view = render_view(spec, _tables(), finding=_finding())
+    assert view.degraded
+    assert view.table_html is None and view.chart_svg is None

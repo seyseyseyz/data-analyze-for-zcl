@@ -190,6 +190,15 @@ def test_reject_digit_in_how_to_read():
     assert any("how_to_read" in e for e in errs)
 
 
+def test_reject_digit_in_why_it_matters():
+    # why_it_matters is agent-authored prose too — a bare digit here would smuggle
+    # a fabricated number past the numeric-trust boundary into the merchant view.
+    spec = _valid_spec()
+    spec["why_it_matters"] = "被抵消了 9999 元,占 50%"
+    errs = validate_view_spec(spec, _tables())
+    assert any("why_it_matters" in e for e in errs)
+
+
 def test_reject_digit_in_column_label():
     spec = _valid_spec()
     spec["column_labels"]["delta_gmv"] = "对GMV的拉动(单位:1000元)"
