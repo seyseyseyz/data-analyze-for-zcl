@@ -212,6 +212,54 @@ def test_advance_gate_pass_flows_to_finalized_with_capped_bundle(tmp_path, monke
     assert state["_bundle"] == capped_bundle
 
 
+def test_advance_success_path_writes_both_narrative_artifacts(tmp_path, monkeypatch):
+    """A PASS->PASS run must deliver <name>.md + <name>.html from the narrative bundle,
+    not the 确定性骨架版 skeleton — the documented `finalized` contract."""
+    from xhs_ceramics_analytics.paths import outputs_dir, state_dir
+
+    results, facts_json = _bundle_inputs(1)
+    nw.prepare_run(tmp_path, results=results, facts_json=facts_json,
+                   report_name="叙事报告", project_root=tmp_path)
+
+    capped_bundle = {
+        "headline": "本周经营平稳🌱",
+        "sections": [
+            {"section_id": "域0", "title": "生意大盘",
+             "claims": [{"rendered_sentence": "GMV 稳定在 100", "confidence": "Medium"}]},
+        ],
+    }
+
+    class _Pass:
+        status = "PASS"
+        hard_failures = []
+        bundle = capped_bundle
+
+    monkeypatch.setattr(nw, "run_gate", lambda bundle, facts: _Pass())
+
+    nw.ingest_output(tmp_path, stage="seed",
+                     text='{"sections":[{"section_id":"域0","title":"域0","body":"b"}]}')
+    nw.advance_run(tmp_path)  # fan
+    nw.ingest_output(tmp_path, stage="fan", text='{"section_id":"域0","title":"域0","body":"b"}')
+    nw.advance_run(tmp_path)  # synth
+    nw.ingest_output(tmp_path, stage="synth",
+                     text='{"sections":[{"section_id":"域0","title":"域0","body":"b"}]}')
+    nw.advance_run(tmp_path)  # gate PASS -> continuity
+    state = nw.advance_run(tmp_path)  # continuity PASS -> finalized + writes artifacts
+
+    assert state["stage"] == "finalized"
+    out = outputs_dir(tmp_path)
+    md_path = out / "叙事报告.md"
+    html_path = out / "叙事报告.html"
+    assert md_path.exists(), "success path must write <name>.md"
+    assert html_path.exists(), "success path must write <name>.html"
+    md = md_path.read_text(encoding="utf-8")
+    assert "确定性骨架版" not in md  # the narrative, not the skeleton fallback
+    assert "本周经营平稳🌱" in md    # emoji preserved verbatim
+    # telemetry records a gate-mode run (not skeleton)
+    runs = (state_dir(tmp_path) / "report_runs.jsonl").read_text(encoding="utf-8")
+    assert '"mode": "gate"' in runs
+
+
 def test_advance_patch_round_recovers_after_one_gate_fail(tmp_path, monkeypatch):
     """A patch round that fails once then passes must reach continuity, not blocked."""
     results, facts_json = _bundle_inputs(1)

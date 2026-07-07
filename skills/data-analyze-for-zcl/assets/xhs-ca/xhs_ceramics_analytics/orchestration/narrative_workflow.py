@@ -14,6 +14,7 @@ from xhs_ceramics_analytics.reporting.factcheck_gate import run_gate
 from xhs_ceramics_analytics.reporting.html import render_markdown_document_html
 from xhs_ceramics_analytics.reporting.narrative_render import (
     apply_continuity_edits,
+    bundle_to_markdown,
     render_draft,
 )
 from xhs_ceramics_analytics.reporting.report_telemetry import (
@@ -393,10 +394,10 @@ def advance_run(run_dir, *, project_root=None) -> dict:
         report = run_gate(bundle, facts_json)
         if report.status == "PASS":
             state["_bundle"] = report.bundle
-            state["stage"] = "finalized"
-        else:
-            state["_bundle"] = bundle
-            return _route_deterministic(run_dir, state, project_root, "continuity_gate_failed")
+            _write_state(run_dir, state)
+            return finalize_narrative(run_dir, project_root=project_root)
+        state["_bundle"] = bundle
+        return _route_deterministic(run_dir, state, project_root, "continuity_gate_failed")
     _write_state(run_dir, state)
     return state
 
@@ -461,6 +462,57 @@ def _deterministic_markdown(run_dir, facts_json: dict, report_name: str) -> str:
         lines.append("")
 
     return "\n".join(lines) + "\n"
+
+
+def finalize_narrative(run_dir, *, project_root=None) -> dict:
+    """Success delivery boundary — render the gate-passed narrative bundle to the two
+    artifacts (<report_name>.md + <report_name>.html) under outputs_dir(project_root).
+
+    The .md is written unconditionally from ``state["_bundle"]`` via bundle_to_markdown
+    (the narrative renderer, NOT the skeleton one — no 确定性骨架版 banner). HTML render/write
+    and gate-mode telemetry are each best-effort, mirroring finalize_deterministic's
+    never-raise discipline: a failure there can never prevent the .md artifact from landing
+    or prevent this function from returning the finalized state. Marks the run finalized and
+    returns the updated state. Never raises on missing/partial bundle or fact data.
+    """
+    run_dir = Path(run_dir)
+    state = _load_state(run_dir)
+    if state is None:
+        raise FileNotFoundError(f"no run at {run_dir}")
+    project_root = Path(project_root or state.get("project_root") or ".")
+    facts_json = json.loads((run_dir / "facts.json").read_text(encoding="utf-8"))
+    report_name = state["report_name"]
+    bundle = state.get("_bundle") or _bundle_from_state(state)
+
+    markdown = bundle_to_markdown(bundle, facts_json, title=report_name)
+    out_dir = outputs_dir(project_root)
+    (out_dir / f"{report_name}.md").write_text(markdown, encoding="utf-8")
+
+    try:
+        html = render_markdown_document_html(markdown, title=report_name)
+        (out_dir / f"{report_name}.html").write_text(html, encoding="utf-8")
+    except Exception:
+        pass  # HTML rendering is best-effort; the markdown artifact must still land
+
+    try:
+        record = build_run_record(
+            mode="gate",
+            facts_hash=facts_json.get("facts_hash", ""),
+            cache_hit=False,
+            hard_fail_counts={},
+            degradation_reason=None,
+        )
+        append_run_record(state_dir(project_root) / "report_runs.jsonl", record)
+    except Exception:
+        pass  # telemetry is best-effort; never break the report
+
+    state = {
+        **state,
+        "stage": "finalized",
+        "history": [*state.get("history", []), "finalize_narrative"],
+    }
+    _write_state(run_dir, state)
+    return state
 
 
 def finalize_deterministic(run_dir, *, project_root=None, reason) -> dict:
