@@ -392,6 +392,50 @@ def test_deterministic_lists_unanswerable_questions(tmp_path):
     assert "缺少搜索词表" in body
 
 
+def test_deterministic_lists_string_blocked_modules(tmp_path):
+    results = {
+        "domain_slices": [{"title": "流量", "facts": [], "reading": {"conclusion": "c"}}],
+        "blocked_modules": ["note_funnel"],
+    }
+    facts_json = {"facts_hash": "h2b", "numbers": {}}
+    project_root = tmp_path / "proj"
+    project_root.mkdir()
+    run_dir = tmp_path / "run"
+    nw.prepare_run(run_dir, results=results, facts_json=facts_json,
+                   report_name="r", project_root=project_root)
+    nw.finalize_deterministic(run_dir, project_root=project_root, reason="unsupported")
+    body = (project_root / ".xhs-ceramics-analytics" / "outputs" / "r.md").read_text(encoding="utf-8")
+    assert "暂时答不了的问题" in body
+    assert "note_funnel" in body
+
+
+def test_producer_output_feeds_finalize_deterministic_without_crash(tmp_path):
+    """The real P1 producer emits blocked_modules as strings; the skeleton fallback
+    must consume that exact shape. This is the integration the P1 tests missed and
+    the live run hit as AttributeError: 'str' has no attribute 'get'."""
+    from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
+    from xhs_ceramics_analytics.evidence import EvidenceStrength
+    from xhs_ceramics_analytics.reporting.narrative_results import build_narrative_results
+
+    analysis = [
+        AnalysisResult(
+            task_id="core_business_diagnosis",
+            title="大盘",
+            findings=[Finding(title="t", conclusion="大盘走弱", evidence_strength=EvidenceStrength.WEAK, key_numbers={"gmv": 1})],
+        )
+    ]
+    results = build_narrative_results(analysis, blocked_modules=("note_funnel", "paid_traffic_efficiency"))
+    assert all(isinstance(b, str) for b in results["blocked_modules"])  # contract: strings
+    facts_json = {"facts_hash": "h", "numbers": {}}
+    project_root = tmp_path / "proj"
+    project_root.mkdir()
+    run_dir = tmp_path / "run"
+    nw.prepare_run(run_dir, results=results, facts_json=facts_json, report_name="r", project_root=project_root)
+    nw.finalize_deterministic(run_dir, project_root=project_root, reason="unsupported")
+    body = (project_root / ".xhs-ceramics-analytics" / "outputs" / "r.md").read_text(encoding="utf-8")
+    assert "note_funnel" in body and "paid_traffic_efficiency" in body
+
+
 def test_finalize_deterministic_handles_slice_with_no_reading_key(tmp_path):
     """A slice missing the 'reading' key entirely must not raise; both artifacts still land."""
     results = {"domain_slices": [

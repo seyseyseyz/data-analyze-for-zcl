@@ -456,8 +456,12 @@ def _deterministic_markdown(run_dir, facts_json: dict, report_name: str) -> str:
         lines.append("## 暂时答不了的问题")
         lines.append("")
         for b in blocked:
-            slug = b.get("slug", "")
-            reason = b.get("reason", "")
+            if isinstance(b, dict):
+                slug = b.get("slug", "")
+                reason = b.get("reason", "")
+            else:
+                slug = str(b)
+                reason = ""
             lines.append(f"- {slug}：{reason}")
         lines.append("")
 
