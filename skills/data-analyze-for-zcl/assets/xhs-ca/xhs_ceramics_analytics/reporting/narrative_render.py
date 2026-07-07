@@ -12,9 +12,14 @@ edit/hash guards raise ValueError by design (callers treat them as gate failures
 import copy
 import re
 
+from xhs_ceramics_analytics.reporting.curated_view import render_view
 from xhs_ceramics_analytics.reporting.factcheck_gate import run_gate
 from xhs_ceramics_analytics.reporting.first_screen import first_screen_markdown
-from xhs_ceramics_analytics.reporting.html import render_markdown_document_html
+from xhs_ceramics_analytics.reporting.html import (
+    RAW_HTML_CLOSE,
+    RAW_HTML_OPEN,
+    render_markdown_document_html,
+)
 from xhs_ceramics_analytics.reporting.markdown import render_markdown
 
 _TOKEN_RE = re.compile(r"\{t\d+\}")
@@ -98,25 +103,163 @@ def _rendered(claim: dict) -> str:
     return str(claim.get("rendered_sentence") or claim.get("sentence") or "").strip()
 
 
-def bundle_to_markdown(bundle: dict, facts_json: dict, *, title: str | None = None) -> str:
+def bundle_to_markdown(
+    bundle: dict,
+    facts_json: dict,
+    *,
+    title: str | None = None,
+    result_tables: dict | None = None,
+) -> str:
+    """Render the narrative bundle to markdown, inlining each section's curated views.
+
+    ``result_tables`` is the already-computed ``result.tables`` the deterministic
+    curated-view engine fills every displayed number from (the numeric-trust
+    boundary). It defaults to ``{}`` so existing callers/tests keep working; with no
+    tables the curated views are skipped and the report degrades to today's
+    prose-only output. A single malformed/missing-table view drops silently — the
+    report always renders.
+    """
+    tables = result_tables if isinstance(result_tables, dict) else {}
     parts: list[str] = []
     if title:
-        parts.append(f"# {title}")
-    parts.append(first_screen_markdown(bundle).rstrip())
+        parts.append(f"# {_strip_raw_html_markers(str(title))}")
+    parts.append(_strip_raw_html_markers(first_screen_markdown(bundle)).rstrip())
     for section in bundle.get("sections") or []:
-        heading = str(section.get("title") or section.get("section_id") or "").strip()
+        heading = _strip_raw_html_markers(
+            str(section.get("title") or section.get("section_id") or "").strip()
+        )
         parts.append(f"## {heading}")
         for claim in section.get("claims") or []:
-            sentence = _rendered(claim)
+            sentence = _strip_raw_html_markers(_rendered(claim))
             if not sentence:
                 continue
             conf = claim.get("confidence")
             parts.append(f"{sentence}（{conf}）" if conf else sentence)
-    cannot = [str(c).strip() for c in (bundle.get("cannot_say") or []) if str(c).strip()]
+        if tables:
+            parts.extend(_curated_view_parts(section, tables))
+    cannot = [
+        s
+        for s in (
+            _strip_raw_html_markers(str(c).strip())
+            for c in (bundle.get("cannot_say") or [])
+        )
+        if s
+    ]
     if cannot:
         parts.append("## 暂时答不了的问题")
         parts.extend(f"- {c}" for c in cannot)
     return "\n\n".join(parts) + "\n"
+
+
+class _EvidenceCarrier:
+    """Minimal Finding-shim carrying only ``evidence_strength`` for
+    :func:`curated_view.derive_confidence` — used to forward a deterministically
+    resolved strength without pulling a full Finding into the render path."""
+
+    __slots__ = ("evidence_strength",)
+
+    def __init__(self, evidence_strength: object) -> None:
+        self.evidence_strength = evidence_strength
+
+
+def _finding_for_view(spec: object) -> object | None:
+    """Resolve the confidence-bearing finding for a view WITHOUT fabricating it.
+
+    Confidence (强/中/弱) is derived deterministically from the source Finding's
+    ``evidence_strength``, never authored by the agent. The workflow may resolve that
+    strength and stamp it on the view as ``evidence_strength``; if present we forward
+    it (wrapped so ``derive_confidence`` reads it), otherwise ``None`` degrades to the
+    weakest tag. Never raises.
+    """
+    if isinstance(spec, dict):
+        strength = spec.get("evidence_strength")
+        if strength is not None:
+            return _EvidenceCarrier(strength)
+    return None
+
+
+def _curated_view_parts(section: object, result_tables: dict) -> list[str]:
+    """Render one section's ``curated_views`` to inline markdown parts.
+
+    Each passing view contributes: its title (a subheading), the deterministic table
+    HTML and/or chart SVG (wrapped in raw-HTML passthrough markers so the narrative
+    HTML converter emits them verbatim instead of escaping the angle brackets), the
+    how_to_read caption, the why_it_matters hook, and the provenance stamp. A degraded
+    view (bad spec / missing table / missing column) contributes nothing — the section
+    keeps the prose rendered above it. Never raises: a pathological view is skipped.
+    """
+    if not isinstance(section, dict):
+        return []
+    views = section.get("curated_views")
+    if not isinstance(views, (list, tuple)):
+        return []
+    parts: list[str] = []
+    for spec in views:
+        try:
+            view = render_view(spec, result_tables, finding=_finding_for_view(spec))
+        except Exception:  # never-raise: render_view is already defensive, stay so
+            continue
+        parts.extend(_single_view_parts(view))
+    return parts
+
+
+def _single_view_parts(view: object) -> list[str]:
+    """Markdown parts for one rendered :class:`curated_view.CuratedView`. Empty when
+    the view degraded or carries no renderable html — the section degrades silently."""
+    if getattr(view, "degraded", True):
+        return []
+    table_html = getattr(view, "table_html", None) or None
+    chart_svg = getattr(view, "chart_svg", None) or None
+    if not table_html and not chart_svg:
+        return []
+
+    parts: list[str] = []
+    # Every caption below is agent-authored prose and is marker-neutralized so it
+    # cannot forge a raw-HTML passthrough sentinel (see _strip_raw_html_markers).
+    # table_html / chart_svg are the DETERMINISTIC engine blocks and are the only
+    # content allowed to carry real markers, added here by _raw_html_block.
+    title = _strip_raw_html_markers(str(getattr(view, "title", "") or "").strip())
+    if title:
+        parts.append(f"### {title}")
+    if table_html:
+        parts.append(_raw_html_block(str(table_html)))
+    if chart_svg:
+        parts.append(_raw_html_block(str(chart_svg)))
+    how_to_read = _strip_raw_html_markers(str(getattr(view, "how_to_read", "") or "").strip())
+    if how_to_read:
+        parts.append(how_to_read)
+    why_it_matters = _strip_raw_html_markers(
+        str(getattr(view, "why_it_matters", "") or "").strip()
+    )
+    if why_it_matters:
+        parts.append(f"**{why_it_matters}**")
+    provenance = _strip_raw_html_markers(str(getattr(view, "provenance", "") or "").strip())
+    if provenance:
+        parts.append(f"> {provenance}")
+    return parts
+
+
+def _strip_raw_html_markers(text: str) -> str:
+    """Neutralize the raw-HTML passthrough sentinels in agent-authored prose.
+
+    The narrative HTML converter (``reporting.html._markdown_document_body``) treats
+    a standalone ``RAW_HTML_OPEN`` line as the start of an UNESCAPED verbatim block —
+    the mechanism that inlines the deterministic curated table/chart HTML. Its only
+    legitimate producer is :func:`_raw_html_block`. If any agent-authored string (a
+    claim sentence, headline, caption, title, or cannot_say line) carried the marker,
+    a forged line would flip the converter into passthrough and let a following
+    ``<script>`` — or a fabricated number — ship raw, an XSS bypass and a breach of
+    the numeric-trust boundary. Removing the marker tokens from all agent prose makes
+    the sentinels non-forgeable: the only markers reaching the transport are the ones
+    :func:`_raw_html_block` wraps around engine HTML. Never raises.
+    """
+    return str(text).replace(RAW_HTML_OPEN, "").replace(RAW_HTML_CLOSE, "")
+
+
+def _raw_html_block(html: str) -> str:
+    """Wrap already-safe deterministic HTML so the narrative HTML converter passes it
+    through verbatim (see reporting.html.RAW_HTML_OPEN)."""
+    return f"{RAW_HTML_OPEN}\n{html}\n{RAW_HTML_CLOSE}"
 
 
 def render_frozen(frozen: dict, facts_json: dict) -> tuple[str, str]:
