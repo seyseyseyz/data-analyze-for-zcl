@@ -1,0 +1,23 @@
+tests/reporting/test_factcheck_gate_views.py
+  s_6bd2349b4ebd4d::t_195b86bff73761 1-206
+xhs_ceramics_analytics/reporting/factcheck_gate.py
+  s_6bd2349b4ebd4d::t_6be779b43c161f 139-271,273
+  s_6bd2349b4ebd4d::t_bd6c78de3893b7 347-350
+  s_6bd2349b4ebd4d::t_6e1304ea101cbf 17-20,23-28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.28-trip",
+  "base_commit_sha": "349dac346d6c433a111c57cfeabe7e2e9c52a32c",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
