@@ -1,0 +1,43 @@
+skills/data-analyze-for-zcl/SKILL.md
+  s_6bd2349b4ebd4d::t_731e0158eecdd2 28-45
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/orchestration/dag.md
+  s_6bd2349b4ebd4d::t_a55dd77071e7d0 1-36
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/orchestration/narrative_workflow.py
+  ai_agent 1-514
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/reporting/report_telemetry.py
+  ai_agent 4,15,26
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/orchestration/runbook.md
+  s_6bd2349b4ebd4d::t_a55dd77071e7d0 1-52
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_skill_wiring.py
+  ai_agent 25-33
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/cli.py
+  ai_agent 1,8,19-21,460-553
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/orchestration/test_narrative_workflow.py
+  ai_agent 1-430
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/orchestration/test_runbook.py
+  ai_agent 1-43
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/orchestration/__init__.py
+  s_6bd2349b4ebd4d::t_a55dd77071e7d0 1-2
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/reporting/test_report_telemetry.py
+  ai_agent 1-21
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/orchestration/test_narrative_cli.py
+  ai_agent 1-179
+skills/data-analyze-for-zcl/agents/openai.yaml
+  ai_agent 4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.28-trip",
+  "base_commit_sha": "bb483abaf8c48aeee7fd5a6d4f23f062a67de5a5",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
