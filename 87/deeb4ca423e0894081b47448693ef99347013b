@@ -1,0 +1,33 @@
+xhs_ceramics_analytics/orchestration/narrative_workflow.py
+  s_6bd2349b4ebd4d::t_d3bb861eb8a647 65-121
+  s_6bd2349b4ebd4d::t_69903bf724d5e3 356,361-367
+  s_6bd2349b4ebd4d::t_232cf31f912f27 389-402
+  s_6bd2349b4ebd4d::t_36c1bf30eb5bde 261-268,272-294
+  s_6bd2349b4ebd4d::t_a23771cf1c5b3b 736-737,740-742
+  s_6bd2349b4ebd4d::t_7e868267d7b8c3 901,903-908
+  s_6bd2349b4ebd4d::t_8a972e764988fc 789,799-801,805
+  s_6bd2349b4ebd4d::t_a7b93a7d78e965 720-723
+  s_6bd2349b4ebd4d::t_5096f6bbf0f678 304
+  s_6bd2349b4ebd4d::t_46f62d249fd700 439-707
+  s_6bd2349b4ebd4d::t_b970ee3206d62b 27-30,33,37-50,56-58
+tests/orchestration/test_review_stage.py
+  s_6bd2349b4ebd4d::t_c85b357d55836d 36-42,73-78,80,83-85,92,108-115,186-187,200-201,206,211-212,226-227,240-241,254-255,261-263,270-271
+  s_6bd2349b4ebd4d::t_946aacc997f2b7 272-273,275-277
+  s_6bd2349b4ebd4d::t_6ec8fd7ce018e5 1-35,43-72,79,81-82,86-91,93-107,116-185,188-199,202-205,207-210,213-225,228-239,242-253,256-260,264-269,274,278-285
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.28-trip",
+  "base_commit_sha": "87deeb4ca423e0894081b47448693ef99347013b",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
