@@ -1,0 +1,39 @@
+skills/data-analyze-for-zcl/assets/xhs-ca/orchestration/runbook.md
+  s_6bd2349b4ebd4d::t_6d5102715d7544 9,16-24
+tests/test_cli_narrative_results.py
+  s_6bd2349b4ebd4d::t_0b0d650104f33c 41-57
+skills/data-analyze-for-zcl/SKILL.md
+  s_6bd2349b4ebd4d::t_e0f214922058a2 44-47
+xhs_ceramics_analytics/cli.py
+  s_6bd2349b4ebd4d::t_1e5e460b0cbd64 171-173,178,180-184
+  s_6bd2349b4ebd4d::t_7e0640497ea07e 232
+  s_6bd2349b4ebd4d::t_5d8b80e244a54f 266,276-277,279-283,294
+  s_6bd2349b4ebd4d::t_432954efa07c1c 23,30-34,38-39,44
+tests/orchestration/test_narrative_workflow.py
+  s_6bd2349b4ebd4d::t_c103ee1f643c2b 427-432,441-442
+orchestration/runbook.md
+  s_6bd2349b4ebd4d::t_299f80986a579f 7,14-22
+tests/orchestration/test_runbook.py
+  s_6bd2349b4ebd4d::t_933e7cb55aabec 48-55
+xhs_ceramics_analytics/reporting/narrative_results.py
+  s_6bd2349b4ebd4d::t_d3e54ba6a93abd 69-73,86
+  s_6bd2349b4ebd4d::t_3c6a677209ba55 41-61
+tests/test_reporting_narrative_results.py
+  s_6bd2349b4ebd4d::t_53678ed84cdf70 33-51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.28-trip",
+  "base_commit_sha": "a93e67c3a58ab87b4f176a698afd41edc6e493aa",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
