@@ -1,0 +1,27 @@
+skills/data-analyze-for-zcl/SKILL.md
+  s_6bd2349b4ebd4d::t_d0db46b3da8215 44-49
+skills/data-analyze-for-zcl/assets/xhs-ca/orchestration/runbook.md
+  s_6bd2349b4ebd4d::t_c9fe664e0df7ef 18-27
+tests/orchestration/test_runbook.py
+  s_6bd2349b4ebd4d::t_08ebc82721a792 56-59
+orchestration/runbook.md
+  s_6bd2349b4ebd4d::t_ddfe58084119d9 16,20-21
+  s_6bd2349b4ebd4d::t_b9aaa6c14f02a4 22-25
+  s_6bd2349b4ebd4d::t_acb4449b1323d2 17-19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.28-trip",
+  "base_commit_sha": "872c33a8c435163c2eba01efc3c17d5d4fbaba59",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
