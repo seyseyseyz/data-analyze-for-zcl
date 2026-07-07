@@ -23,8 +23,15 @@ def test_dag_doc_is_host_neutral_and_drops_banned_phrase():
 
 def test_dag_doc_declares_all_stages():
     body = _text("dag.md")
-    for stage in ("seed", "fan", "synth", "gate", "patch", "continuity", "finalized", "blocked"):
+    for stage in ("seed", "fan", "synth", "gate", "review", "patch", "continuity", "finalized", "blocked"):
         assert stage in body
+
+
+def test_dag_doc_places_review_after_gate_before_continuity():
+    # The curated-visuals review stage runs after the deterministic gate has locked
+    # every displayed number and before continuity smooths the prose.
+    body = _text("dag.md")
+    assert body.index("gate") < body.index("review") < body.index("continuity")
 
 
 def test_runbook_is_host_neutral():
@@ -77,3 +84,41 @@ def test_runbook_authorization_is_mandatory_and_distinct_from_spawning():
     assert "asking is not spawning" in body
     # The reason taxonomy must stay distinct: declined vs no-capability-at-all.
     assert "denied" in body and "unsupported" in body
+
+
+def test_runbook_documents_the_review_loop():
+    body = _text("runbook.md")
+    # after the gate, spawn three reviewers per domain, one per adversarial lens.
+    assert "review" in body
+    assert "3 reviewers per domain" in body
+    for lens in ("价值", "可读性", "支撑"):
+        assert lens in body, f"runbook must name the {lens!r} lens"
+    # adversarial default: reject trivial / hard-to-read / unsupported views.
+    assert "defaults to reject" in body
+    # every curated view must cite a real supporting claim (anti-dump).
+    assert "supports_claim" in body
+
+
+def test_runbook_documents_review_tally_precedence():
+    body = _text("runbook.md")
+    # strict precedence — every verdict combination maps to exactly one outcome.
+    assert "drop ≥ 2 → drop" in body
+    assert "keep ≥ 2 → keep" in body
+    # no majority → bounded patch, then the view is dropped (never blocks delivery).
+    assert "patch ≤2 rounds, then drop" in body
+
+
+def test_runbook_documents_per_domain_cap():
+    body = _text("runbook.md")
+    # anti-dump cap enforced deterministically by the gate.
+    assert "≤2 tables" in body
+    assert "≤1 chart" in body
+    assert "per domain" in body
+
+
+def test_review_docs_stay_host_neutral():
+    # Re-assert neutrality now that both docs carry the curated-visuals review flow.
+    for name in ("dag.md", "runbook.md"):
+        body = _text(name)
+        for token in _BANNED:
+            assert token not in body, f"{name} leaks host identity: {token}"

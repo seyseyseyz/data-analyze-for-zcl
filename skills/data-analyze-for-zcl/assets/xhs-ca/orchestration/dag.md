@@ -34,6 +34,7 @@ prompts + schemas + tiers (not model ids), so the same contract is one cache key
 | synth | 综合器 | 1 | judgment/high | 全部 section_bundle + spine_brief + dissents + blocked_modules | `narrative_bundle` |
 | gate | factcheck_gate.py | 0 (Python) | — | narrative_bundle + facts + registries/ledgers | `gate_report` |
 | patch | 定向补丁 | 0–2 | draft/medium | gate_report.hard_failures + 出错 claim + 该 fact 的 rendered | fixed `claim` spliced back |
+| review | 域策展视图评审(价值/可读性/支撑 三视角) | ≤6×3 (parallel) | draft/medium | 本域 curated_views + supports_claim + 已锁定数值(只读) | `review_verdicts[]` |
 | continuity | 全篇连读 | 1 | judgment/high | render-draft 之后已填数字的成稿 | `continuity_edit[]` |
 
 Fan-out is bounded at six writers (MAX_FAN_AGENTS = 6): domain slices beyond the cap
@@ -62,12 +63,20 @@ are losslessly folded into a single "综合参考" slice before fan-out — neve
 5. **gate** — `xhs-ca gate narrative_bundle.json facts.json`. HARD-FAIL → ≤2 targeted **patch**
    rounds routed to the owning node. Confidence is capped deterministically (never an agent). WARN
    never triggers a rewrite.
-6. `xhs-ca render-draft` fills every `{tN}` from `fact.rendered`. **continuity** reads the filled
+6. **review** — after the gate PASSES (every displayed number already byte-verified), each producible
+   domain's curated views enter the review stage: spawn 3 reviewers per domain, one per adversarial
+   lens (价值 / 可读性 / 支撑), each defaulting to reject a trivial, hard-to-read, or unsupported view.
+   Per view, tally the three verdicts by strict precedence — **drop ≥ 2 → drop**; else
+   **keep ≥ 2 → keep**; else **patch ≤2 rounds, then drop**. Reviewers judge value/readability/support
+   only and cannot change numbers (the gate already locked them); every retained view keeps its
+   `supports_claim` and obeys the per-domain cap ≤2 tables + ≤1 chart. A section with zero surviving
+   views degrades to prose-only, and a section with no curated views skips review entirely.
+7. `xhs-ca render-draft` fills every `{tN}` from `fact.rendered`. **continuity** reads the filled
    9-section draft and emits prose-only `continuity_edit[]` (digit + `{tN}` multisets invariant).
-7. `xhs-ca finalize` applies the edits, re-gates, and freezes `frozen_narrative` beside
+8. `xhs-ca finalize` applies the edits, re-gates, and freezes `frozen_narrative` beside
    `mapping_overrides.yaml`. `xhs-ca render-frozen` writes md+html (re-gates at render time). Stage
    is now **finalized**.
-8. **Exhaustion** (gate ≤2 rounds fail / spine precheck fails twice / agent layer unavailable) →
+9. **Exhaustion** (gate ≤2 rounds fail / spine precheck fails twice / agent layer unavailable) →
    `xhs-ca skeleton` — deterministic 0-agent floor (facts + real-name tables + charts + 强/中/弱 tags
    + CANNOT-SAY), banner「本报告为确定性骨架版」. Stage is now **blocked**. Every run appends a
    record to `report_runs.jsonl`.
@@ -75,5 +84,7 @@ are losslessly folded into a single "综合参考" slice before fan-out — neve
 ## Bounds
 
 ~9 base agents per fresh report (1 seed + ≤6 writers + 1 synth + 1 continuity), ~10–11 with one
-patch/re-dispatch, ~14–16 worst-case. Cache-hit re-runs = 0 agents. Not mid-DAG resumable; the only
-persistent checkpoint is the post-gate freeze.
+patch/re-dispatch, ~14–16 worst-case. When domains carry curated views the review stage adds ≤3
+reviewers per producible domain (≤18) plus ≤1 review-patch agent per unconverged view (≤2 rounds);
+reports with no curated views skip review and stay at the base count. Cache-hit re-runs = 0 agents.
+Not mid-DAG resumable; the only persistent checkpoint is the post-gate freeze.

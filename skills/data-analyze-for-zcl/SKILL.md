@@ -62,6 +62,13 @@ Both paths are valid final deliveries and each yields exactly two artifacts
 (`<name>.md` + `<name>.html`). The run directory is durable scratch, not a
 deliverable.
 
+The narrative report now carries **agent-curated deterministic visuals**: each
+domain section can show a couple of tables and a chart alongside its prose. The
+agent only curates the *view* — which source table, which columns/rows, and the
+captions; a deterministic engine fills every displayed number from the
+already-computed fact layer, so the values stay reproducible and trustworthy
+while the agent decides only what the visual looks like.
+
 8. **Custom integrated reports** — only when you need a report outside the built-in task registry (non-standard sheets a task does not cover): write the Markdown source first, then immediately run `scripts/xhs-ca render-html <report.md>` or `scripts/xhs-ca render-html <report.md> --output <report.html>`. For any combination of built-in tasks, prefer the single multi-slug `run` in step 7 over hand-authoring. Keep any Excel/CSV companion tables, but they do not replace the HTML report.
 
 9. **Delivery verification (REQUIRED, HTML-only final deliverable)** — the user must receive only the final single-file HTML report. Markdown may exist as an internal source/intermediate, but do not present it as a deliverable unless the user explicitly asks for source Markdown. Before the final response, confirm the final HTML exists under `.xhs-ceramics-analytics/outputs/`, the filename starts with the shop/store name or the neutral `店铺` fallback, no platform name leads the filename, and no stray per-slug `data_quality_check.md`/`.html` were delivered. Also verify the final artifact came from `finalize`, `render-frozen`, or explicit skeleton fallback, not merely from step 7's deterministic `run auto`. If HTML rendering fails, report the error path/message and state clearly that final delivery failed; do not substitute Markdown as the final deliverable.

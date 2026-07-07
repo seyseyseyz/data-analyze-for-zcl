@@ -44,3 +44,18 @@ def test_skill_7b_authorization_is_mandatory_and_distinct_from_spawning():
     # spell out that asking is not spawning — so a host that forbids unsolicited
     # spawning still asks instead of silently degrading to the skeleton.
     assert "asking is not spawning" in text
+
+
+def test_skill_notes_curated_deterministic_visuals():
+    text = SKILL.read_text(encoding="utf-8")
+    lowered = text.lower()
+    # The narrative report now carries agent-curated deterministic tables/charts:
+    # the agent curates the view, a deterministic engine supplies every number.
+    assert "curate" in lowered
+    assert "deterministic" in lowered
+    # numbers are deterministic; the agent only chooses the view, never the values.
+    assert "table" in lowered and "chart" in lowered
+    # stays host-neutral even with the new note.
+    banned = ("claude", "codex", "gpt", "opus", "sonnet", "anthropic", "openai")
+    for term in banned:
+        assert term not in lowered, f"SKILL.md must stay host-neutral, found {term!r}"

@@ -49,8 +49,9 @@ branch:
    read. Always consult it to decide what to do next; never guess the stage.
 3. **map briefs to spawns** — read the brief file(s) named by `status`. For the
    seed/synth/patch/continuity stages spawn one sub-agent; for the fan stage
-   spawn one sub-agent per brief (at most six). Give each sub-agent only its
-   brief. Require it to return JSON.
+   spawn one sub-agent per brief (at most six); for the review stage spawn one
+   reviewer per named brief (3 per domain — see "Review loop"). Give each
+   sub-agent only its brief. Require it to return JSON.
 4. **ingest** — for each returned result run
    `xhs-ca narrative ingest --run-dir <dir> --stage <stage> --source <file>`
    (or `--section-id <id>` for a single fan section). Ingestion tolerates JSON
@@ -63,6 +64,47 @@ branch:
    - `stage == blocked` → the controller already wrote the deterministic
      skeleton; deliver it and report the degradation reason.
    - otherwise → loop back to step 2.
+
+## Review loop (curated visuals)
+
+When a domain section carries agent-curated deterministic visuals, the gate first
+byte-verifies every displayed number against the source `result.tables`; the
+review stage then judges whether each view earns its place. The numbers are
+already locked — reviewers only decide whether a view is worth showing, never
+what it says.
+
+After the gate PASSES, `status --json` reports `stage == review` and lists the
+reviewer briefs. Spawn **3 reviewers per domain**, one per adversarial lens:
+
+- **价值** — can the merchant take an action from this, or is it internal-stats
+  trivia?
+- **可读性** — can a non-analyst merchant read it in five seconds (columns,
+  labels, right chart type)?
+- **支撑** — does the view actually prove the `supports_claim` it cites, or is it
+  unrelated / pointing the opposite way?
+
+Each lens is adversarial: a reviewer **defaults to reject** a view that is
+trivial, hard to read, or unsupported — prefer fewer visuals over a dump. Every
+curated view MUST cite a real `supports_claim` (the anti-dump requirement), and
+the deterministic gate already caps each domain at **≤2 tables + ≤1 chart per
+domain**; an over-cap or claim-less view never reaches review.
+
+Ingest each verdict with `ingest --stage review`, then `advance`. The controller
+tallies each view's three `keep`/`revise`/`drop` verdicts by strict precedence —
+every combination maps to exactly one outcome:
+
+- **drop ≥ 2 → drop** — the view is removed; the section keeps its prose.
+- else **keep ≥ 2 → keep** — the view renders (so 2 keep + 1 drop → keep;
+  2 keep + 1 revise → keep).
+- else **patch ≤2 rounds, then drop** — a patch agent re-authors the view-spec
+  (different template / fewer columns / different source) and re-runs the gate +
+  vote; a view that still cannot reach a majority after the bounded rounds is
+  dropped, never blocking the report.
+
+Degradation here is normal, never a failure: missing verdicts, a malformed view,
+or a section with zero surviving views degrades to prose-only, and the report
+still delivers exactly two artifacts. Reviewers cannot change numbers — the gate
+owns those.
 
 ## Degradation
 
