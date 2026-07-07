@@ -460,7 +460,10 @@ def coverage(
 def _read_json_input(path: Path, label: str) -> dict:
     if not path.exists():
         raise typer.BadParameter(f"{label} file not found: {path}")
-    return _json.loads(path.read_text(encoding="utf-8"))
+    try:
+        return _json.loads(path.read_text(encoding="utf-8"))
+    except _json.JSONDecodeError as exc:
+        raise typer.BadParameter(f"{label} file is not valid JSON: {exc}") from exc
 
 
 @narrative_app.command("prepare")
