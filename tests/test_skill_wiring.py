@@ -22,10 +22,15 @@ def test_sync_runtime_mirrors_orchestration():
 def test_skill_has_step_7b_host_neutral():
     text = SKILL.read_text(encoding="utf-8")
     assert "7b" in text
-    assert "orchestration/dag.md" in text
-    # host-neutral: names the three host paths, no hard model binding
-    assert "Codex" in text
-    assert "skeleton" in text
+    assert "orchestration/runbook.md" in text
+    # host-neutral: no hard model/vendor binding, always falls back to a
+    # deterministic skeleton report if the narrative workflow can't finish.
+    assert "finalize-deterministic" in text
+    assert "确定性骨架版" in text
+    banned = ("claude", "codex", "gpt", "opus", "sonnet", "anthropic", "openai")
+    lowered = text.lower()
+    for term in banned:
+        assert term not in lowered, f"SKILL.md must stay host-neutral, found {term!r}"
 
 
 def test_skill_step_7b_precedes_step_8():
