@@ -1,7 +1,7 @@
 """Per-run telemetry — the guard against a silently-degrading report.
 
 Each report run appends one canonical JSON line to ``report_runs.jsonl`` recording
-mode (frozen / skeleton / gate), the facts_hash, whether the frozen-narrative cache
+mode (frozen / skeleton / gate / blocked), the facts_hash, whether the frozen-narrative cache
 hit, per-rule hard-fail counts, and a degradation reason code. The skill surfaces
 ``summarize_runs`` in its step-9 delivery note, so an over-strict gate rule cannot
 make skeleton the silent default — the counters make it visible. Records are
@@ -12,7 +12,7 @@ import json
 from collections import Counter
 from pathlib import Path
 
-_VALID_MODES = ("frozen", "skeleton", "gate")
+_VALID_MODES = ("frozen", "skeleton", "gate", "blocked")
 
 
 def build_run_record(
@@ -23,7 +23,7 @@ def build_run_record(
     hard_fail_counts: dict | None = None,
     degradation_reason: str | None = None,
 ) -> dict:
-    """Deterministic run record. mode ∈ {frozen, skeleton, gate}. No timestamp by design."""
+    """Deterministic run record. mode ∈ {frozen, skeleton, gate, blocked}. No timestamp by design."""
     return {
         "mode": mode if mode in _VALID_MODES else "unknown",
         "facts_hash": facts_hash,
