@@ -43,3 +43,23 @@ def test_runbook_declares_fallback_on_blocked_or_denied():
     body = _text("runbook.md")
     assert "blocked" in body and "denied" in body
     assert "deterministic" in body
+
+
+def test_runbook_prepare_wires_results_and_facts_inputs():
+    body = _text("runbook.md")
+    # prepare must consume a domain-sliced results.json plus facts.json — not just
+    # --run-dir/--name. Before P1 the drift here made the host hand-fabricate results.
+    assert "--results" in body and "--facts" in body
+    # And it must say where results.json comes from: the deterministic run/facts step.
+    assert "results.json" in body
+
+
+def test_runbook_authorization_is_mandatory_and_distinct_from_spawning():
+    body = _text("runbook.md")
+    # Asking for authorization is a required first step and is NOT spawning, so a
+    # host whose policy forbids unsolicited spawning must still ask — the user's
+    # yes is that explicit request. This prevents "not yet asked" being mislabeled
+    # as "cannot spawn" (the observed failure).
+    assert "asking is not spawning" in body
+    # The reason taxonomy must stay distinct: declined vs no-capability-at-all.
+    assert "denied" in body and "unsupported" in body

@@ -6,17 +6,33 @@ This runbook is the control loop the host agent follows to drive the narrative
 workflow. The controller is passive: it prepares briefs and durable state and
 ingests results, but never spawns. You (the host) own spawning.
 
-## One-time authorization (authorize first)
+## Authorization — ask once, every run (asking is not spawning)
 
-Before spawning any sub-agent, ask the user once for permission to authorize the
-multi-agent narrative writer. If the user declines, skip straight to the
-deterministic fallback (see "Degradation").
+Asking the user to authorize the narrative writer is a **required first step**,
+and **asking is not spawning**. A host whose policy forbids spawning sub-agents
+without an explicit user request still MUST ask: the user's "yes" is that
+explicit request. Never skip the question, and never treat "the user has not
+asked for sub-agents yet" as "this host cannot spawn" — that is the mislabel to
+avoid. Ask, then branch:
+
+- **Authorized** → proceed to the loop below and spawn.
+- **Declined** → deterministic fallback, `--reason denied` (see "Degradation").
+- **Host genuinely has no sub-agent capability at all** (there is no spawn
+  facility on this host) → deterministic fallback, `--reason unsupported`.
+  "I must ask the user first" is NOT this case — ask.
 
 ## The loop
 
-1. **prepare** — run `xhs-ca narrative prepare --run-dir <dir> --name <report>`
-   (add `--force` only to intentionally overwrite an unfinished run). This
-   writes `state.json` and the seed brief.
+1. **prepare** — run `xhs-ca narrative prepare --run-dir <dir> --results
+   <state-dir>/results.json --facts <state-dir>/facts.json --name <report>`
+   (add `--force` only to intentionally overwrite an unfinished run). Both inputs
+   are produced deterministically by the fact-layer step (`xhs-ca run …` or
+   `xhs-ca facts …`), which writes `facts.json` **and** the domain-sliced
+   `results.json` into the state dir. `results.json` is what the narrative
+   consumes — never hand-fabricate it, and never pass `facts.json` as `--results`
+   (its `domain_slices` is an always-empty cache field, which caps the run to
+   zero sections). This writes `state.json`, `domain_slices.json`, and the seed
+   brief.
 2. **status** — run `xhs-ca narrative status --run-dir <dir> --json`. The JSON
    tells you the current `stage`, the `next_action`, and which brief files to
    read. Always consult it to decide what to do next; never guess the stage.
@@ -39,11 +55,14 @@ deterministic fallback (see "Degradation").
 
 ## Degradation
 
-Route to the deterministic skeleton whenever the LLM path cannot finish:
+Route to the deterministic skeleton whenever the LLM path cannot finish. Use the
+reason that matches reality — the two are not interchangeable:
 
-- **User denied** spawning → run
+- **User declined** after being asked → run
   `xhs-ca narrative finalize-deterministic --run-dir <dir> --reason denied`.
-- **Host cannot spawn sub-agents at all** → same command, `--reason unsupported`.
+- **Host has no sub-agent capability at all** (no spawn facility exists) → same
+  command, `--reason unsupported`. Do not use this when you simply have not asked
+  yet — asking is not spawning, so ask first.
 - **Gate never passes / orchestration exhausted** → `advance` itself routes to
   the deterministic skeleton and sets stage `blocked`; just deliver it.
 

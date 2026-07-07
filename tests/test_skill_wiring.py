@@ -36,3 +36,11 @@ def test_skill_has_step_7b_host_neutral():
 def test_skill_step_7b_precedes_step_8():
     text = SKILL.read_text(encoding="utf-8")
     assert text.index("7b") < text.index("8. **Custom integrated reports**")
+
+
+def test_skill_7b_authorization_is_mandatory_and_distinct_from_spawning():
+    text = SKILL.read_text(encoding="utf-8")
+    # 7b must make asking for authorization a required, unconditional step and
+    # spell out that asking is not spawning — so a host that forbids unsolicited
+    # spawning still asks instead of silently degrading to the skeleton.
+    assert "asking is not spawning" in text

@@ -32,15 +32,23 @@ The merchant-facing report is produced here, by the narrative workflow — this
 is the required final-delivery path, not an optional extra. It degrades
 automatically so it can never fail open:
 
-1. Produce the deterministic results + `facts.json` as usual (step 7).
-2. **If the host agent can spawn sub-agents**, drive the narrative workflow
-   instead of composing directly. Follow
-   `assets/xhs-ca/orchestration/runbook.md` exactly:
-   `prepare` → ask the user
-   once to authorize spawning → `status --json` → map briefs to spawns →
-   `ingest` each result → `advance` → loop until stage is `finalized` or
-   `blocked`. A `finalized` run writes the two narrative artifacts.
-3. **If the user declines, the host cannot spawn sub-agents, or the gate never
+1. Produce the deterministic fact layer as usual (step 7). Besides the report,
+   `run`/`facts` write two state-dir sidecars: `facts.json` and the domain-sliced
+   `results.json`. The narrative's `prepare` consumes `results.json` as `--results`
+   (and `facts.json` as `--facts`) — never hand-build `results.json`.
+2. **Ask the user once to authorize the narrative writer — this is required, and
+   asking is not spawning.** Even if your host policy forbids spawning
+   sub-agents without an explicit user request, you must still ask: the user's
+   "yes" IS that request. Do not skip the question, and do not treat "the user
+   has not asked for sub-agents" as "this host cannot spawn" and silently
+   degrade — ask first.
+3. **If authorized**, drive the narrative workflow instead of composing
+   directly. Follow `assets/xhs-ca/orchestration/runbook.md` exactly:
+   `prepare` → `status --json` → map briefs to spawns → `ingest` each result →
+   `advance` → loop until stage is `finalized` or `blocked`. A `finalized` run
+   writes the two narrative artifacts.
+4. **If the user declines** (`--reason denied`), **the host truly has no
+   sub-agent capability at all** (`--reason unsupported`), **or the gate never
    passes**, run `xhs-ca narrative finalize-deterministic --run-dir <dir>
    --reason <reason>` (or let `advance` route there automatically).
    A "确定性骨架版" report is always delivered — the deliverable never fails open.

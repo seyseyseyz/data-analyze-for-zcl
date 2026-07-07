@@ -20,6 +20,34 @@ narrative_app = typer.Typer(help="Drive the file-based narrative workflow.")
 app.add_typer(narrative_app, name="narrative")
 
 
+def _write_narrative_results(results, blocked_modules, project_root) -> None:
+    """Emit results.json (the narrative `--results` input) beside facts.json.
+
+    Like the facts.json / HTML paths, this is a sidecar: a failure here must never
+    abort an already-produced fact layer — it degrades to a warning. results.json is
+    the domain-sliced document `xhs-ca narrative prepare --results` consumes; facts.json
+    cannot serve that role (its ``domain_slices`` is an always-empty cache dict).
+    """
+    from xhs_ceramics_analytics.reporting.narrative_results import build_narrative_results
+
+    out = state_dir(project_root) / "results.json"
+    try:
+        out.write_text(
+            _json.dumps(
+                build_narrative_results(results, blocked_modules=blocked_modules),
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        typer.echo(f"Wrote narrative results: {out}")
+    except Exception as exc:
+        typer.echo(
+            f"results.json build failed; kept the fact layer and skipped the narrative sidecar: {exc}",
+            err=True,
+        )
+
+
 @app.command()
 def build(
     files: Annotated[list[Path], typer.Argument(help="CSV or Excel files to import.")],
@@ -187,6 +215,7 @@ def run(
             f"facts.json build failed; kept report and skipped the sidecar: {exc}",
             err=True,
         )
+    _write_narrative_results(results, blocked, project_root)
     if html_out.exists():
         html_out.unlink()
     try:
@@ -242,6 +271,7 @@ def facts(
     out = state_dir(project_root) / "facts.json"
     out.write_text(factbook_to_json(book), encoding="utf-8")
     typer.echo(f"Wrote facts: {out}")
+    _write_narrative_results(results, blocked, project_root)
     typer.echo(f"facts_hash: {facts_hash(book)}")
 
 
