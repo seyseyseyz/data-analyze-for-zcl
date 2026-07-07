@@ -129,6 +129,33 @@ def test_digit_in_caption_hard_fails_view_spec():
     assert "VIEW_SPEC_INVALID" in _codes(r)
 
 
+def test_digit_in_source_task_id_hard_fails_view_spec():
+    # source.task_id is free-form agent text rendered verbatim into the provenance
+    # footer (来源:… · 证据:…). A fabricated number there must HARD-fail exactly like
+    # a digit in a caption — the numeric-trust boundary covers every agent-authored
+    # string that reaches the merchant, not just the visible captions.
+    r = run_gate(
+        _bundle([_view(source={"task_id": "转化拉低GMV约99万", "table": "growth_bridge"})]),
+        _facts(), _tables(),
+    )
+    assert r.status == "FAIL"
+    assert "VIEW_SPEC_INVALID" in _codes(r)
+
+
+def test_real_table_name_with_digit_is_not_false_rejected():
+    # A real result.tables key may legitimately contain a digit (e.g.
+    # sku_category_l2_mix). source.table is existence-checked, never fabricated, so its
+    # digit is a traceable system identifier — it must NOT trip the task_id digit scan.
+    tables = {"sku_category_l2_mix": [
+        {"component": "转化", "delta_gmv": 12000},
+        {"component": "流量", "delta_gmv": 8000},
+    ]}
+    v = _view(source={"task_id": "sku_structure_diagnosis", "table": "sku_category_l2_mix"},
+              columns=["component", "delta_gmv"])
+    r = run_gate(_bundle([v]), _facts(), tables)
+    assert r.status == "PASS", r.hard_failures
+
+
 # ---- rule 2: value-match against the source table -------------------------
 
 def test_value_mismatch_hard_fails_when_source_has_no_rows_to_surface():

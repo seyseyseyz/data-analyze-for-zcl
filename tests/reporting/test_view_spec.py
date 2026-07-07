@@ -206,6 +206,30 @@ def test_reject_digit_in_column_label():
     assert errs
 
 
+def test_reject_digit_in_source_task_id():
+    # source.task_id is free-form agent text rendered verbatim into the provenance
+    # footer; a bare digit there smuggles a fabricated number past the numeric-trust
+    # boundary just like a caption digit would.
+    spec = _valid_spec()
+    spec["source"]["task_id"] = "转化拉低GMV约99万"
+    errs = validate_view_spec(spec, _tables())
+    assert any("task_id" in e for e in errs)
+
+
+def test_real_table_name_with_digit_is_accepted():
+    # A real result.tables key may contain a digit (e.g. sku_category_l2_mix). source
+    # .table is existence-checked, never fabricated, so its digit must not false-reject
+    # the view — only the free-form task_id is digit-scanned.
+    spec = _valid_spec()
+    spec["source"] = {"task_id": "sku_structure_diagnosis", "table": "sku_category_l2_mix"}
+    tables = {"sku_category_l2_mix": [
+        {"component": "转化", "delta_gmv": 12000, "note": "a"},
+        {"component": "流量", "delta_gmv": 8000, "note": "b"},
+        {"component": "客单价", "delta_gmv": -3000, "note": "c"},
+    ]}
+    assert validate_view_spec(spec, tables) == []
+
+
 def test_emoji_in_prose_is_allowed():
     spec = _valid_spec()
     spec["title"] = "GMV 增长拆解 🚀 谁在拉动"

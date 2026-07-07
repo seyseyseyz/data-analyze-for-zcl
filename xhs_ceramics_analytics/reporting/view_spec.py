@@ -273,7 +273,17 @@ def _check_no_digits(spec: dict, errors: list[str]) -> None:
     """rule 2: title / how_to_read / why_it_matters / column_labels are prose — no
     bare digits. Every agent-authored caption is scanned so no path lets a fabricated
     number reach the merchant view; displayed numbers live only in table cells,
-    filled by the deterministic engine."""
+    filled by the deterministic engine.
+
+    ``source.task_id`` is scanned too: it is free-form agent text that is never
+    validated against a registry, yet the engine renders it verbatim into the
+    merchant-facing provenance footer (``来源:{task_id} · {table} · 证据:{...}``), so a
+    bare digit there (e.g. ``转化拉低GMV约99万``) would smuggle a fabricated number
+    past the boundary. ``source.table`` is deliberately NOT scanned here: it is
+    existence-checked against ``result.tables`` (:func:`_check_source`), so it can
+    only ever be a real, deterministic table key — a digit in one (e.g.
+    ``sku_category_l2_mix``) is a traceable system identifier, not agent-fabricated
+    content, and scanning it would false-reject a legitimate view."""
     for field_name in ("title", "how_to_read", "why_it_matters"):
         value = spec.get(field_name)
         if value is not None and _DIGIT_RE.search(str(value)):
@@ -285,6 +295,13 @@ def _check_no_digits(spec: dict, errors: list[str]) -> None:
                 errors.append(
                     f"column_labels[{col!r}] 含裸数字(数字只能出现在表格单元格中)"
                 )
+    source = spec.get("source")
+    if isinstance(source, dict):
+        task_id = source.get("task_id")
+        if task_id is not None and _DIGIT_RE.search(str(task_id)):
+            errors.append(
+                "source.task_id 含裸数字(会被原样写入溯源脚注,数字只能出现在表格单元格中)"
+            )
 
 
 # ---- helpers --------------------------------------------------------------
