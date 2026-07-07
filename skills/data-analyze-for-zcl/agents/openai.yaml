@@ -1,4 +1,4 @@
 interface:
   display_name: "data-analyze-for-zcl"
   short_description: "数据挖掘、业务建模、增长分析、策略制定。（朱楚凌专属，其他人使用需要征得朱楚凌的同意）"
-  default_prompt: "使用 $data-analyze-for-zcl 分析小红书陶瓷电商经营数据，以店铺名命名报告，执行必选商家叙事 workflow，最终只交付单文件 HTML 报告。"
+  default_prompt: "使用 $data-analyze-for-zcl 分析小红书陶瓷电商经营数据，执行完整分析流程，生成有证据强度、限制说明和下一步建议的单文件 HTML 报告。"

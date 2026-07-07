@@ -25,7 +25,24 @@ Use this skill when the user provides Xiaohongshu (小红书 / 千帆) exported 
 
 7. **Run fact layer — REQUIRED, not final delivery** — the simplest correct path is `scripts/xhs-ca run auto --name <店铺名>经营诊断报告`: `auto` runs exactly the producible set from step 4's coverage (including `data_quality_check`) in one shot, so the report mines the data to its full depth and writes the deterministic fact layer plus `facts.json`. To curate, instead pass every confirmed slug plus `data_quality_check` to a **single** `scripts/xhs-ca run <slug1> <slug2> … data_quality_check --name <店铺名>经营诊断报告` invocation. This step is an intermediate fact layer, not the final merchant-facing deliverable. **Name reports from the shop/store name, not the platform/export source**: prefer `<店铺名>经营诊断报告` or `<店铺名><日期范围>经营诊断报告`; never use `千帆`, `小红书`, `XHS`, `Qianfan`, or another platform name as the leading report name unless it is literally part of the shop name. If the shop name is unavailable from files or prior context, ask once; if the user does not provide it, use a neutral `店铺经营诊断报告` fallback and state the missing shop-name caveat. **Section order is enforced by the compositor, not by argument order:** business modules lead (executive summary → 经营诊断 → 商品/内容/用户需求/实验 → 基础参考), and `data_quality_check`/`ad_data_quality_check` always sink to the end as the **附录：数据质量与口径说明**. Do NOT run one slug at a time — that fragments the evidence base. Before summarizing, read each module's `assets/xhs-ca/task_templates/<slug>.md` and `assets/xhs-ca/references/cheatsheet.md` for metric definitions, evidence rules, and report structure.
 
-7b. **Merchant narrative orchestration — REQUIRED finalization step** — after step 7, always run the merchant-facing L3 narrative workflow in `assets/xhs-ca/orchestration/dag.md`; do not stop at `run auto` unless orchestration fails or the user explicitly requests deterministic-only output. First use `facts.json` for cache validation `(facts_hash, narrative_schema_version, renderer_version)`: cache hit → `xhs-ca render-frozen` (0 agent); cache miss → **use the current host's subagent mechanism** to fan out the same DAG (**Claude Code**: optional `.xhs-ceramics-analytics/report_writer_workflow.js` or Task tool; **Codex**: native subagents if available; **no subagent-capable host**: required sequential in-session role-pass fallback). Read `orchestration/prompts/*.md` and `schemas/*.json` as the only contracts → `xhs-ca gate` → on hard failure run 0-2 targeted patch passes → `xhs-ca render-draft` → one Continuity pass over the whole report → `xhs-ca finalize`. If budget/tooling is exhausted, run `xhs-ca skeleton` as an explicit fallback. Each run appends `.xhs-ceramics-analytics/report_runs.jsonl`; delivery must report cache hit/miss, fallback mode, hard failures, patch count, and whether skeleton was used.
+### 7b. Optional: multi-agent narrative report (host with sub-agents)
+
+When the host agent can spawn sub-agents and a more readable, merchant-facing
+narrative is wanted on top of the deterministic report, drive the narrative
+workflow instead of composing directly:
+
+1. Produce the deterministic results + `facts.json` as usual.
+2. Follow `assets/xhs-ca/orchestration/runbook.md` exactly: `prepare` →
+   ask the user once to authorize spawning → `status --json` → map briefs to
+   spawns → `ingest` each result → `advance` → loop until stage is `finalized`
+   or `blocked`.
+3. If the user declines, the host cannot spawn, or the gate never passes, run
+   `xhs-ca narrative finalize-deterministic --run-dir <dir> --reason <reason>`
+   (or let `advance` route there automatically). A "确定性骨架版" report is
+   always delivered — the deliverable never fails open.
+
+The workflow still yields exactly two artifacts (`<name>.md` + `<name>.html`).
+The run directory is durable scratch, not a deliverable.
 
 8. **Custom integrated reports** — only when you need a report outside the built-in task registry (non-standard sheets a task does not cover): write the Markdown source first, then immediately run `scripts/xhs-ca render-html <report.md>` or `scripts/xhs-ca render-html <report.md> --output <report.html>`. For any combination of built-in tasks, prefer the single multi-slug `run` in step 7 over hand-authoring. Keep any Excel/CSV companion tables, but they do not replace the HTML report.
 
