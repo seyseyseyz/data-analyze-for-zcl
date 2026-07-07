@@ -35,7 +35,8 @@ automatically so it can never fail open:
 1. Produce the deterministic results + `facts.json` as usual (step 7).
 2. **If the host agent can spawn sub-agents**, drive the narrative workflow
    instead of composing directly. Follow
-   `assets/xhs-ca/orchestration/runbook.md` exactly: `prepare` → ask the user
+   `assets/xhs-ca/xhs_ceramics_analytics/orchestration/runbook.md` exactly:
+   `prepare` → ask the user
    once to authorize spawning → `status --json` → map briefs to spawns →
    `ingest` each result → `advance` → loop until stage is `finalized` or
    `blocked`. A `finalized` run writes the two narrative artifacts.
