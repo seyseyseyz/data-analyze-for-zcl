@@ -1136,7 +1136,6 @@ EOF
 
 ```python
 # append to tests/reporting/test_report_telemetry.py
-import pytest
 from xhs_ceramics_analytics.reporting.report_telemetry import build_run_record, _VALID_MODES
 
 
@@ -1153,22 +1152,27 @@ def test_existing_modes_still_valid():
         assert rec["mode"] == mode
 
 
-def test_unknown_mode_rejected():
-    with pytest.raises(ValueError):
-        build_run_record(mode="bogus", facts_hash="h", cache_hit=False)
+def test_unknown_mode_degrades_to_unknown():
+    # Telemetry never raises (module contract) — an unrecognized mode degrades
+    # to the sentinel "unknown" rather than propagating an exception.
+    rec = build_run_record(mode="bogus", facts_hash="h", cache_hit=False)
+    assert rec["mode"] == "unknown"
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `.venv/bin/python -m pytest tests/reporting/test_report_telemetry.py -k "blocked or existing_modes or unknown_mode" -v`
-Expected: FAIL — `"blocked"` not in `_VALID_MODES`.
+Expected: FAIL — `"blocked"` not in `_VALID_MODES` (`test_blocked_mode_is_valid` fails; the never-raise degrade test already passes against current code).
 
 - [ ] **Step 3: Write minimal implementation**
 
 ```python
-# in report_telemetry.py — extend the tuple only
+# in report_telemetry.py — extend the tuple; keep the never-raise contract intact
 _VALID_MODES = ("frozen", "skeleton", "gate", "blocked")
 ```
+
+Also update the two docstrings that enumerate the modes so they stay accurate:
+the module docstring's `mode (frozen / skeleton / gate)` → `mode (frozen / skeleton / gate / blocked)`, and `build_run_record`'s `mode ∈ {frozen, skeleton, gate}` → `mode ∈ {frozen, skeleton, gate, blocked}`. Do NOT add any validation that raises — an unknown mode must still degrade to `"unknown"`.
 
 - [ ] **Step 4: Run test to verify it passes**
 
