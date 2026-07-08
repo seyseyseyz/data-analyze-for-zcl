@@ -33,6 +33,39 @@ def test_render_pct_scales_fraction():
     assert render_pct(None) == "—"
 
 
+def test_renderers_never_emit_negative_zero():
+    # A tiny negative that rounds to zero at the display precision must not carry a
+    # stray minus sign ("-0.0%" / "-0" / "-¥0" are numeric-form bugs the merchant sees).
+    assert render_pct(-0.0004) == "0.0%"   # scaled -0.04 rounds to 0 → never "-0.0%"
+    assert render_count(-0.3) == "0"       # rounds to 0 → never "-0"
+    assert render_cny(-0.3) == "¥0"        # rounds to 0 → never "-¥0"
+    # a genuine negative magnitude still keeps its sign
+    assert render_pct(-0.04) == "-4.0%"
+    assert render_count(-1) == "-1"
+    assert render_cny(-29000.0) == "-¥2.9万"
+
+
+def test_metric_kind_uses_fact_layer_allow_list_first():
+    # Render-path parity (the meta-bug): a MONEY key that merely CONTAINS "conversion"
+    # (contrib_conversion is a yuan LMDI GMV-bridge contribution, in MONEY_FIELDS) must
+    # render as money — exactly as the table path (format_scalar) does — never as an
+    # unscaled percent. This was the root of the "-17104.8%" figure.
+    book = build_factbook([_finding_with({"contrib_conversion": -17104.8})])
+    fact = book.facts["mod.contrib_conversion"]
+    assert fact.unit == "cny"
+    assert fact.rendered == "-¥1.7万"      # NOT "-17104.8%"
+
+
+def test_conversion_lookalike_count_key_is_not_forced_percent():
+    # conversion_universe is a population count, not a rate; with "conversion" removed
+    # from the loose substring hints (real conversion RATES stay in PERCENT_FIELDS), it
+    # classifies as a count instead of a nonsensical "3991.0%".
+    book = build_factbook([_finding_with({"conversion_universe": 3991})])
+    fact = book.facts["mod.conversion_universe"]
+    assert fact.unit == "count"
+    assert fact.rendered == "3,991"        # NOT "3991.0%"
+
+
 def _finding_with(key_numbers: dict) -> AnalysisResult:
     return AnalysisResult(
         task_id="mod",

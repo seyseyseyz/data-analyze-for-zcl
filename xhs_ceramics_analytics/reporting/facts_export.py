@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from xhs_ceramics_analytics.analysis.result import AnalysisResult
 from xhs_ceramics_analytics.analytics.numeric import to_finite_float
 from xhs_ceramics_analytics.evidence import DescriptiveReliability, EvidenceStrength
+from xhs_ceramics_analytics.reporting.formatting import is_money_field, is_percent_field
 
 
 @dataclass(frozen=True)
@@ -45,44 +46,64 @@ class FactBook:
     domain_slices: dict = field(default_factory=dict)
 
 
-def render_cny(value: object) -> str:
-    """Python-owned money string. ≥1万 → 万-notation (1dp); else grouped yuan."""
+def _grouped_magnitude(value: object, *, currency: bool) -> str:
+    """Grouped magnitude string with a sign that respects the DISPLAY precision.
+
+    ≥1万 → 万-notation (1dp); else grouped whole units. The sign is derived from the
+    *rounded* magnitude, so a tiny negative that rounds to zero (e.g. ``-0.3``) reads
+    ``0`` / ``¥0`` — never a stray ``-0`` / ``-¥0``. Currency prepends ``¥`` after the
+    sign (``-¥2.9万``). Shared by :func:`render_cny` / :func:`render_count`.
+    """
     v = to_finite_float(value)
     if v is None:
         return "—"
-    sign = "-" if v < 0 else ""
     mag = abs(v)
     if mag >= 10000:
-        return f"{sign}¥{mag / 10000:.1f}万"
-    return f"{sign}¥{mag:,.0f}"
+        body = f"{mag / 10000:.1f}万"
+        is_zero = round(mag / 10000, 1) == 0
+    else:
+        body = f"{mag:,.0f}"
+        is_zero = round(mag) == 0
+    sign = "-" if (v < 0 and not is_zero) else ""
+    prefix = "¥" if currency else ""
+    return f"{sign}{prefix}{body}"
+
+
+def render_cny(value: object) -> str:
+    """Python-owned money string. ≥1万 → 万-notation (1dp); else grouped yuan."""
+    return _grouped_magnitude(value, currency=True)
 
 
 def render_count(value: object) -> str:
     """Python-owned count string — like ``render_cny`` but no currency sign."""
-    v = to_finite_float(value)
-    if v is None:
-        return "—"
-    sign = "-" if v < 0 else ""
-    mag = abs(v)
-    if mag >= 10000:
-        return f"{sign}{mag / 10000:.1f}万"
-    return f"{sign}{mag:,.0f}"
+    return _grouped_magnitude(value, currency=False)
 
 
 def render_pct(value: object) -> str:
     """Python-owned percent string. Fractions (|v|≤1) are scaled ×100; already-scaled
-    percentage-point values pass through so a rate is never double-scaled."""
+    percentage-point values pass through so a rate is never double-scaled. A value that
+    rounds to zero drops the minus sign so the reader never sees ``-0.0%``."""
     v = to_finite_float(value)
     if v is None:
         return "—"
     scaled = v * 100 if abs(v) <= 1 else v
-    return f"{scaled:.1f}%"
+    text = f"{scaled:.1f}"
+    if text == "-0.0":  # tiny negative rounded to zero → normalize the sign
+        text = "0.0"
+    return f"{text}%"
 
 
 # key_numbers carry no unit metadata, so a numeric fact's kind is inferred from its
 # metric key. Defaulting the unknown to a *count* (never money) is the safe direction:
 # a mislabeled 250 reads as "250" not "¥250", and a rate 0.23 reads as "23.0%" not "¥0".
-_PERCENT_HINTS_ASCII = ("rate", "ratio", "conversion", "pct", "percent", "roi", "roas", "share")
+#
+# These are only a LAST-RESORT substring heuristic for keys the fact-layer allow-lists
+# (``is_percent_field`` / ``is_money_field``) don't name — ``_metric_kind`` consults the
+# allow-lists FIRST so a key classifies identically here and on the table path. Loose
+# tokens that both directions can own were removed: "conversion" (contrib_conversion is
+# yuan, in MONEY_FIELDS — the old substring forced it to a bogus "-17104.8%") and "pct"
+# (real ``*_pct`` change-fractions live in PERCENT_FIELDS/`_pct` suffix already).
+_PERCENT_HINTS_ASCII = ("rate", "ratio", "percent", "roi", "roas", "share")
 _PERCENT_HINTS_CJK = ("率", "占比", "渗透")
 _MONEY_HINTS_ASCII = ("gmv", "amount", "price", "revenue", "spend", "cost", "sales")
 _MONEY_HINTS_CJK = (
@@ -93,6 +114,14 @@ _MONEY_HINTS_CJK = (
 
 def _metric_kind(key: str) -> str:
     raw = str(key)
+    # Allow-list first: reuse the fact layer's suffix-anchored predicates (the same ones
+    # ``format_scalar`` uses), so a known key classifies EXACTLY as the table path does.
+    # Percent before money so ``*_share`` concentrations stay percent, never yuan.
+    if is_percent_field(raw):
+        return "percent"
+    if is_money_field(raw):
+        return "money"
+    # Fallback: trimmed substring hints only for keys the anchored allow-lists don't name.
     low = raw.lower()
     if any(h in low for h in _PERCENT_HINTS_ASCII) or any(h in raw for h in _PERCENT_HINTS_CJK):
         return "percent"

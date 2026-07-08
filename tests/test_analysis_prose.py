@@ -24,6 +24,12 @@ def test_qty_groups_counts():
     assert qty(None) == "0"
 
 
+def test_pp_never_emits_negative_zero():
+    # A gap that rounds to 0.0 個百分點 must read "0", never "-0" (a numeric-form bug).
+    assert pp(-0.0004) == "0 个百分点"      # -0.04pp rounds to 0 → no minus sign
+    assert pp(-0.008) == "-0.8 个百分点"     # a real negative gap still keeps its sign
+
+
 def test_pp_is_plain_language_not_machine_token():
     # ``pp`` / ``diff=…pct`` machine tokens become 个百分点 in reader prose
     assert pp(-0.008) == "-0.8 个百分点"

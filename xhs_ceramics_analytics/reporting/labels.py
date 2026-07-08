@@ -127,7 +127,10 @@ def value_label(value: str) -> str:
 def format_percent(value: float) -> str:
     percent = value * 100
     decimals = 2 if abs(percent) < 10 else 1
-    text = f"{percent:.{decimals}f}".rstrip("0").rstrip(".")
+    text = f"{percent:.{decimals}f}"
+    if float(text) == 0:  # a tiny negative rounded to 0 → drop the stray minus sign
+        text = text.replace("-", "")
+    text = text.rstrip("0").rstrip(".")
     return f"{text}%"
 
 

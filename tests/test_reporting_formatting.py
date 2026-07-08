@@ -11,6 +11,15 @@ from xhs_ceramics_analytics.reporting.formatting import (
     is_timeseries_table,
     should_render_table,
 )
+from xhs_ceramics_analytics.reporting.labels import format_percent
+
+
+def test_format_percent_never_emits_negative_zero():
+    # A value that rounds to 0% at the chosen precision must drop the minus sign.
+    assert format_percent(-0.00001) == "0%"   # -0.001% rounds to 0 → never "-0%"
+    assert format_percent(-0.0) == "0%"
+    # a genuine small negative keeps its sign
+    assert format_percent(-0.02) == "-2%"
 
 
 def test_is_timeseries_table_by_trend_suffix():

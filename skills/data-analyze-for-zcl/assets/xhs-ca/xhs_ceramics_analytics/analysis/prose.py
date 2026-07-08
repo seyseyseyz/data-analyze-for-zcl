@@ -30,7 +30,10 @@ def pp(value: float | None) -> str:
     reader prose. Keeps the sign so the direction of the gap is preserved.
     """
     points = (value or 0) * 100
-    text = f"{points:.1f}".rstrip("0").rstrip(".")
+    text = f"{points:.1f}"
+    if float(text) == 0:  # a gap that rounds to 0 → drop the stray minus sign
+        text = text.replace("-", "")
+    text = text.rstrip("0").rstrip(".")
     return f"{text} 个百分点"
 
 
