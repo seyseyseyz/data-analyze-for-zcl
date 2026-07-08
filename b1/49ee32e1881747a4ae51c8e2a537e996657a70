@@ -1,0 +1,30 @@
+skills/data-analyze-for-zcl/assets/xhs-ca/references/data_contract/audience_profile.md
+  s_6bd2349b4ebd4d::t_835654c49ca539 6-7,9,11-37
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_audience_structure.py
+  ai_agent 381-445
+references/data_contract/audience_profile.md
+  s_6bd2349b4ebd4d::t_cee2544fd411f3 4-5,7,9-35
+tests/test_audience_structure.py
+  s_6bd2349b4ebd4d::t_5392f6a1355874 381-445
+xhs_ceramics_analytics/analysis/audience_structure.py
+  s_6bd2349b4ebd4d::t_8472d9fe61c698 593-594,603-604,606,615-617,620-647,653-654,658,664-717
+  s_6bd2349b4ebd4d::t_ca7a0574e35d08 728-730
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/analysis/audience_structure.py
+  ai_agent 593-594,603-604,606,615-617,620-647,653-654,658,664-719,728-730
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.33-trip",
+  "base_commit_sha": "b149ee32e1881747a4ae51c8e2a537e996657a70",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
