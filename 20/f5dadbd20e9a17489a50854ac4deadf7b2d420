@@ -1,0 +1,30 @@
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/reporting/content_templates.py
+  ai_agent 1-84
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/reporting/narrative_render.py
+  ai_agent 19,271-274
+xhs_ceramics_analytics/reporting/content_templates.py
+  s_6bd2349b4ebd4d::t_33fd3a17a3755d 1-84
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/reporting/test_content_templates.py
+  ai_agent 1-60
+xhs_ceramics_analytics/reporting/narrative_render.py
+  s_6bd2349b4ebd4d::t_7fb51e797c8c95 271-274
+  s_6bd2349b4ebd4d::t_334999064c5413 19
+tests/reporting/test_content_templates.py
+  s_6bd2349b4ebd4d::t_9b838734843e7c 1-60
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.33-trip",
+  "base_commit_sha": "20f5dadbd20e9a17489a50854ac4deadf7b2d420",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
