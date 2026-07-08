@@ -23,11 +23,11 @@ Use this skill when the user provides Xiaohongshu (小红书 / 千帆) exported 
 
 6. **Data quality (inspect, then fold in)** — run `xhs-ca run data_quality_check` on its own once to inspect the export and drive the **字段映射自愈** gate below; if paid-traffic data was provided, also inspect `ad_data_quality_check`. Resolve empty tables / missing columns *before* building the final report. Do NOT deliver this inspection run as a separate artifact — `data_quality_check` is folded into the single integrated report in step 7, where the compositor renders it as the **closing appendix (附录：数据质量与口径说明)**, not a separate file.
 
-7. **Run fact layer — REQUIRED, not final delivery** — the simplest correct path is `scripts/xhs-ca run auto --name <店铺名>经营诊断报告`: `auto` runs exactly the producible set from step 4's coverage (including `data_quality_check`) in one shot, so the report mines the data to its full depth and writes the deterministic fact layer plus `facts.json`. To curate, instead pass every confirmed slug plus `data_quality_check` to a **single** `scripts/xhs-ca run <slug1> <slug2> … data_quality_check --name <店铺名>经营诊断报告` invocation. This step is an intermediate fact layer, not the final merchant-facing deliverable. **Name reports from the shop/store name, not the platform/export source**: prefer `<店铺名>经营诊断报告` or `<店铺名><日期范围>经营诊断报告`; never use `千帆`, `小红书`, `XHS`, `Qianfan`, or another platform name as the leading report name unless it is literally part of the shop name. If the shop name is unavailable from files or prior context, ask once; if the user does not provide it, use a neutral `店铺经营诊断报告` fallback and state the missing shop-name caveat. **Section order is enforced by the compositor, not by argument order:** business modules lead (executive summary → 经营诊断 → 商品/内容/用户需求/实验 → 基础参考), and `data_quality_check`/`ad_data_quality_check` always sink to the end as the **附录：数据质量与口径说明**. Do NOT run one slug at a time — that fragments the evidence base. Before summarizing, read each module's `assets/xhs-ca/task_templates/<slug>.md` and `assets/xhs-ca/references/cheatsheet.md` for metric definitions, evidence rules, and report structure.
+7. **Run fact layer — REQUIRED, first HTML deliverable** — the simplest correct path is `scripts/xhs-ca run auto --name <店铺名><日期范围>事实层经营诊断报告`: `auto` runs exactly the producible set from step 4's coverage (including `data_quality_check`) in one shot, so the report mines the data to its full depth and writes the deterministic fact layer plus `facts.json`. To curate, instead pass every confirmed slug plus `data_quality_check` to a **single** `scripts/xhs-ca run <slug1> <slug2> … data_quality_check --name <店铺名><日期范围>事实层经营诊断报告` invocation. This fact-layer HTML is a required deliverable alongside the final narrative HTML, because it preserves the full deterministic module detail available before narrative rewriting. **Name reports from the shop/store name, not the platform/export source**: prefer `<店铺名><日期范围>事实层经营诊断报告`; never use `千帆`, `小红书`, `XHS`, `Qianfan`, or another platform name as the leading report name unless it is literally part of the shop name. If the shop name is unavailable from files or prior context, ask once; if the user does not provide it, use a neutral `店铺<日期范围>事实层经营诊断报告` fallback and state the missing shop-name caveat. **Section order is enforced by the compositor, not by argument order:** business modules lead (executive summary → 经营诊断 → 商品/内容/用户需求/实验 → 基础参考), and `data_quality_check`/`ad_data_quality_check` always sink to the end as the **附录：数据质量与口径说明**. Do NOT run one slug at a time — that fragments the evidence base. Before summarizing, read each module's `assets/xhs-ca/task_templates/<slug>.md` and `assets/xhs-ca/references/cheatsheet.md` for metric definitions, evidence rules, and report structure.
 
 ### 7b. Required (auto-degrading): multi-agent narrative report (host with sub-agents)
 
-Step 7 produced the deterministic **fact layer**, not the final deliverable.
+Step 7 produced the deterministic **fact layer**, which is delivered as the first HTML report but is not the final merchant-facing narrative report.
 The merchant-facing report is produced here, by the narrative workflow — this
 is the required final-delivery path, not an optional extra. It degrades
 automatically so it can never fail open:
@@ -58,8 +58,9 @@ automatically so it can never fail open:
    --reason <reason>` (or let `advance` route there automatically).
    A "确定性骨架版" report is always delivered — the deliverable never fails open.
 
-Both paths are valid final deliveries and each yields exactly two artifacts
-(`<name>.md` + `<name>.html`). The run directory is durable scratch, not a
+Both paths are valid narrative deliveries and each yields exactly two artifacts
+(`<name>.md` + `<name>.html`). Name this second report
+`<店铺名><日期范围>叙事版经营诊断报告`. The run directory is durable scratch, not a
 deliverable.
 
 The narrative report now carries **agent-curated deterministic visuals**: each
@@ -71,9 +72,9 @@ while the agent decides only what the visual looks like.
 
 8. **Custom integrated reports** — only when you need a report outside the built-in task registry (non-standard sheets a task does not cover): write the Markdown source first, then immediately run `scripts/xhs-ca render-html <report.md>` or `scripts/xhs-ca render-html <report.md> --output <report.html>`. For any combination of built-in tasks, prefer the single multi-slug `run` in step 7 over hand-authoring. Keep any Excel/CSV companion tables, but they do not replace the HTML report.
 
-9. **Delivery verification (REQUIRED, HTML-only final deliverable)** — the user must receive only the final single-file HTML report. Markdown may exist as an internal source/intermediate, but do not present it as a deliverable unless the user explicitly asks for source Markdown. Before the final response, confirm the final HTML exists under `.xhs-ceramics-analytics/outputs/`, the filename starts with the shop/store name or the neutral `店铺` fallback, no platform name leads the filename, and no stray per-slug `data_quality_check.md`/`.html` were delivered. Also verify the final artifact came from `finalize`, `render-frozen`, or explicit skeleton fallback, not merely from step 7's deterministic `run auto`. If HTML rendering fails, report the error path/message and state clearly that final delivery failed; do not substitute Markdown as the final deliverable.
+9. **Delivery verification (REQUIRED, HTML-only final deliverables)** — the user must receive exactly two single-file HTML reports: the fact-layer HTML from step 7 (`<店铺名><日期范围>事实层经营诊断报告.html`) and the narrative HTML from step 7b (`<店铺名><日期范围>叙事版经营诊断报告.html`). Markdown may exist as internal source/intermediate, but do not present it as a deliverable unless the user explicitly asks for source Markdown. Before the final response, confirm both HTML files exist under `.xhs-ceramics-analytics/outputs/`, both filenames start with the shop/store name or the neutral `店铺` fallback, no platform name leads either filename, and no stray per-slug `data_quality_check.md`/`.html` were delivered. Also verify the narrative artifact came from `finalize`, `render-frozen`, or explicit skeleton fallback, not merely from step 7's deterministic `run auto`. If either HTML rendering fails, report the error path/message and state clearly which delivery failed; do not substitute Markdown as a deliverable.
 
-10. **Summarize** — present findings with: evidence tier (Strong/Medium/Weak/Not-judgable), key numbers, caveats verbatim from the report, next-data-needed, recommended action, narrative workflow status, and the final HTML file path only. NEVER claim deterministic note-to-order attribution.
+10. **Summarize** — present findings with: evidence tier (Strong/Medium/Weak/Not-judgable), key numbers, caveats verbatim from the report, next-data-needed, recommended action, narrative workflow status, and the two final HTML file paths (事实层 + 叙事版) only. NEVER claim deterministic note-to-order attribution.
 
 ## 字段映射自愈 (Field-mapping self-heal)
 
@@ -114,11 +115,11 @@ The build never rejects a file for a drifted Chinese header — it degrades and 
 <skill-dir>/scripts/xhs-ca run note_funnel
 
 # Fact layer — auto-select every producible task. Use the shop/store name.
-<skill-dir>/scripts/xhs-ca run auto --name 店铺名经营诊断报告
+<skill-dir>/scripts/xhs-ca run auto --name 店铺名日期范围事实层经营诊断报告
 
 # Same fact layer, explicitly curated. Argument order is free: the compositor
 # always sinks data_quality_check to the end. Still run required step 7b after this.
-<skill-dir>/scripts/xhs-ca run core_business_diagnosis demand_funnel_diagnosis search_efficiency_diagnosis channel_structure_diagnosis audience_structure_diagnosis refund_root_cause_diagnosis note_commercial_diagnosis sku_structure_diagnosis data_quality_check --name 店铺名经营诊断报告
+<skill-dir>/scripts/xhs-ca run core_business_diagnosis demand_funnel_diagnosis search_efficiency_diagnosis channel_structure_diagnosis audience_structure_diagnosis refund_root_cause_diagnosis note_commercial_diagnosis sku_structure_diagnosis data_quality_check --name 店铺名日期范围事实层经营诊断报告
 
 # Combined run without --name falls back to 经营诊断报告.md + 经营诊断报告.html
 <skill-dir>/scripts/xhs-ca run core_business_diagnosis search_efficiency_diagnosis data_quality_check
@@ -154,4 +155,4 @@ The build never rejects a file for a drifted Chinese header — it degrades and 
 5. **Prefer DuckDB and bundled tasks** — use `scripts/xhs-ca run` over ad-hoc Python/SQL scripts. The bundled tasks enforce evidence scoring, report structure, and metric definitions consistently.
 6. **Never mention troubleshooting steps preemptively** — only surface repair commands from `references/troubleshooting.md` when bootstrap or doctor actually fails.
 7. **Do not invent metrics** — all metrics in reports must trace back to `references/metric_definitions.md` (consolidated in cheatsheet). If a metric is needed but absent, flag it rather than fabricating a formula.
-8. **HTML is the final deliverable** — Markdown is internal source/intermediate output unless the user explicitly asks for it. Markdown-only delivery is incomplete unless HTML rendering failed and the failure was explicitly reported.
+8. **HTML is the final deliverable surface** — deliver exactly two HTML reports (事实层 + 叙事版). Markdown is internal source/intermediate output unless the user explicitly asks for it. Markdown-only delivery is incomplete unless HTML rendering failed and the failure was explicitly reported.
