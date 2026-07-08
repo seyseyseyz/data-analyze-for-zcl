@@ -286,11 +286,11 @@
       flex: none;
     }
 
+    /* Width + centering belong to .page-grid (it always wraps the shell — the TOC
+       rail is always present); the shell just fills its grid cell. */
     .report-shell {
       position: relative;
       z-index: 1;
-      width: min(1180px, calc(100% - 40px));
-      margin: 0 auto;
       padding: 32px 0 112px;
     }
 
@@ -321,21 +321,6 @@
     }
 
     .brand .ic { width: 20px; height: 20px; stroke-width: 1.9; }
-
-    .toc {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      justify-content: flex-end;
-    }
-
-    .toc a {
-      border-bottom: 1px solid transparent;
-      padding-bottom: 2px;
-      transition: border-color 160ms ease, color 160ms ease;
-    }
-
-    .toc a:hover { border-color: var(--ink-strong); color: var(--ink-strong); }
 
     .hero {
       position: relative;
@@ -1011,7 +996,7 @@
       gap: 16px;
     }
 
-    .codex-list {
+    .followup-list {
       display: grid;
       gap: 10px;
       margin: 0;
@@ -1019,7 +1004,7 @@
       list-style: none;
     }
 
-    .codex-list li {
+    .followup-list li {
       padding: 16px 18px;
       border: 1px solid var(--line);
       border-radius: var(--radius-inner);
@@ -1029,7 +1014,7 @@
       transition: border-color 200ms ease;
     }
 
-    .codex-list li:hover { border-color: #E0E0DC; }
+    .followup-list li:hover { border-color: #E0E0DC; }
 
     /* Kept as a semantic hook for top-level sections, intentionally static:
        this is a dense report, not a scroll-choreographed page. */
@@ -1046,10 +1031,8 @@
     }
 
     @media (max-width: 860px) {
-      .report-shell { width: min(100% - 24px, 1180px); }
       section { padding-top: 72px; }
       .topbar { align-items: flex-start; flex-direction: column; }
-      .toc { justify-content: flex-start; }
       .hero { grid-template-columns: 1fr; min-height: auto; padding: 32px; }
       .action-item { grid-template-columns: 1fr; }
       .action-meta-grid { grid-template-columns: 1fr; }
@@ -1063,21 +1046,18 @@
       .span-12 { grid-column: auto; }
       .panel-header { grid-template-columns: 1fr; }
     }
+
+    {{ report.toc_style | safe }}
   </style>
 </head>
 <body>
   <div class="ambient" aria-hidden="true"></div>
-  <main class="report-shell">
+  <div class="page-grid">
+    {{ report.toc_nav_html | safe }}
+    <main class="report-shell">
     <header class="topbar">
       <div class="brand">{{ ic('spark') }} 小红书经营分析</div>
-      <nav class="toc" aria-label="报告目录">
-        <a href="#how-to-read">怎么读</a>
-        <a href="#guide">经营导读</a>
-        <a href="#actions">行动计划</a>
-        <a href="#analysis">详细分析</a>
-        <a href="#appendix">数据附录</a>
-        <a href="#assistant">{{ report.assistant_name }} 追问</a>
-      </nav>
+      <div>Single-file HTML</div>
     </header>
 
     <section class="hero reveal" style="--index: 0">
@@ -1239,7 +1219,7 @@
       </div>
 
       {% for group in report.analysis_groups %}
-      <article class="section-panel">
+      <article class="section-panel" id="{{ group.anchor_id }}">
         <header class="panel-header">
           <div>
             <p class="section-kicker">Business Question</p>
@@ -1306,12 +1286,13 @@
           报告本身负责稳定交付；{{ report.assistant_name }}更适合解释细节、改写成执行清单，或根据你的约束重新排优先级。
         </p>
       </div>
-      <ul class="codex-list">
+      <ul class="followup-list">
         {% for question in report.assistant_questions %}
         <li>{{ question }}</li>
         {% endfor %}
       </ul>
     </section>
   </main>
+  </div>
 </body>
 </html>

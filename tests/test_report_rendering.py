@@ -435,7 +435,8 @@ def test_render_markdown_document_html_wraps_custom_report():
     assert "<!doctype html>" in html
     assert "<title>经营诊断报告</title>" in html
     assert "<h1>经营诊断报告</h1>" in html
-    assert "<h2>关键结论</h2>" in html
+    # h2/h3 now carry a stable TOC anchor id so the persistent 目录 can link to them
+    assert '<h2 id="sec-1">关键结论</h2>' in html
     assert "<table>" in html
     assert "<td>店铺漏斗</td>" in html
     assert "<script>alert(1)</script>" not in html
