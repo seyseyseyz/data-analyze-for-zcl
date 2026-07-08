@@ -1,0 +1,21 @@
+tests/orchestration/test_narrative_workflow_claims.py
+  s_6bd2349b4ebd4d::t_f22280b144730f 317-335
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/orchestration/test_narrative_workflow_claims.py
+  ai_agent 317-335
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.33-trip",
+  "base_commit_sha": "2ea1cdc8dd542474ab1a82d92e6fe179725bd788",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
