@@ -1,0 +1,39 @@
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/reporting/view_spec.py
+  ai_agent 30
+tests/reporting/test_charts_templates.py
+  s_6bd2349b4ebd4d::t_799e1e7d9e839e 108-146
+  s_6bd2349b4ebd4d::t_9873b9f18b9dc8 154
+xhs_ceramics_analytics/reporting/view_spec.py
+  s_6bd2349b4ebd4d::t_657e100f82c3fd 30
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/reporting/test_view_spec.py
+  ai_agent 55-57,65
+xhs_ceramics_analytics/orchestration/narrative_workflow.py
+  s_6bd2349b4ebd4d::t_7fbbb77aa887ca 283-284
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/reporting/charts.py
+  ai_agent 880,957-966
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/orchestration/narrative_workflow.py
+  ai_agent 283-284
+xhs_ceramics_analytics/reporting/charts.py
+  s_6bd2349b4ebd4d::t_0235441c4fb5c5 957-966
+  s_6bd2349b4ebd4d::t_7177bb11a40362 880
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/reporting/test_charts_templates.py
+  ai_agent 108-146,154
+tests/reporting/test_view_spec.py
+  s_6bd2349b4ebd4d::t_42959387638dce 55-57,65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.33-trip",
+  "base_commit_sha": "8d95b15d595cff94d4b46241344d244ee7cdeba8",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
