@@ -63,18 +63,26 @@ Both paths are valid narrative deliveries and each yields exactly two artifacts
 `<店铺名><日期范围>叙事版经营诊断报告`. The run directory is durable scratch, not a
 deliverable.
 
-The narrative report now carries **agent-curated deterministic visuals**: each
-domain section can show a couple of tables and a chart alongside its prose. The
-agent only curates the *view* — which source table, which columns/rows, and the
-captions; a deterministic engine fills every displayed number from the
-already-computed fact layer, so the values stay reproducible and trustworthy
-while the agent decides only what the visual looks like.
+The narrative report carries **agent-curated deterministic visuals**, and it must
+actually carry them: every core domain whose fact layer has a chartable table
+(生意大盘 / 流量与内容 / 商品结构 / 用户与需求 / 退款与售后) is expected to show
+**1–2 tables plus at least one chart** alongside its prose. The agent only curates
+the *view* — which source table, which columns/rows, and the captions; a
+deterministic engine fills every displayed number from the already-computed fact
+layer, so the values stay reproducible and trustworthy while the agent decides only
+what the visual looks like. If an agent leaves a core domain chart-less, a
+deterministic fallback auto-injects one chart for that domain from the fact layer
+(captioned 自动补图), so the narrative reliably ships charts rather than prose-only.
+The only honest chart-less outcome is when the fact layer genuinely has no chartable
+table; if chartable data existed yet no chart reached the HTML, `finalize` records
+`degradation_reason=visuals_missing` — surface that in the step-10 summary rather
+than presenting a silently prose-only narrative as complete.
 
 8. **Custom integrated reports** — only when you need a report outside the built-in task registry (non-standard sheets a task does not cover): write the Markdown source first, then immediately run `scripts/xhs-ca render-html <report.md>` or `scripts/xhs-ca render-html <report.md> --output <report.html>`. For any combination of built-in tasks, prefer the single multi-slug `run` in step 7 over hand-authoring. Keep any Excel/CSV companion tables, but they do not replace the HTML report.
 
-9. **Delivery verification (REQUIRED, HTML-only final deliverables)** — the user must receive exactly two single-file HTML reports: the fact-layer HTML from step 7 (`<店铺名><日期范围>事实层经营诊断报告.html`) and the narrative HTML from step 7b (`<店铺名><日期范围>叙事版经营诊断报告.html`). Markdown may exist as internal source/intermediate, but do not present it as a deliverable unless the user explicitly asks for source Markdown. Before the final response, confirm both HTML files exist under `.xhs-ceramics-analytics/outputs/`, both filenames start with the shop/store name or the neutral `店铺` fallback, no platform name leads either filename, and no stray per-slug `data_quality_check.md`/`.html` were delivered. Also verify the narrative artifact came from `finalize`, `render-frozen`, or explicit skeleton fallback, not merely from step 7's deterministic `run auto`. If either HTML rendering fails, report the error path/message and state clearly which delivery failed; do not substitute Markdown as a deliverable.
+9. **Delivery verification (REQUIRED, HTML-only final deliverables)** — the user must receive exactly two single-file HTML reports: the fact-layer HTML from step 7 (`<店铺名><日期范围>事实层经营诊断报告.html`) and the narrative HTML from step 7b (`<店铺名><日期范围>叙事版经营诊断报告.html`). Markdown may exist as internal source/intermediate, but do not present it as a deliverable unless the user explicitly asks for source Markdown. Before the final response, confirm both HTML files exist under `.xhs-ceramics-analytics/outputs/`, both filenames start with the shop/store name or the neutral `店铺` fallback, no platform name leads either filename, and no stray per-slug `data_quality_check.md`/`.html` were delivered. Also verify the narrative artifact came from `finalize`, `render-frozen`, or explicit skeleton fallback, not merely from step 7's deterministic `run auto`. **Visual audit of the narrative HTML:** unless the run recorded `degradation_reason=visuals_missing` (fact layer had no chartable table), confirm the narrative HTML actually contains charts — e.g. `grep -c "<svg" <叙事版>.html` should be ≥1 (aim for ≥1 per core domain that had chartable data). A prose-only narrative that finalized without a `visuals_missing` reason is a defect, not a delivery. If either HTML rendering fails, report the error path/message and state clearly which delivery failed; do not substitute Markdown as a deliverable.
 
-10. **Summarize** — present findings with: evidence tier (Strong/Medium/Weak/Not-judgable), key numbers, caveats verbatim from the report, next-data-needed, recommended action, narrative workflow status, and the two final HTML file paths (事实层 + 叙事版) only. NEVER claim deterministic note-to-order attribution.
+10. **Summarize** — present findings with: evidence tier (Strong/Medium/Weak/Not-judgable), key numbers, caveats verbatim from the report, next-data-needed, recommended action, narrative workflow status, and the two final HTML file paths (事实层 + 叙事版) only. If the narrative run recorded `degradation_reason=visuals_missing` (chartable data existed but no chart reached the HTML), state that plainly as a caveat — the narrative shipped without its expected visuals. NEVER claim deterministic note-to-order attribution.
 
 ## 字段映射自愈 (Field-mapping self-heal)
 
