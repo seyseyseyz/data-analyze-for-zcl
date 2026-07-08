@@ -70,6 +70,75 @@ def test_accept_valid_spec():
     assert validate_view_spec(_valid_spec(), _tables()) == []
 
 
+def test_accept_legacy_table_type_aliases():
+    spec = _valid_spec()
+    spec.pop("template")
+    spec["view_type"] = "table"
+    assert validate_view_spec(spec, _tables()) == []
+    assert ViewSpec.from_dict(spec).template == "comparison_table"
+    assert count_view_kinds([spec]) == {"tables": 1, "charts": 0}
+
+
+def test_accept_chart_type_alias():
+    spec = _valid_spec()
+    spec.pop("template")
+    spec["chart_type"] = "breakdown_waterfall"
+    assert validate_view_spec(spec, _tables()) == []
+    assert ViewSpec.from_dict(spec).template == "breakdown_waterfall"
+    assert count_view_kinds([spec]) == {"tables": 0, "charts": 1}
+
+
+def test_accept_ranking_table_alias_via_type_key():
+    # exercises BOTH the `type` alias key (not just view_type) and the
+    # ranking_table alias branch — neither was covered by the two accept tests above.
+    spec = _valid_spec()
+    spec.pop("template")
+    spec["type"] = "ranking_table"
+    assert validate_view_spec(spec, _tables()) == []
+    assert ViewSpec.from_dict(spec).template == "ranking_table"
+    assert count_view_kinds([spec]) == {"tables": 1, "charts": 0}
+
+
+def test_accept_chart_template_key_and_view_type_chart_name():
+    # the `chart_template` sibling key resolves, and a chart NAME carried in
+    # view_type resolves via the CHART_TEMPLATES alias branch.
+    spec = _valid_spec()
+    spec.pop("template")
+    spec["chart_template"] = "share_bar"
+    assert ViewSpec.from_dict(spec).template == "share_bar"
+    assert count_view_kinds([spec]) == {"tables": 0, "charts": 1}
+
+    spec2 = _valid_spec()
+    spec2.pop("template")
+    spec2["view_type"] = "trend_line"
+    assert ViewSpec.from_dict(spec2).template == "trend_line"
+    assert count_view_kinds([spec2]) == {"tables": 0, "charts": 1}
+
+
+def test_explicit_template_beats_conflicting_alias():
+    # documented precedence: a non-empty explicit template wins over any alias …
+    spec = _valid_spec()
+    spec["template"] = "share_bar"
+    spec["view_type"] = "table"  # conflicting alias — must lose to the explicit template
+    assert ViewSpec.from_dict(spec).template == "share_bar"
+    # … while an EMPTY-string template falls through to the alias (the `and template` guard)
+    spec2 = _valid_spec()
+    spec2["template"] = ""
+    spec2["chart_type"] = "trend_line"
+    assert ViewSpec.from_dict(spec2).template == "trend_line"
+
+
+def test_reject_unknown_alias():
+    # an unrecognized alias resolves to None and must be REJECTED, never defaulted —
+    # otherwise a bogus view-type would silently ship as a real template.
+    spec = _valid_spec()
+    spec.pop("template")
+    spec["view_type"] = "pie"
+    errs = validate_view_spec(spec, _tables())
+    assert any("template" in e for e in errs)
+    assert count_view_kinds([spec]) == {"tables": 0, "charts": 0}
+
+
 def test_validate_does_not_mutate_inputs():
     spec = _valid_spec()
     tables = _tables()
@@ -469,3 +538,14 @@ def test_validate_tolerates_empty_spec():
     errs = validate_view_spec({}, _tables())
     assert isinstance(errs, list)
     assert errs  # missing everything → many errors, but no raise
+
+
+def test_template_of_never_raises_on_unhashable_alias():
+    # A non-string alias (list/dict/set) must not crash the frozenset membership
+    # test in the alias branch — the never-raise trust-boundary contract covers
+    # malformed agent output too, so it degrades to "no template" (rejected/dropped).
+    assert count_view_kinds([{"view_type": ["x"]}]) == {"tables": 0, "charts": 0}
+    assert count_view_kinds([{"type": {"k": 1}}]) == {"tables": 0, "charts": 0}
+    errs = validate_view_spec({"view_type": ["x"]}, {})
+    assert isinstance(errs, list) and any("template" in e for e in errs)
+    assert ViewSpec.from_dict({"type": {"k": 1}}).template == ""

@@ -150,7 +150,7 @@ class ViewSpec:
             view_id=str(spec.get("view_id") or ""),
             section_id=str(spec.get("section_id") or ""),
             supports_claim=str(spec.get("supports_claim") or ""),
-            template=str(spec.get("template") or ""),
+            template=str(_template_of(spec) or ""),
             source=spec.get("source") if isinstance(spec.get("source"), dict) else {},
             columns=columns,
             column_labels=spec.get("column_labels")
@@ -223,7 +223,7 @@ def validate_view_spec(spec: object, result_tables: object) -> list[str]:
 
 
 def _check_template(spec: dict, errors: list[str]) -> None:
-    template = spec.get("template")
+    template = _template_of(spec)
     if template not in TEMPLATES:
         errors.append(
             f"未知模板 template={template!r}(允许:{sorted(TEMPLATES)})"
@@ -408,5 +408,17 @@ def _template_of(spec: object) -> str | None:
         return spec.template
     if isinstance(spec, dict):
         template = spec.get("template")
-        return template if isinstance(template, str) else None
+        if isinstance(template, str) and template:
+            return template
+        chart_template = spec.get("chart_template") or spec.get("chart_type")
+        if isinstance(chart_template, str) and chart_template in CHART_TEMPLATES:
+            return chart_template
+        alias = spec.get("view_type") or spec.get("type")
+        if isinstance(alias, str):  # guard: `alias in CHART_TEMPLATES` hashes it → never raise
+            if alias in ("table", "comparison_table"):
+                return "comparison_table"
+            if alias == "ranking_table":
+                return "ranking_table"
+            if alias in CHART_TEMPLATES:
+                return alias
     return None
