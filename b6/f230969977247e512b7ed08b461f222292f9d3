@@ -1,0 +1,68 @@
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/reporting/html.py
+  ai_agent 20,467
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/reporting/test_confidence_pill.py
+  ai_agent 1-50
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/reporting/test_narrative_render_views.py
+  ai_agent 128-194
+tests/orchestration/test_review_stage.py
+  s_6bd2349b4ebd4d::t_3098aca9a1b790 200-213
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/reporting/confidence_pill.py
+  ai_agent 1-62
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/reporting/narrative_render.py
+  ai_agent 18,130-157,187-193,198
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/orchestration/test_review_stage.py
+  ai_agent 200-213
+xhs_ceramics_analytics/reporting/charts.py
+  s_6bd2349b4ebd4d::t_9fc3e5c81428e0 896-905
+  s_6bd2349b4ebd4d::t_7d4f267e847781 955
+xhs_ceramics_analytics/reporting/confidence_pill.py
+  s_6bd2349b4ebd4d::t_8a8f1dc0632221 1-62
+tests/reporting/test_charts_templates.py
+  s_6bd2349b4ebd4d::t_c61eeb3440d105 83-97
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_reporting_first_screen.py
+  ai_agent 22-26
+tests/reporting/test_confidence_pill.py
+  s_6bd2349b4ebd4d::t_5befd9b7e29a34 1-50
+xhs_ceramics_analytics/reporting/first_screen.py
+  s_6bd2349b4ebd4d::t_058a425177b5c4 31,36
+  s_6bd2349b4ebd4d::t_1360089da73193 11-14
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/reporting/first_screen.py
+  ai_agent 11-14,31,36
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/reporting/test_charts_templates.py
+  ai_agent 83-97
+tests/reporting/test_narrative_render_views.py
+  s_6bd2349b4ebd4d::t_c7962c16b58742 128-194
+tests/test_reporting_first_screen.py
+  s_6bd2349b4ebd4d::t_e76cf65d3af541 22-26
+xhs_ceramics_analytics/reporting/html.py
+  s_6bd2349b4ebd4d::t_6791cb3fe87173 20
+  s_6bd2349b4ebd4d::t_320b6a05daae88 467
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/orchestration/narrative_workflow.py
+  ai_agent 62-64,74-76,287-288
+xhs_ceramics_analytics/reporting/narrative_render.py
+  s_6bd2349b4ebd4d::t_b7c1c6997089b3 187-193,198
+  s_6bd2349b4ebd4d::t_9b474724dd8460 18
+  s_6bd2349b4ebd4d::t_ffa010874acc0e 130-157
+xhs_ceramics_analytics/orchestration/narrative_workflow.py
+  s_6bd2349b4ebd4d::t_da49439fddf41e 62-64
+  s_6bd2349b4ebd4d::t_f586a4d52ca7ee 74-76
+  s_6bd2349b4ebd4d::t_7adac1b308c67b 287-288
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/reporting/charts.py
+  ai_agent 896-905,955
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.33-trip",
+  "base_commit_sha": "b6f230969977247e512b7ed08b461f222292f9d3",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
