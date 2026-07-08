@@ -21,6 +21,11 @@ from dataclasses import dataclass
 from html import escape
 
 from xhs_ceramics_analytics.reporting import charts
+from xhs_ceramics_analytics.reporting.formatting import (
+    field_label,
+    format_scalar,
+    is_timeseries_table,
+)
 from xhs_ceramics_analytics.reporting.view_spec import (
     CHART_TEMPLATES,
     ViewSpec,
@@ -33,6 +38,11 @@ logger = logging.getLogger(__name__)
 # Highlight marker class on a <tr>; styled by the report's stylesheet. Kept as a
 # class (not an inline style) so highlighting stays a presentation concern.
 _HIGHLIGHT_CLASS = "ca-row-highlight"
+
+# The narrative shows only the most-valuable rows of a table (user-set cap): a
+# per-period wall-of-dates is suppressed entirely (chart-only), and any other long
+# table is truncated to its top rows with a caption + native <details> fold.
+DEFAULT_MAX_ROWS = 8
 
 
 @dataclass(frozen=True)
@@ -98,13 +108,35 @@ def _render(spec: object, result_tables: object, finding: object) -> CuratedView
         )
 
     tables = result_tables if isinstance(result_tables, dict) else {}
-    source_rows = tables.get(view.source.get("table"))
-    display_rows, highlight_flags = _select_rows(source_rows, view.rows)
+    source = view.source if isinstance(view.source, dict) else {}
+    table_name = str(source.get("table") or "")
+    source_rows = tables.get(source.get("table"))
+    is_chart = view.template in CHART_TEMPLATES
 
-    table_html = _build_table_html(view, display_rows, highlight_flags)
+    # Form guard: a per-period (timeseries) source is never a table. A table-template
+    # over it degrades (the trend belongs in a chart, not a wall-of-dates grid); a
+    # chart-template keeps its chart but drops the per-day companion table.
+    if is_timeseries_table(table_name, _source_columns(source_rows)):
+        if not is_chart:
+            return CuratedView(
+                table_html=None,
+                chart_svg=None,
+                title=view.title,
+                how_to_read=view.how_to_read,
+                why_it_matters=view.why_it_matters,
+                confidence=confidence,
+                provenance=provenance,
+                degraded=True,
+                reason="逐期时间序列不作为表格呈现,请改用趋势图",
+            )
+        display_rows, _ = _select_rows(source_rows, view.rows)
+        table_html = None
+    else:
+        display_rows, highlight_flags = _select_rows(source_rows, view.rows)
+        table_html = _build_table_html(view, display_rows, highlight_flags)
 
     chart_svg: str | None = None
-    if view.template in CHART_TEMPLATES:
+    if is_chart:
         rendered = str(
             charts.render_chart_template(
                 view.template, display_rows, view.chart, confidence=confidence
@@ -194,46 +226,73 @@ def _is_highlighted(row: dict, highlight: dict) -> bool:
 def _build_table_html(
     view: ViewSpec, rows: list[dict], highlight_flags: list[bool]
 ) -> str | None:
-    """Build the curated table HTML.
+    """Build the curated table HTML — capped to the most-valuable rows, foldable.
 
     Mirrors the deterministic renderer's ``.table-wrap`` markup and stdlib HTML
     escaping (see ``reporting.html``): a ``<div class="table-wrap"><table>`` with a
-    ``<thead>`` of ``column_labels`` (or raw column names) and a ``<tbody>`` whose
-    cells are the source values, escaped verbatim (emoji preserved). Returns
-    ``None`` when the spec carries no columns.
+    ``<thead>`` of ``column_labels`` (falling back to the shared human field label,
+    never the raw snake_case column) and a ``<tbody>`` whose cells are formatted from
+    the source via :func:`format_scalar` (thousands separators / percents / 是否 /
+    暂无数据) — the number is still filled from the source row; only its presentation
+    is normalized. Only the first :data:`DEFAULT_MAX_ROWS` rows are shown; a longer
+    table is truncated with a caption and wrapped in a native ``<details>`` fold.
+    Returns ``None`` when the spec carries no columns.
     """
     columns = list(view.columns)
     if not columns:
         return None
     labels = view.column_labels if isinstance(view.column_labels, dict) else {}
 
+    total = len(rows)
+    shown_rows = rows[:DEFAULT_MAX_ROWS]
+    shown_flags = highlight_flags[:DEFAULT_MAX_ROWS]
+
     header = "".join(
-        f"<th>{escape(str(labels.get(col, col)))}</th>" for col in columns
+        f"<th>{escape(str(labels.get(col) or field_label(col)))}</th>"
+        for col in columns
     )
     body_rows: list[str] = []
-    for row, highlighted in zip(rows, highlight_flags):
-        cells = "".join(f"<td>{_cell_html(row.get(col))}</td>" for col in columns)
+    for row, highlighted in zip(shown_rows, shown_flags):
+        cells = "".join(f"<td>{_cell_html(col, row.get(col))}</td>" for col in columns)
         tr_open = f'<tr class="{_HIGHLIGHT_CLASS}">' if highlighted else "<tr>"
         body_rows.append(f"{tr_open}{cells}</tr>")
 
-    return (
+    table = (
         '<div class="table-wrap"><table>'
         f"<thead><tr>{header}</tr></thead>"
         f"<tbody>{''.join(body_rows)}</tbody>"
         "</table></div>"
     )
 
+    if total > len(shown_rows):
+        caption = f"共 {total} 行 · 仅展示最有价值的前 {len(shown_rows)} 行"
+        return (
+            '<details class="ca-table-fold" open>'
+            f"<summary>{escape(caption)}</summary>{table}</details>"
+        )
+    return table
 
-def _cell_html(value: object) -> str:
-    """Render a source cell verbatim (never rounded/fabricated), HTML-escaped.
 
-    ``None`` renders as an empty cell; every other value is ``str(value)`` so the
-    displayed number is byte-identical to the source. Emoji is real content and is
-    never stripped by :func:`html.escape`.
+def _cell_html(field_name: str, value: object) -> str:
+    """Render a source cell via the shared fact-layer formatter, HTML-escaped.
+
+    The number is still filled verbatim from the source row; :func:`format_scalar`
+    only normalizes *presentation* (thousands separators, percents, 是/否, 暂无数据),
+    so the narrative matches the fact layer and the value-match boundary holds (the
+    gate formats the source identically). Emoji is real content, never stripped by
+    :func:`html.escape`.
     """
-    if value is None:
-        return ""
-    return escape(str(value))
+    return escape(format_scalar(field_name, value))
+
+
+def _source_columns(source_rows: object) -> list[str]:
+    """Column names of the source table (keys of its first dict row), for the
+    timeseries form check. Empty when the table is missing/empty/garbage."""
+    if isinstance(source_rows, (list, tuple)):
+        for row in source_rows:
+            if isinstance(row, dict):
+                return list(row.keys())
+    return []
 
 
 # ---- provenance + helpers -------------------------------------------------

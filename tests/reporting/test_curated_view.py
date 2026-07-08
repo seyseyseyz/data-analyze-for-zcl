@@ -57,26 +57,30 @@ def _finding(strength=EvidenceStrength.MEDIUM):
     return Finding(title="t", conclusion="c", evidence_strength=strength)
 
 
-# ---- every rendered cell equals the source value (verbatim) ---------------
+# ---- every rendered cell is FORMATTED from the source value ---------------
 
-def test_table_cells_equal_source_value_verbatim():
+def test_table_cells_are_formatted_from_source():
     view = render_view(_table_spec(), _tables(), finding=_finding())
     assert not view.degraded
     assert view.chart_svg is None  # a table template renders no chart
     html = view.table_html
-    # every selected cell is present verbatim — no re-rounding, no fabrication.
-    for cell in ("<td>转化</td>", "<td>12000</td>",
-                 "<td>流量</td>", "<td>8000</td>",
-                 "<td>客单价</td>", "<td>-3000</td>"):
+    # each cell is filled from the source but presented via the shared fact-layer
+    # formatter: the _gmv money column gets thousands separators; text passes through.
+    for cell in ("<td>转化</td>", "<td>12,000</td>",
+                 "<td>流量</td>", "<td>8,000</td>",
+                 "<td>客单价</td>", "<td>-3,000</td>"):
         assert cell in html
+    # a raw, unformatted money dump must never appear.
+    assert "<td>12000</td>" not in html
     # the unselected `note` column is not surfaced.
     assert "<td>a</td>" not in html
 
 
 def test_engine_never_invents_a_number_absent_from_source():
     view = render_view(_table_spec(), _tables(), finding=_finding())
-    # 9000 is a plausible but fabricated value — it must never appear.
+    # 9000 is a plausible but fabricated value — it must never appear (formatted or not).
     assert "9000" not in view.table_html
+    assert "9,000" not in view.table_html
 
 
 def test_column_labels_become_headers_source_names_do_not_leak():
@@ -143,7 +147,7 @@ def test_chart_template_produces_svg_and_a_table():
     assert not view.degraded
     assert view.chart_svg is not None and "<svg" in view.chart_svg
     # a chart view still carries the underlying data table (aria: "详见下方表格").
-    assert view.table_html is not None and "<td>12000</td>" in view.table_html
+    assert view.table_html is not None and "<td>12,000</td>" in view.table_html
     # displayed numbers in the SVG are filled from the source, grouped by labels.
     assert "12,000" in view.chart_svg
 
@@ -235,3 +239,91 @@ def test_why_it_matters_with_fabricated_number_degrades():
     view = render_view(spec, _tables(), finding=_finding())
     assert view.degraded
     assert view.table_html is None and view.chart_svg is None
+
+
+# ---- cells formatted via the shared fact-layer formatter (bool/percent/None) --
+
+def test_boolean_cell_renders_yes_no_not_raw_bool():
+    tables = {"t": [{"name": "促销周", "is_anomaly": True},
+                    {"name": "常规周", "is_anomaly": False}]}
+    spec = _table_spec(source={"task_id": "x", "table": "t"},
+                       columns=["name", "is_anomaly"], column_labels={}, rows={})
+    html = render_view(spec, tables, finding=_finding()).table_html
+    assert "<td>是</td>" in html and "<td>否</td>" in html
+    # the raw Python booleans must never leak into the merchant view.
+    assert "True" not in html and "False" not in html
+
+
+def test_percent_column_renders_as_percentage():
+    tables = {"t": [{"term": "手作杯", "click_rate": 0.046}]}
+    spec = _table_spec(source={"task_id": "x", "table": "t"},
+                       columns=["term", "click_rate"], column_labels={}, rows={})
+    html = render_view(spec, tables, finding=_finding()).table_html
+    assert "4.6%" in html
+    assert "0.046" not in html  # never the raw ratio
+
+
+def test_none_cell_renders_placeholder_not_empty():
+    tables = {"t": [{"name": "缺口", "gmv": None}]}
+    spec = _table_spec(source={"task_id": "x", "table": "t"},
+                       columns=["name", "gmv"], column_labels={}, rows={})
+    html = render_view(spec, tables, finding=_finding()).table_html
+    assert "暂无数据" in html
+
+
+def test_missing_column_label_falls_back_to_human_field_label():
+    # no agent label for `delta_gmv`; the header uses a human label, never the raw
+    # snake_case source column name.
+    spec = _table_spec(column_labels={"component": "增长来源"})
+    html = render_view(spec, _tables(), finding=_finding()).table_html
+    assert "<th>delta_gmv</th>" not in html
+
+
+# ---- timeseries form guard: a per-period series is chart-only, never a grid ---
+
+def _ts_tables():
+    return {"business_trend": [
+        {"date": f"2026-04-{d:02d}", "gmv": 1000 + d * 10, "is_anomaly": d % 3 == 0}
+        for d in range(1, 13)
+    ]}
+
+
+def test_timeseries_table_template_is_suppressed_entirely():
+    # a table-template over a per-period source must degrade — never a wall-of-dates.
+    spec = _table_spec(source={"task_id": "core", "table": "business_trend"},
+                       columns=["date", "gmv", "is_anomaly"], column_labels={},
+                       rows={}, template="ranking_table")
+    view = render_view(spec, _ts_tables(), finding=_finding())
+    assert view.degraded
+    assert view.table_html is None and view.chart_svg is None
+
+
+def test_timeseries_chart_keeps_chart_and_drops_companion_table():
+    spec = _table_spec(source={"task_id": "core", "table": "business_trend"},
+                       columns=["date", "gmv"], column_labels={}, rows={},
+                       template="trend_line", chart={"x": "date", "y": "gmv"})
+    view = render_view(spec, _ts_tables(), finding=_finding())
+    assert not view.degraded
+    assert view.chart_svg is not None and "<svg" in view.chart_svg
+    assert view.table_html is None  # the trend lives in the chart, not a per-day grid
+
+
+# ---- default row cap: only the most-valuable rows, foldable -----------------
+
+def test_long_table_capped_to_default_max_with_fold_and_caption():
+    rows = [{"cat": f"cat{i:02d}", "val": 100 - i} for i in range(20)]
+    spec = _table_spec(source={"task_id": "x", "table": "t"},
+                       columns=["cat", "val"], column_labels={},
+                       rows={"sort_by": "val", "order": "desc"})
+    html = render_view(spec, {"t": rows}, finding=_finding()).table_html
+    # only the top 8 rows survive (sorted desc by val): cat00..cat07 kept, cat08 gone.
+    assert "cat07" in html and "cat08" not in html
+    # the truncation is captioned and the table is foldable via native <details>.
+    assert "共 20 行" in html
+    assert "<details" in html and "<summary>" in html
+
+
+def test_short_table_is_not_capped_or_folded():
+    html = render_view(_table_spec(), _tables(), finding=_finding()).table_html  # 3 rows
+    assert "<details" not in html
+    assert "共 " not in html

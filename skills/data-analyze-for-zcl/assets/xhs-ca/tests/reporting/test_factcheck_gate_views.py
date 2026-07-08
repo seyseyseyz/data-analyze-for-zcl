@@ -177,6 +177,41 @@ def test_value_mismatch_hard_fails_when_source_has_no_rows_to_surface():
     assert "VIEW_SPEC_INVALID" not in codes  # independent of rule 1
 
 
+# ---- timeseries form guard: per-period series is chart-only, never a grid ---
+
+def _ts_tables():
+    return _tables(business_trend=[
+        {"date": "2026-04-01", "gmv": 1000},
+        {"date": "2026-04-02", "gmv": 1100},
+        {"date": "2026-04-03", "gmv": 900},
+    ])
+
+
+def test_timeseries_table_template_hard_fails_view_timeseries_as_table():
+    # a table-template over a per-period source is a wall-of-dates grid — the exact
+    # form the guard suppresses. It HARD-fails with a dedicated, legible code.
+    v = _view(view_id="core.trend_grid", template="comparison_table",
+              source={"task_id": "core_business_diagnosis", "table": "business_trend"},
+              columns=["date", "gmv"], column_labels={"date": "日期", "gmv": "GMV"})
+    r = run_gate(_bundle([v]), _facts(), _ts_tables())
+    assert r.status == "FAIL"
+    assert "VIEW_TIMESERIES_AS_TABLE" in _codes(r)
+
+
+def test_timeseries_chart_template_passes_as_chart_only():
+    # the same per-period source rendered as a trend chart is exactly the right form:
+    # it passes value-match by construction (the engine plots the source, no
+    # agent-authored numeric surface to re-verify) with no companion grid.
+    v = _view(view_id="core.trend_chart", template="trend_line",
+              source={"task_id": "core_business_diagnosis", "table": "business_trend"},
+              columns=["date", "gmv"], column_labels={"date": "日期", "gmv": "GMV"},
+              chart={"x": "date", "y": "gmv"})
+    r = run_gate(_bundle([v]), _facts(), _ts_tables())
+    assert r.status == "PASS", r.hard_failures
+    assert "VIEW_TIMESERIES_AS_TABLE" not in _codes(r)
+    assert "VIEW_VALUE_MISMATCH" not in _codes(r)
+
+
 # ---- rule 3: supports_claim must reference a real claim --------------------
 
 def test_supports_claim_not_in_bundle_hard_fails():

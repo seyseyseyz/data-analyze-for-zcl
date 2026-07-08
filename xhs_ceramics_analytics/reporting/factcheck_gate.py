@@ -17,7 +17,11 @@ from dataclasses import dataclass, field
 from html import escape
 
 from xhs_ceramics_analytics.reporting.curated_view import render_view
-from xhs_ceramics_analytics.reporting.view_spec import validate_view_spec
+from xhs_ceramics_analytics.reporting.formatting import format_scalar, is_timeseries_table
+from xhs_ceramics_analytics.reporting.view_spec import (
+    CHART_TEMPLATES,
+    validate_view_spec,
+)
 
 _TOKEN_RE = re.compile(r"\{t\d+\}")
 _TD_RE = re.compile(r"<td[^>]*>(.*?)</td>", re.DOTALL)
@@ -177,9 +181,31 @@ def _source_cell_strings(view: dict, result_tables: dict) -> set[str]:
         if not isinstance(row, dict):
             continue
         for col in columns:
-            value = row.get(col)
-            cells.add("" if value is None else escape(str(value)))
+            # Format exactly as the engine renders a <td> (via the shared
+            # format_scalar), so the value-match compares formatted-vs-formatted:
+            # both sides derive deterministically from the same source row, keeping
+            # the numeric-trust boundary intact.
+            cells.add(escape(format_scalar(col, row.get(col))))
     return cells
+
+
+def _is_timeseries_table_view(view: dict, result_tables: dict) -> bool:
+    """True for a TABLE-template view whose source is a per-period (timeseries)
+    table — the wall-of-dates grid the form guard suppresses. A chart-template over
+    the same source is the correct form and is NOT flagged."""
+    template = view.get("template")
+    if template in CHART_TEMPLATES:
+        return False
+    source = view.get("source") if isinstance(view.get("source"), dict) else {}
+    table_name = str(source.get("table") or "")
+    rows = result_tables.get(source.get("table"))
+    columns: list[str] = []
+    if isinstance(rows, (list, tuple)):
+        for row in rows:
+            if isinstance(row, dict):
+                columns = list(row.keys())
+                break
+    return is_timeseries_table(table_name, columns)
 
 
 def _view_value_matches(rendered: object, view: dict, result_tables: dict) -> bool:
@@ -190,19 +216,25 @@ def _view_value_matches(rendered: object, view: dict, result_tables: dict) -> bo
 
     A degraded render (engine could not fill trustworthy numbers), a vacuous render
     (zero source-derived values to back the claim), or any displayed value absent
-    from the source all fail the match. Never raises.
+    from the source all fail the match. A chart-only view (a per-period series whose
+    companion grid the engine suppressed) has no agent-authored numeric surface to
+    re-verify — the engine plots the numbers straight from the source — so it passes
+    by construction as long as a chart was actually produced. Never raises.
     """
     if getattr(rendered, "degraded", True):
         return False
     table_html = getattr(rendered, "table_html", None)
-    if not isinstance(table_html, str) or not table_html:
-        return False
-    displayed = _TD_RE.findall(table_html)
-    non_empty = [cell for cell in displayed if cell != ""]
-    if not non_empty:
-        return False  # nothing to value-match — the view backs its claim with no data
-    source_cells = _source_cell_strings(view, result_tables)
-    return all(cell in source_cells for cell in non_empty)
+    if isinstance(table_html, str) and table_html:
+        displayed = _TD_RE.findall(table_html)
+        non_empty = [cell for cell in displayed if cell != ""]
+        if not non_empty:
+            return False  # nothing to value-match — backs its claim with no data
+        source_cells = _source_cell_strings(view, result_tables)
+        return all(cell in source_cells for cell in non_empty)
+    # No table: a chart-only view fills its numbers deterministically from the source
+    # (charts.render_chart_template), so it is trustworthy iff a chart was produced.
+    chart_svg = getattr(rendered, "chart_svg", None)
+    return isinstance(chart_svg, str) and bool(chart_svg)
 
 
 def _check_one_view(
@@ -226,6 +258,14 @@ def _check_one_view(
     if errors:
         hard.append(_fail("VIEW_SPEC_INVALID", label, "; ".join(errors)))
         return  # an invalid spec cannot be value-matched — stop here for this view
+
+    # form guard (defense-in-depth): a table-template over a per-period series is a
+    # wall-of-dates grid. HARD-fail with a dedicated code — clearer than the generic
+    # VIEW_VALUE_MISMATCH the suppressed render would otherwise produce.
+    if _is_timeseries_table_view(view, result_tables):
+        hard.append(_fail("VIEW_TIMESERIES_AS_TABLE", label,
+                          "逐期时间序列不应以表格呈现,请改用趋势图"))
+        return
 
     # rule 2: value-match the engine's output against the source table.
     rendered = render_view(view, result_tables)

@@ -107,10 +107,11 @@ def test_bundle_to_markdown_renders_curated_view_tables_and_charts():
     # prose survives unchanged
     assert "GMV 回落。" in md
     assert "生意大盘" in md
-    # table cells surfaced verbatim from the source table (no fabrication, no rounding)
+    # table cells filled from the source table, formatted via the shared fact-layer
+    # formatter (money columns get thousands separators; never a raw dump/fabrication)
     assert "<td>转化</td>" in md
-    assert "<td>12000</td>" in md
-    assert "<td>8000</td>" in md
+    assert "<td>12,000</td>" in md
+    assert "<td>8,000</td>" in md
     # the unselected `note` column never leaks
     assert "<td>a</td>" not in md
     # chart template inlined as SVG
@@ -135,7 +136,7 @@ def test_html_conversion_preserves_raw_table_and_svg_not_escaped():
     assert "&lt;table" not in html
     assert "&lt;svg" not in html
     # the source-derived cell value survived into the HTML document
-    assert "12000" in html
+    assert "12,000" in html
 
 
 def test_empty_result_tables_degrades_to_prose_only():
@@ -236,7 +237,7 @@ def test_forged_marker_in_how_to_read_cannot_open_passthrough():
     assert "&lt;script&gt;xss" in html
     # the fix did not over-strip: the legit deterministic table still passed through
     assert "<table>" in html
-    assert "12000" in html
+    assert "12,000" in html
 
 
 def test_forged_marker_in_claim_sentence_cannot_open_passthrough():
@@ -278,7 +279,7 @@ def test_agent_markers_stripped_from_every_field_only_engine_block_remains():
     # and that lone block still round-trips through the converter as a real table
     html = render_markdown_document_html(md)
     assert "<table>" in html
-    assert "12000" in html
+    assert "12,000" in html
 
 
 # ---- deterministic per-domain chart fallback -------------------------------
