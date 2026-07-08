@@ -9,6 +9,7 @@ from xhs_ceramics_analytics.evidence import EvidenceStrength
 from xhs_ceramics_analytics.reporting.view_spec import (
     TEMPLATES,
     ViewSpec,
+    contains_fabricated_number,
     count_view_kinds,
     derive_confidence,
     validate_view_spec,
@@ -277,6 +278,108 @@ def test_emoji_in_prose_is_allowed():
     spec = _valid_spec()
     spec["title"] = "GMV 增长拆解 🚀 谁在拉动"
     assert validate_view_spec(spec, _tables()) == []
+
+
+# ---- rule 2: contains_fabricated_number hardened glyph coverage -----------
+# These close the caption-scan bypass: a curated view whose prose smuggled a
+# fabricated number written as a Unicode fraction/circled-digit/superscript/Roman
+# numeral, a CJK decimal (三点五), or a numeral bound to a multiplier/discount unit
+# (五倍 / 八折) passed the old scan verbatim into the shipped merchant view. The scan
+# is over-blocking-biased: a false reject only drops one view (prose stays); a miss
+# ships an unverified number.
+
+def test_contains_fabricated_number_flags_unicode_fraction():
+    assert contains_fabricated_number("转化只占了½,空间还很大") is True
+    assert contains_fabricated_number("不足⅓") is True
+
+
+def test_contains_fabricated_number_flags_circled_and_superscript_digits():
+    assert contains_fabricated_number("第①名遥遥领先") is True
+    assert contains_fabricated_number("增长了³个身位") is True
+
+
+def test_contains_fabricated_number_flags_roman_numeral():
+    # Roman numerals are Unicode category Nl — a number glyph the plain \\d scan misses.
+    assert contains_fabricated_number("阶段Ⅳ的表现") is True
+
+
+def test_contains_fabricated_number_flags_cjk_decimal():
+    # 三点五 = 3.5 — a decimal written entirely in CJK numerals, no ASCII digit.
+    assert contains_fabricated_number("客单价约三点五") is True
+    assert contains_fabricated_number("退货率二点八") is True
+
+
+def test_contains_fabricated_number_flags_multiplier_and_discount_units():
+    # 倍 (multiplier) and 折 (discount) are magnitude units in the same sense as 成/元:
+    # a numeral bound to them is a fabricated quantity.
+    assert contains_fabricated_number("转化拉动了五倍") is True
+    assert contains_fabricated_number("客单价翻了两倍") is True
+    assert contains_fabricated_number("清仓打到八折") is True
+
+
+def test_contains_fabricated_number_tolerates_measure_word_and_ordinals():
+    # Must NOT over-block: 那一块 (that block/area, a measure word), ordinals (第一),
+    # and words that merely contain a unit/连接 char without a bound numeral.
+    assert contains_fabricated_number("锁定被转化抵消的那一块") is False
+    assert contains_fabricated_number("本周第一优先") is False
+    assert contains_fabricated_number("重点看转化这个环节") is False  # 点 not between numerals
+    assert contains_fabricated_number("这是一个好征兆") is False       # 兆 is a CJK ideograph, not a No/Nl glyph
+    assert contains_fabricated_number("清仓要打折促销") is False       # 折 without a bound numeral
+    assert contains_fabricated_number("增长倍数值得关注") is False     # 倍 without a bound numeral
+    assert contains_fabricated_number("谁在拉动、谁在抵消") is False
+
+
+def test_contains_fabricated_number_flags_chinese_percentage_and_fraction():
+    # 百分之X / X分之Y is the dominant TEXTUAL form of a Chinese percentage/fraction. A
+    # single-numeral operand carries no ≥2-numeral run and no bound unit, so without a
+    # 分之-connective branch "5%" ships as 百分之五 un-gated while its synonyms 百分之五十
+    # (2-run) and 五成 (unit) are blocked — an exploitable, inconsistent bypass.
+    assert contains_fabricated_number("环比提升百分之五") is True
+    assert contains_fabricated_number("百分之九的退货") is True
+    assert contains_fabricated_number("转化只占三分之一") is True
+    assert contains_fabricated_number("千分之二的差异") is True
+    assert contains_fabricated_number("满意度百分之百") is True   # 百分之百 = 100%
+    assert contains_fabricated_number("好评率百分百") is True     # 百分百 contraction = 100%
+
+
+def test_contains_fabricated_number_tolerates_fen_zhi_lookalikes():
+    # The 分之 branch requires BOTH the 之 connective and a bound numeral, so common
+    # 分-words that are NOT quantities stay allowed (the over-block bias has limits).
+    assert contains_fabricated_number("十分满意这批货") is False   # 十分 = "very", no 之
+    assert contains_fabricated_number("大部分已售出") is False     # 部分, 分 not numeral-bound
+    assert contains_fabricated_number("先做数据分析") is False     # 分析
+    assert contains_fabricated_number("半成品占比偏高") is False   # 半 is not a numeral; 半成 must not trip the unit branch
+    assert contains_fabricated_number("提升了几个百分点") is False  # 百分点: 几 not a numeral, no 之+numeral
+
+
+def test_reject_chinese_percentage_in_why_it_matters():
+    # End-to-end: a 百分之X percentage in agent prose must be rejected by the gate's
+    # caption scan, just like the ASCII/万-numeral and 成/元 magnitude forms.
+    spec = _valid_spec()
+    spec["why_it_matters"] = "转化环比提升百分之五,值得复盘"
+    errs = validate_view_spec(spec, _tables())
+    assert any("why_it_matters" in e for e in errs)
+
+
+def test_reject_cjk_decimal_in_why_it_matters():
+    spec = _valid_spec()
+    spec["why_it_matters"] = "客单价约三点五,仍有提升空间"
+    errs = validate_view_spec(spec, _tables())
+    assert any("why_it_matters" in e for e in errs)
+
+
+def test_reject_unicode_fraction_in_how_to_read():
+    spec = _valid_spec()
+    spec["how_to_read"] = "转化只占了½,空间很大"
+    errs = validate_view_spec(spec, _tables())
+    assert any("how_to_read" in e for e in errs)
+
+
+def test_reject_multiplier_unit_in_title():
+    spec = _valid_spec()
+    spec["title"] = "转化拉动五倍的秘密"
+    errs = validate_view_spec(spec, _tables())
+    assert any("title" in e for e in errs)
 
 
 # ---- derive_confidence (rule 5) -------------------------------------------
