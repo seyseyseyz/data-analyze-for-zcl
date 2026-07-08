@@ -344,14 +344,19 @@ def _write_synth_brief(run_dir: Path, state: dict) -> None:
         "",
         "下面是各版块 fan agent 已产出的 claims 摘要。据此组装「首屏」:挑出最能支撑主结论的",
         "claim 进 spine/panel(整条 claim-like dict,含 sentence 与 number_tokens;数字仍由确定性",
-        "引擎回填,你绝不写裸数字),并给出 headline / cannot_say / spine_final。",
+        "引擎回填,你绝不写裸数字),并给出 headline / mechanism / cannot_say / spine_final。",
         "",
         'Return JSON only: {"headline","first_screen":{"spine":[…],"panel":[…],"actions":[…]},'
-        '"cannot_say":[…],"spine_final":{…}}.',
+        '"mechanism":[…],"cannot_say":[…],"spine_final":{…}}.',
         "spine/panel 每条须是 claim-like dict(可直接复用下方某条 claim,或组合其 claim_id);",
         "复用/新写的 claim 都遵守同一数字纪律:sentence 仅含 {tN} 占位、绝不含任何裸数字,",
         "且句中出现的每个 {tN} 必须与 number_tokens 里声明的 token_id 精确一一对应(多一个或少一个都会被判 MAGNITUDE_UNBOUND 而拒绝);",
         "actions 是纯文字行动建议,同样不得含裸数字/金额/百分比;cannot_say 是本次数据答不了的问题。",
+        "",
+        "mechanism 是「跨模块因果主线」:把不同版块的 claim 按因果顺序串成一条链,回答「为什么会这样」。",
+        "每个元素形如 {\"claim_id\":\"<下方某条 claim_id>\",\"link\":\"<可选的纯文字连接词,如 因此/结果/根源在于>\"};",
+        "只引用已存在的 claim_id(数字随该 claim 回填,你不另写数字);link 是连接词,绝不含任何数字/月份/百分比,",
+        "含数字会被丢弃。优先跨版块选 claim(如 流量→内容→退款),让主线把各域串成一个故事,而非罗列同域结论。",
         "",
         "## 已产出的 claims",
         "",
@@ -547,7 +552,7 @@ def _record_section(state: dict, section: dict) -> None:
 
 # Bundle-level synthesis the SYNTH agent assembles once, across all sections (spec
 # §First screen). Captured into state['_synth'] and re-emitted by _bundle_from_state.
-_BUNDLE_LEVEL_KEYS = ("first_screen", "headline", "cannot_say", "spine_final")
+_BUNDLE_LEVEL_KEYS = ("first_screen", "headline", "cannot_say", "spine_final", "mechanism")
 # What marks a synth dict as a section payload (vs a pure first-screen payload) — used
 # so a bare {first_screen, headline, ...} is NOT mis-recorded as a bogus section.
 _SECTION_MARKERS = ("section_id", "claims", "body", "curated_views")

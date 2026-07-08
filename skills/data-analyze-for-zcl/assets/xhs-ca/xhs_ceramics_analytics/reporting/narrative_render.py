@@ -155,6 +155,63 @@ def _section_confidence(claims: object) -> str | None:
     return max(counts, key=lambda t: (counts[t], -_TAG_RANK[t]))
 
 
+def _mechanism_entry(entry: object) -> tuple[str, str]:
+    """Normalize one ``mechanism`` entry to ``(claim_id, link)``.
+
+    An entry is either a bare ``claim_id`` string or a dict with ``claim_id`` and an
+    optional number-free ``link``/``connector`` connective. Anything else → ("", "")."""
+    if isinstance(entry, str):
+        return entry.strip(), ""
+    if isinstance(entry, dict):
+        cid = str(entry.get("claim_id") or "").strip()
+        link = str(entry.get("link") or entry.get("connector") or "")
+        return cid, link
+    return "", ""
+
+
+def _mechanism_link(link: object) -> str:
+    """A ``mechanism`` connective is agent-authored free prose, so it must carry NO
+    magnitude — numbers only ever come from the referenced (fact-validated) claim. Strip
+    the raw-HTML sentinels, then drop the connective entirely if it holds any digit (the
+    step still renders its claim sentence). Never raises."""
+    txt = _strip_raw_html_markers(str(link or "")).strip()
+    if not txt or _DIGIT_RE.search(txt):
+        return ""
+    return txt
+
+
+def _mechanism_parts(bundle: dict) -> list[str]:
+    """The 跨模块主线 block: an ordered chain of EXISTING claims (possibly across
+    sections) that the synth agent selected to form one cross-module causal thesis.
+
+    Each entry resolves to its claim's already-filled ``rendered_sentence`` — so the
+    chain introduces no new numeric surface (the numbers were gate-validated inside their
+    claims) and needs no gate change. An unresolvable claim_id drops its step; an empty
+    chain renders nothing. Returns ``[]`` (no heading) when nothing resolves. Never raises.
+    """
+    entries = (bundle or {}).get("mechanism")
+    if not isinstance(entries, (list, tuple)):
+        return []
+    index = _claims_by_id(bundle)
+    steps: list[str] = []
+    for entry in entries:
+        cid, link = _mechanism_entry(entry)
+        claim = index.get(cid)
+        if not isinstance(claim, dict):
+            continue
+        sentence = _strip_raw_html_markers(_rendered(claim)).replace("\n", " ").strip()
+        if not sentence:
+            continue
+        link_txt = _mechanism_link(link)
+        steps.append(f"**{link_txt}** {sentence}" if link_txt else sentence)
+    if not steps:
+        return []
+    # One multi-line part: consecutive ``N.`` lines group into a single <ol> in the
+    # narrative md→HTML converter (a blank line would restart numbering at 1).
+    ordered = "\n".join(f"{i}. {s}" for i, s in enumerate(steps, 1))
+    return ["## 跨模块主线", ordered]
+
+
 def bundle_to_markdown(
     bundle: dict,
     facts_json: dict,
@@ -179,6 +236,10 @@ def bundle_to_markdown(
     if title:
         parts.append(f"# {_strip_raw_html_markers(str(title))}")
     parts.append(_strip_raw_html_markers(first_screen_markdown(bundle)).rstrip())
+    # 跨模块主线: the synth agent's cross-section causal chain, rendered right after the
+    # first screen so the reader meets the thesis before the per-domain detail. Omitted
+    # entirely when no chain was authored / nothing resolves (backward compatible).
+    parts.extend(_mechanism_parts(bundle))
     for section in bundle.get("sections") or []:
         heading = _strip_raw_html_markers(
             str(section.get("title") or section.get("section_id") or "").strip()

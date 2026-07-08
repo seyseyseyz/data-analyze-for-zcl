@@ -144,6 +144,7 @@ def test_synth_ingest_captures_first_screen_and_headline(tmp_path):
         "first_screen": {"spine": [{"claim_id": "c0", "sentence": "x"}], "panel": [], "actions": ["复盘选品"]},
         "cannot_say": ["暂无法把订单归因到具体笔记"],
         "spine_final": {"backbone": [{"link_id": "L1"}]},
+        "mechanism": [{"claim_id": "c0"}, {"claim_id": "c0", "link": "结果"}],
     }
     state = nw.ingest_output(tmp_path, stage="synth", text=json.dumps(synth_payload, ensure_ascii=False))
     assert state["_synth"]["headline"] == "大盘承压 🌧️"
@@ -152,6 +153,8 @@ def test_synth_ingest_captures_first_screen_and_headline(tmp_path):
     assert bundle["first_screen"]["actions"] == ["复盘选品"]
     assert bundle["cannot_say"] == ["暂无法把订单归因到具体笔记"]
     assert bundle["spine_final"]["backbone"][0]["link_id"] == "L1"
+    # the cross-module causal chain is captured and re-emitted at bundle level
+    assert bundle["mechanism"][1]["link"] == "结果"
     # sections (with their claims) are still assembled
     assert bundle["sections"][0]["claims"][0]["claim_id"] == "c0"
 
