@@ -338,7 +338,10 @@ def test_fallback_numbers_come_from_source_table_cells():
     )
     assert "<svg" in md
     assert "商品卡" in md      # category label from the source cell
-    assert "0.64" in md        # value formatted from the source cell (0.6445 → 0.64)
+    # value formatted from the source cell VIA THE FACT LAYER: gmv_share is a percent
+    # column, so 0.6445 reads "64.5%" (not the raw ratio "0.64") — same rule as tables.
+    assert "64.5%" in md
+    assert "0.64" not in md
 
 
 def test_fallback_suppressed_when_curated_chart_present_no_double_render():

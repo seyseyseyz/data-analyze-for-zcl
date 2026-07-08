@@ -57,6 +57,29 @@ def test_share_bar_renders_one_bar_per_row_from_binding():
     assert "笔记" in svg and "商品卡" in svg
 
 
+def test_value_labels_are_type_aware_percent_column():
+    # A percent-typed y column (``*_share``) must read as a percent — the same
+    # fact-layer rule the tables use (format_scalar) — never a raw ratio "0.64".
+    rows = [
+        {"carrier_zh": "商品卡", "gmv_share": 0.6445},
+        {"carrier_zh": "笔记", "gmv_share": 0.3555},
+    ]
+    svg = str(
+        render_chart_template("share_bar", rows, {"x": "carrier_zh", "y": "gmv_share"})
+    )
+    assert "64.5%" in svg and "35.5%" in svg   # scaled ×100 with a % sign
+    assert "0.64" not in svg and "0.36" not in svg  # never a bare ratio label
+
+
+def test_value_labels_are_type_aware_money_column_unchanged():
+    # A money y column keeps reading as grouped whole-yuan — the type-aware
+    # switch must not regress the money path (format_scalar == format_number here).
+    svg = str(
+        render_chart_template("share_bar", _share_rows(), {"x": "channel", "y": "gmv"})
+    )
+    assert "800,357" in svg and "414,126" in svg and "120,000" in svg
+
+
 # ---- breakdown_waterfall (reuses _waterfall) ------------------------------
 
 def test_breakdown_waterfall_stacks_one_rect_per_component():

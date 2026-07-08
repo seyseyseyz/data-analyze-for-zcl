@@ -16,6 +16,7 @@ from markupsafe import Markup, escape
 from xhs_ceramics_analytics.analysis.result import AnalysisResult
 from xhs_ceramics_analytics.reporting import labels
 from xhs_ceramics_analytics.reporting.confidence import ReaderConfidence, reader_confidence
+from xhs_ceramics_analytics.reporting.formatting import format_scalar
 
 logger = logging.getLogger(__name__)
 
@@ -943,8 +944,12 @@ def render_chart_template(
         de = _confidence_de_emphasize(confidence)
         cats = [labels.value_label(str(_cell(r, x_key))) for r in rows]
         values = [_as_float(_cell(r, y_key)) for r in rows]
+        # Value labels are TYPE-AWARE via the shared fact-layer formatter: a percent
+        # column reads "64.5%" (not the raw ratio "0.64"), money rounds to whole yuan,
+        # counts group — exactly as the tables render the same key. This is the curated
+        # + fallback chart path; the task-keyed builders pass their own value_fmt.
         texts = [
-            labels.format_number(v) if v is not None else "暂无数据" for v in values
+            format_scalar(y_key, v) if v is not None else "暂无数据" for v in values
         ]
 
         if template == "share_bar":
