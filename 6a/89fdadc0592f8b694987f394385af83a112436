@@ -1,0 +1,26 @@
+tests/reporting/test_view_spec.py
+  s_6bd2349b4ebd4d::t_902b4645498fb2 12
+  s_6bd2349b4ebd4d::t_cfb657a266d943 283-331,364-384
+  s_6bd2349b4ebd4d::t_5854c010654a81 332-363
+xhs_ceramics_analytics/reporting/view_spec.py
+  s_6bd2349b4ebd4d::t_9eac6813a0cb09 58,60,66,68-70,76-92,96-98,101-104,106-110
+  s_6bd2349b4ebd4d::t_0fef86e1b9ada0 20
+  s_6bd2349b4ebd4d::t_fbbe5e4e9b6851 40-57,59,61-64,71-72
+  s_6bd2349b4ebd4d::t_cd4935f7ff882c 99-100
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.32-trip",
+  "base_commit_sha": "6a89fdadc0592f8b694987f394385af83a112436",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
