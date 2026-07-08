@@ -1,0 +1,29 @@
+skills/data-analyze-for-zcl/SKILL.md
+  s_6bd2349b4ebd4d::t_2a1408b8b2d661 77
+  s_6bd2349b4ebd4d::t_192dce3f281124 118,122
+  s_2b2564a1dc9b62::t_1c0b5607c882f8 26,30,61-63,75,158
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.32-trip",
+  "base_commit_sha": "3161fa1bc7ab727d1ed0bceca3ff05c9bb13741b",
+  "prompts": {},
+  "sessions": {
+    "s_2b2564a1dc9b62": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f40ce-a453-7b22-802a-bd70a1ff0efc",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    },
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
