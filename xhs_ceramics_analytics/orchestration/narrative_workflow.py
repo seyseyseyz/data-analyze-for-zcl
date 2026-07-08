@@ -280,7 +280,8 @@ def _write_fan_briefs(
             "curated_views(每域至少给 1 表 + 1 图,无上限:本域有几个值得展示的角度就给几个,"
             "把数据讲透;仅当本域 available_tables 里确无可画的表时,才可省略图并在对应 claim 里"
             "说明原因 —— 缺图会被记为 visuals_missing):",
-            '  必填 template, 只允许 "comparison_table"|"ranking_table"|"trend_line"|"breakdown_waterfall"|"share_bar";',
+            '  必填 template, 只允许 "comparison_table"|"ranking_table"|"trend_line"|"breakdown_waterfall"|"share_bar"|"horizontal_bar";',
+            '  ("horizontal_bar" 是横向条形图:类目标签较长时(搜索词/SKU 名/长中文)比 share_bar 更易读,优先选它;)',
             '  source 形如 {"task_id":"…","table":"<下方 available_tables 里的表名>"};',
             "  columns 必须是该表列名的子集;只做选列/排序/TopN,严禁聚合或改数;",
             '  图表必须同时给 chart, 如 {"x":"date","y":"gmv"} 或 {"x":"carrier","y":"gmv_share"};',

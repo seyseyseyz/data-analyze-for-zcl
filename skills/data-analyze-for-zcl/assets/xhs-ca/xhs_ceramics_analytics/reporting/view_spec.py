@@ -27,7 +27,7 @@ from xhs_ceramics_analytics.evidence import EvidenceStrength
 # count_view_kinds, status views) can classify a view without re-deriving the mapping.
 TABLE_TEMPLATES: frozenset[str] = frozenset({"comparison_table", "ranking_table"})
 CHART_TEMPLATES: frozenset[str] = frozenset(
-    {"trend_line", "breakdown_waterfall", "share_bar"}
+    {"trend_line", "breakdown_waterfall", "share_bar", "horizontal_bar"}
 )
 TEMPLATES: frozenset[str] = TABLE_TEMPLATES | CHART_TEMPLATES
 

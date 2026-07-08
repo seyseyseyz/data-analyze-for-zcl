@@ -105,6 +105,45 @@ def test_trend_line_draws_path_markers_and_x_labels():
     assert "2026-04-01" in svg and "2026-06-01" in svg  # x labels from the bound column
 
 
+# ---- horizontal_bar (reuses _hbar — readable for long CJK category labels) --
+
+def _ranking_rows():
+    return [
+        {"term": "青瓷茶具套装礼盒", "gmv": 42000.0},
+        {"term": "手工陶瓷马克杯", "gmv": 28000.0},
+        {"term": "日式粗陶饭碗", "gmv": 15000.0},
+    ]
+
+
+def test_horizontal_bar_renders_one_bar_per_row_with_labels():
+    svg = str(
+        render_chart_template("horizontal_bar", _ranking_rows(), {"x": "term", "y": "gmv"})
+    )
+    assert "<svg" in svg
+    assert svg.count("<rect x=") == 3          # one horizontal bar per row
+    assert "42,000" in svg and "15,000" in svg  # value labels filled from rows
+    # long category labels survive as full text in each bar's <title> (hbar truncates
+    # the visible label but keeps the whole string reachable — the readability win).
+    assert "青瓷茶具套装礼盒" in svg
+
+
+def test_horizontal_bar_value_labels_are_type_aware():
+    # a percent y column reads as a percent here too (shared format_scalar path)
+    rows = [{"term": "礼盒", "gmv_share": 0.42}, {"term": "自用", "gmv_share": 0.58}]
+    svg = str(
+        render_chart_template("horizontal_bar", rows, {"x": "term", "y": "gmv_share"})
+    )
+    assert "42%" in svg and "58%" in svg
+    assert "0.42" not in svg
+
+
+def test_horizontal_bar_is_registered_as_a_chart_template():
+    from xhs_ceramics_analytics.reporting.view_spec import CHART_TEMPLATES, TEMPLATES
+
+    assert "horizontal_bar" in CHART_TEMPLATES
+    assert "horizontal_bar" in TEMPLATES
+
+
 # ---- byte-determinism (no random ids, no timestamps) ----------------------
 
 def test_every_template_is_byte_deterministic():
@@ -112,6 +151,7 @@ def test_every_template_is_byte_deterministic():
         ("share_bar", _share_rows(), {"x": "channel", "y": "gmv"}),
         ("breakdown_waterfall", _bridge_rows(), {"x": "component", "y": "delta_gmv"}),
         ("trend_line", _trend_rows(), {"x": "date", "y": "gmv"}),
+        ("horizontal_bar", _ranking_rows(), {"x": "term", "y": "gmv"}),
     ]
     for template, rows, binding in cases:
         first = str(render_chart_template(template, rows, binding))

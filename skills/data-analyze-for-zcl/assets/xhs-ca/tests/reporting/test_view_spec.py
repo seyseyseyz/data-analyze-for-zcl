@@ -52,7 +52,9 @@ def _valid_spec():
 
 # ---- whitelist ------------------------------------------------------------
 
-def test_templates_whitelist_is_exactly_the_five():
+def test_templates_whitelist_is_exactly_the_expected_set():
+    # 2 tables + 4 charts. horizontal_bar joined the chart palette (readable ranking
+    # of long CJK category labels); it reuses the existing _hbar primitive.
     assert TEMPLATES == frozenset(
         {
             "comparison_table",
@@ -60,6 +62,7 @@ def test_templates_whitelist_is_exactly_the_five():
             "trend_line",
             "breakdown_waterfall",
             "share_bar",
+            "horizontal_bar",
         }
     )
 

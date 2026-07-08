@@ -877,7 +877,7 @@ _BUILDERS["audience_structure_diagnosis"] = _build_audience
 
 # chart-only whitelist (table templates render as HTML elsewhere, not here).
 _CHART_TEMPLATES: frozenset[str] = frozenset(
-    {"trend_line", "breakdown_waterfall", "share_bar"}
+    {"trend_line", "breakdown_waterfall", "share_bar", "horizontal_bar"}
 )
 
 # confidence tags/levels that should render the chart de-emphasised (hatched /
@@ -954,6 +954,16 @@ def render_chart_template(
 
         if template == "share_bar":
             svg = _vbar(cats, values, texts, title="", de_emphasize=de)
+        elif template == "horizontal_bar":
+            # Horizontal bars read far better than vertical when the category labels
+            # are long CJK strings (search terms, SKU names): _hbar right-aligns and
+            # truncates the label while keeping the full text in each bar's <title>.
+            vmax = max((v for v in values if v is not None), default=0.0)
+            hbar_rows = [
+                (cat, v, txt, "var(--ink-strong)")
+                for cat, v, txt in zip(cats, values, texts)
+            ]
+            svg = _hbar(hbar_rows, value_max=vmax, de_emphasize=de)
         elif template == "breakdown_waterfall":
             svg = _waterfall(cats, values, texts, title="", de_emphasize=de)
         else:  # trend_line — a single metric over the bound x column
