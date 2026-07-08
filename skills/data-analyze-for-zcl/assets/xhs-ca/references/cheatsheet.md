@@ -87,7 +87,7 @@ Output: Always produce a Markdown report and a single-file HTML report. Built-in
 
 The narrative (叙事版) report must carry deterministic visuals, not prose alone:
 
-- **Floor:** every core domain with a chartable fact-layer table (生意大盘 / 流量与内容 / 商品结构 / 用户与需求 / 退款与售后) shows **1–2 tables + ≥1 chart**. Agents curate only the *view* (source table, columns/rows, captions); the engine fills every number from the fact layer — agents write no bare numbers.
+- **Floor, no ceiling:** every core domain with a chartable fact-layer table (生意大盘 / 流量与内容 / 商品结构 / 用户与需求 / 退款与售后) shows **≥1 table + ≥1 chart**, and there is **no per-domain cap** — a domain shows as many tables/charts as it can back, so the data gets told in full. Agents curate only the *view* (source table, columns/rows, captions); the engine fills every number from the fact layer — agents write no bare numbers. Anti-dump lives per view (each must cite a real claim and pass the gate), not in a table/chart count.
 - **Fallback:** if an agent leaves a core domain chart-less, `finalize` deterministically auto-injects one chart for that domain from the fact layer (captioned `自动补图`), so the narrative reliably ships charts.
 - **Degradation signal:** if chartable data existed yet no chart reached the HTML, the run records `degradation_reason=visuals_missing`. This is a non-blocking success-path signal — the report still delivers — but it MUST be surfaced in the delivery summary. A prose-only narrative finalized *without* `visuals_missing` is a defect.
 - **Audit before delivery:** `grep -c "<svg" <叙事版>.html` ≥ 1 unless the run legitimately recorded `visuals_missing` (fact layer had no chartable table).

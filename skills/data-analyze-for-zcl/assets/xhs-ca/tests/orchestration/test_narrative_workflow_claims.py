@@ -297,34 +297,21 @@ def test_drop_gate_failed_views_uses_positional_label_when_no_view_id():
     assert len(kept) == 1 and kept[0]["template"] == "ranking_table"
 
 
-def test_drop_gate_failed_views_trims_overcap_section():
-    # An over-capped section (>2 tables) hard-fails VIEW_OVERCAP keyed by section_id;
-    # trim to the per-domain cap (≤2 tables + ≤1 chart) so a re-gate stops failing.
+def test_drop_gate_failed_views_keeps_large_section_no_cap():
+    # No per-domain cap: a section with many tables + charts is NEVER trimmed by the
+    # drop pass. Only views the gate individually hard-failed (rules 1-3) are removed;
+    # a section that produced no per-view failures is left intact.
     state = {"sections": {"s1": {"section_id": "s1", "curated_views": [
         {"view_id": "t1", "template": "comparison_table"},
         {"view_id": "t2", "template": "ranking_table"},
-        {"view_id": "t3", "template": "comparison_table"},  # 3rd table -> over cap
-        {"view_id": "c1", "template": "trend_line"},          # 1 chart is within cap
+        {"view_id": "t3", "template": "comparison_table"},
+        {"view_id": "c1", "template": "trend_line"},
+        {"view_id": "c2", "template": "share_bar"},
     ]}}}
-    hard = [{"code": "VIEW_OVERCAP", "claim_id": "s1", "detail": "x"}]
-    assert nw._drop_gate_failed_views(state, hard) is True
+    hard = []  # gate passed every view — nothing to drop
+    assert nw._drop_gate_failed_views(state, hard) is False
     kept = [v["view_id"] for v in state["sections"]["s1"]["curated_views"]]
-    assert kept == ["t1", "t2", "c1"]  # first two tables + the one chart; surplus table dropped
-
-
-def test_trim_views_to_cap_counts_alias_only_views():
-    # Alias-only views (view_type/type/chart_type, no "template" key) must be
-    # normalized via _template_of so the overcap trim actually counts + trims them.
-    # Reading the raw "template" key left them uncounted → the section never shrank,
-    # re-failed VIEW_OVERCAP every round, and routed the narrative to the skeleton.
-    views = [
-        {"view_id": "t1", "view_type": "table"},
-        {"view_id": "t2", "type": "comparison_table"},
-        {"view_id": "t3", "view_type": "table"},        # 3rd table -> over the ≤2 cap
-        {"view_id": "c1", "chart_type": "trend_line"},   # 1 chart is within cap
-    ]
-    kept = [v["view_id"] for v in nw._trim_views_to_cap(views)]
-    assert kept == ["t1", "t2", "c1"]  # surplus alias-only table dropped, chart kept
+    assert kept == ["t1", "t2", "t3", "c1", "c2"]  # all kept; no cap trimming
 
 
 def test_drop_gate_failed_views_noop_on_claim_level_failures():
