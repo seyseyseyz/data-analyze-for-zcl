@@ -27,10 +27,13 @@ def _result(task_id: str, *, title: str, conclusion: str, key_numbers: dict) -> 
     )
 
 
-def test_returns_domain_slices_and_blocked_modules_keys():
+def test_returns_domain_slices_blocked_modules_and_result_tables_keys():
     doc = build_narrative_results([], blocked_modules=("note_funnel",))
-    assert set(doc) == {"domain_slices", "blocked_modules"}
+    # result_tables joins the contract: it is the numeric-trust source the curated-view
+    # engine fills from + the gate polices against. Empty analysis → empty tables.
+    assert set(doc) == {"domain_slices", "blocked_modules", "result_tables"}
     assert doc["domain_slices"] == []
+    assert doc["result_tables"] == {}
     # blocked_modules is normalized to {slug, reason} dicts so the skeleton can
     # explain what is missing; a bare string gets an empty reason.
     assert doc["blocked_modules"] == [{"slug": "note_funnel", "reason": ""}]
@@ -128,4 +131,45 @@ def test_multiple_domains_are_separate_slices_in_registry_order():
 
 def test_never_raises_on_empty_and_defaults_blocked_empty():
     doc = build_narrative_results([])
-    assert doc == {"domain_slices": [], "blocked_modules": []}
+    assert doc == {"domain_slices": [], "blocked_modules": [], "result_tables": {}}
+
+
+# ---- result_tables: the numeric-trust source for curated views ------------
+
+def _result_with_tables(task_id: str, tables: dict) -> AnalysisResult:
+    return AnalysisResult(
+        task_id=task_id,
+        title=task_id,
+        findings=[Finding(title="t", conclusion="c",
+                          evidence_strength=EvidenceStrength.MEDIUM, key_numbers={"gmv": 1})],
+        tables=tables,
+    )
+
+
+def test_result_tables_flattens_analysis_tables_by_bare_name():
+    # The curated-view engine + gate look tables up by BARE name (source.table), so the
+    # producer must surface AnalysisResult.tables flat, verbatim — never re-computed.
+    rows = [
+        {"component": "转化", "delta_gmv": 12000},
+        {"component": "流量", "delta_gmv": 8000},
+    ]
+    doc = build_narrative_results([_result_with_tables("core_business_diagnosis",
+                                                       {"growth_bridge": rows})])
+    assert doc["result_tables"]["growth_bridge"] == rows
+
+
+def test_result_tables_merges_across_results_first_wins_on_name_collision():
+    a = _result_with_tables("t_a", {"shared": [{"x": 1}], "only_a": [{"y": 2}]})
+    b = _result_with_tables("t_b", {"shared": [{"x": 99}], "only_b": [{"z": 3}]})
+    doc = build_narrative_results([a, b])
+    tables = doc["result_tables"]
+    assert set(tables) == {"shared", "only_a", "only_b"}
+    assert tables["shared"] == [{"x": 1}]  # first result wins — order-stable
+
+
+def test_result_tables_never_raises_on_garbage_tables():
+    # A malformed table degrades to skipped/filtered rows; the producer never raises.
+    r = _result_with_tables("t", {"good": [{"a": 1}, "not-a-row"], "": [{"a": 1}]})
+    doc = build_narrative_results([r])
+    assert doc["result_tables"]["good"] == [{"a": 1}]  # non-dict row filtered
+    assert "" not in doc["result_tables"]  # empty table name dropped

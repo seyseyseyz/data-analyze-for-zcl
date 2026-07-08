@@ -59,6 +59,31 @@ def _reading(findings: list[Finding]) -> dict[str, str]:
     return {"conclusion": "；".join(conclusions)}
 
 
+def _collect_result_tables(
+    results: list[AnalysisResult],
+) -> dict[str, list[dict[str, object]]]:
+    """把每个 AnalysisResult.tables 摊平成一个 ``{表名: 行列表}`` 的扁平 dict —— 这是策展
+    视图引擎「填数」和 gate「核对」共用的数值真源(numeric-trust source)。
+
+    键是**裸表名**,因为 curated view 的 ``source.table`` 与 gate 的 ``_check_source``
+    都按裸表名查(``result_tables[table]``);故绝不加域前缀,否则 agent 引用不到。跨任务
+    重名时**先到先得**(靠前的域权威),让合并结果与结果顺序一致、可复现。只保留真正的
+    list-of-dict 行,非 dict 行被过滤、空表名被丢弃。纯函数,never-raise —— 数字仍来自
+    L1 已算好的 result.tables,这里只搬运不重算。
+    """
+    out: dict[str, list[dict[str, object]]] = {}
+    for result in results:
+        tables = getattr(result, "tables", None)
+        if not isinstance(tables, dict):
+            continue
+        for name, rows in tables.items():
+            if not isinstance(name, str) or not name or name in out:
+                continue
+            if isinstance(rows, (list, tuple)):
+                out[name] = [dict(row) for row in rows if isinstance(row, dict)]
+    return out
+
+
 def _normalize_blocked(blocked_modules) -> list[dict[str, str]]:
     """规范每个阻断项为 ``{"slug", "reason"}``,让骨架能说清「缺什么」。
 
@@ -88,10 +113,13 @@ def build_narrative_results(
     """构造叙事控制器的 results.json 文档。Never-raise。
 
     返回 ``{"domain_slices": [{"title", "facts", "reading"}], "blocked_modules":
-    [{"slug", "reason"}]}``。切片顺序即 :data:`domains.DOMAINS` 的域顺序;facts 逐条来自
-    Finding.key_numbers,绝不造数;某域无 key_numbers 时 facts 为空但切片仍保留(标题 +
-    结论仍有价值)。``blocked_modules`` 被规范成 ``{slug, reason}`` dict(见
-    :func:`_normalize_blocked`),原因供确定性骨架说明「缺什么」。
+    [{"slug", "reason"}], "result_tables": {表名: 行列表}}``。切片顺序即
+    :data:`domains.DOMAINS` 的域顺序;facts 逐条来自 Finding.key_numbers,绝不造数;某域无
+    key_numbers 时 facts 为空但切片仍保留(标题 + 结论仍有价值)。``blocked_modules`` 被
+    规范成 ``{slug, reason}`` dict(见 :func:`_normalize_blocked`),原因供确定性骨架说明
+    「缺什么」。``result_tables`` 把 L1 已算好的 ``result.tables`` 扁平摊出(见
+    :func:`_collect_result_tables`),作为策展视图引擎填数、gate 核对数值的唯一源 —— 没有
+    它,任何 agent 产出的 curated view 都会因「表不在 result.tables」被 gate 判非法。
     """
     slices: list[dict[str, object]] = []
     for group in group_by_domain(results):
@@ -111,4 +139,8 @@ def build_narrative_results(
                 "reading": _reading(findings),
             }
         )
-    return {"domain_slices": slices, "blocked_modules": _normalize_blocked(blocked_modules)}
+    return {
+        "domain_slices": slices,
+        "blocked_modules": _normalize_blocked(blocked_modules),
+        "result_tables": _collect_result_tables(results),
+    }

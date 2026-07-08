@@ -37,7 +37,10 @@ def test_run_writes_results_json_with_domain_slices(tmp_path, fixture_dir):
     assert results_json.exists(), "run must emit results.json beside facts.json"
     doc = json.loads(results_json.read_text(encoding="utf-8"))
     assert doc["domain_slices"], "results.json domain_slices must be non-empty"
-    assert set(doc) == {"domain_slices", "blocked_modules"}
+    # result_tables joins the contract at the CLI level too: it is the numeric-trust
+    # source the curated-view engine fills from + the gate polices against.
+    assert set(doc) == {"domain_slices", "blocked_modules", "result_tables"}
+    assert isinstance(doc["result_tables"], dict)
     # blocked_modules are {slug, reason} dicts (explicit-slug run → reasons empty).
     assert all(set(b) == {"slug", "reason"} for b in doc["blocked_modules"])
 
