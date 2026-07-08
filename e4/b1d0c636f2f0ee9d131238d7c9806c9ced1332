@@ -1,0 +1,25 @@
+skills/data-analyze-for-zcl/SKILL.md
+  s_6bd2349b4ebd4d::t_ff09f1a5117df8 69-71
+orchestration/dag.md
+  s_6bd2349b4ebd4d::t_8deab5e28f2400 70-73
+references/cheatsheet.md
+  s_6bd2349b4ebd4d::t_d471658e20abe7 88
+orchestration/runbook.md
+  s_6bd2349b4ebd4d::t_bde1d3d9335167 85-89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.33-trip",
+  "base_commit_sha": "e4b1d0c636f2f0ee9d131238d7c9806c9ced1332",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
