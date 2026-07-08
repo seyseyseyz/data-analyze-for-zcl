@@ -1,0 +1,43 @@
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_facts_export_assembly.py
+  ai_agent 36-68
+xhs_ceramics_analytics/analysis/prose.py
+  s_6bd2349b4ebd4d::t_74d90cfea28acd 33-36
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/analysis/prose.py
+  ai_agent 33-36
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/reporting/labels.py
+  ai_agent 130-133
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_reporting_formatting.py
+  ai_agent 14-22
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_analysis_prose.py
+  ai_agent 27-32
+xhs_ceramics_analytics/reporting/facts_export.py
+  s_6bd2349b4ebd4d::t_c35df25cb427c2 49-56,62-74,79,84-85,90-93
+  s_6bd2349b4ebd4d::t_3af65ccac9a926 17
+  s_6bd2349b4ebd4d::t_89968d3efe2033 99-106,117-124
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/reporting/facts_export.py
+  ai_agent 17,49-56,62-74,79,84-85,90-93,99-106,117-124
+tests/test_facts_export_assembly.py
+  s_6bd2349b4ebd4d::t_8196038ae0204c 36-68
+xhs_ceramics_analytics/reporting/labels.py
+  s_6bd2349b4ebd4d::t_fa4542be5fabd7 130-133
+tests/test_reporting_formatting.py
+  s_6bd2349b4ebd4d::t_55167293654171 14-22
+tests/test_analysis_prose.py
+  s_6bd2349b4ebd4d::t_cc67858b03b791 27-32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.33-trip",
+  "base_commit_sha": "ad694c5790dc64e7686c705a62c2192e8d24eaf6",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
