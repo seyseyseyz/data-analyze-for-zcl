@@ -82,10 +82,11 @@ reviewer briefs. Spawn **3 reviewers per domain**, one per adversarial lens:
   unrelated / pointing the opposite way?
 
 Each lens is adversarial: a reviewer **defaults to reject** a view that is
-trivial, hard to read, or unsupported — prefer fewer visuals over a dump. Every
-curated view MUST cite a real `supports_claim` (the anti-dump requirement), and
-the deterministic gate already caps each domain at **≤2 tables + ≤1 chart per
-domain**; an over-cap or claim-less view never reaches review.
+trivial, hard to read, or unsupported — prefer fewer strong visuals over a dump.
+There is **no per-domain cap** on how many tables or charts a domain may carry —
+a domain shows as many views as it can back. Anti-dump is enforced per view: every
+curated view MUST cite a real `supports_claim` and pass the deterministic gate's
+per-view rules; a claim-less or unverifiable view never reaches review.
 
 Ingest each verdict with `ingest --stage review`, then `advance`. The controller
 tallies each view's three `keep`/`revise`/`drop` verdicts by strict precedence —

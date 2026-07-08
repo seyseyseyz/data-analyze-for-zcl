@@ -67,8 +67,10 @@ are losslessly folded into a single "综合参考" slice before fan-out — neve
    Per view, tally the three verdicts by strict precedence — **drop ≥ 2 → drop**; else
    **keep ≥ 2 → keep**; else **patch ≤2 rounds, then drop**. Reviewers judge value/readability/support
    only and cannot change numbers (the gate already locked them); every retained view keeps its
-   `supports_claim` and obeys the per-domain cap ≤2 tables + ≤1 chart. A section with zero surviving
-   views degrades to prose-only, and a section with no curated views skips review entirely.
+   `supports_claim`. There is no per-domain cap — a domain carries as many tables/charts as it can
+   back; anti-dump lives per view (real `supports_claim` + gate rules), not in a table/chart count.
+   A section with zero surviving views degrades to prose-only, and a section with no curated views
+   skips review entirely.
 7. `xhs-ca render-draft` fills every `{tN}` from `fact.rendered`. **continuity** reads the filled
    9-section draft and emits prose-only `continuity_edit[]` (digit + `{tN}` multisets invariant).
 8. `xhs-ca finalize` applies the edits, re-gates, and freezes `frozen_narrative` beside

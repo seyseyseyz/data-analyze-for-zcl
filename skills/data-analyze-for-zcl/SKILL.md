@@ -66,7 +66,9 @@ deliverable.
 The narrative report carries **agent-curated deterministic visuals**, and it must
 actually carry them: every core domain whose fact layer has a chartable table
 (生意大盘 / 流量与内容 / 商品结构 / 用户与需求 / 退款与售后) is expected to show
-**1–2 tables plus at least one chart** alongside its prose. The agent only curates
+**at least one table plus at least one chart** alongside its prose, and there is
+**no per-domain cap** — a domain may carry as many tables and charts as the data
+supports, so richer domains get told in full. The agent only curates
 the *view* — which source table, which columns/rows, and the captions; a
 deterministic engine fills every displayed number from the already-computed fact
 layer, so the values stay reproducible and trustworthy while the agent decides only
