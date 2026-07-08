@@ -60,8 +60,13 @@ def _iter_claims(bundle: dict):
                 yield claim
 
 
-def _allowed_tag(claim: dict, facts: dict) -> str:
-    """Strongest tag the claim's anchors support (mirrors trust_routing.confidence_tag)."""
+def allowed_confidence_tag(claim: dict, facts: dict) -> str:
+    """Strongest tag the claim's anchors support (mirrors trust_routing.confidence_tag).
+
+    The single source of truth for "what confidence does this claim's evidence
+    defensibly allow" — used by the gate to CAP an overstated claim and by the
+    narrative renderer to derive a curated view's badge from the claim it supports
+    (never from an agent-authored field). Pure, never raises."""
     if claim.get("claim_kind") == "mechanism":
         return "弱"
     best = 1
@@ -305,7 +310,7 @@ def run_gate(bundle: dict, facts_json: dict, result_tables: dict | None = None) 
             if not labelled:
                 warnings.append(_fail("UNLABELED_SIZING", cid, "sizing claim lacks caliber label"))
         # Confidence cap (deterministic; mechanism -> 弱, else <= strongest anchor)
-        allowed = _allowed_tag(claim, facts)
+        allowed = allowed_confidence_tag(claim, facts)
         stated = claim.get("confidence")
         if stated in _TAG_RANK and _TAG_RANK[stated] > _TAG_RANK[allowed]:
             claim["confidence"] = allowed

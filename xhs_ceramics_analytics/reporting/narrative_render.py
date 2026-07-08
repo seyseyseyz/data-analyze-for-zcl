@@ -12,8 +12,12 @@ edit/hash guards raise ValueError by design (callers treat them as gate failures
 import copy
 import re
 
+from xhs_ceramics_analytics.evidence import EvidenceStrength
 from xhs_ceramics_analytics.reporting.curated_view import render_view
-from xhs_ceramics_analytics.reporting.factcheck_gate import run_gate
+from xhs_ceramics_analytics.reporting.factcheck_gate import (
+    allowed_confidence_tag,
+    run_gate,
+)
 from xhs_ceramics_analytics.reporting.first_screen import first_screen_markdown
 from xhs_ceramics_analytics.reporting.html import (
     RAW_HTML_CLOSE,
@@ -45,6 +49,22 @@ def _all_claim_lists(bundle: dict):
     fs = bundle.get("first_screen") or {}
     for key in ("spine", "panel"):
         yield [c for c in (fs.get(key) or []) if isinstance(c, dict) and "sentence" in c]
+
+
+def _claims_by_id(bundle: dict) -> dict[str, dict]:
+    """Map claim_id → claim across the whole bundle (sections + first_screen).
+
+    The index a curated view is badged against: its ``supports_claim`` resolves here
+    so the confidence tag comes from the claim's trusted fact anchors, never from an
+    agent-authored view field. Never raises."""
+    index: dict[str, dict] = {}
+    for claims in _all_claim_lists(bundle):
+        for claim in claims or []:
+            if isinstance(claim, dict):
+                cid = claim.get("claim_id")
+                if isinstance(cid, str) and cid:
+                    index.setdefault(cid, claim)
+    return index
 
 
 def render_draft(bundle: dict, facts_json: dict) -> dict:
@@ -120,6 +140,9 @@ def bundle_to_markdown(
     report always renders.
     """
     tables = result_tables if isinstance(result_tables, dict) else {}
+    claims_by_id = _claims_by_id(bundle)
+    facts = facts_json.get("facts") if isinstance(facts_json, dict) else None
+    facts = facts if isinstance(facts, dict) else {}
     parts: list[str] = []
     if title:
         parts.append(f"# {_strip_raw_html_markers(str(title))}")
@@ -136,7 +159,7 @@ def bundle_to_markdown(
             conf = claim.get("confidence")
             parts.append(f"{sentence}（{conf}）" if conf else sentence)
         if tables:
-            parts.extend(_curated_view_parts(section, tables))
+            parts.extend(_curated_view_parts(section, tables, claims_by_id, facts))
     cannot = [
         s
         for s in (
@@ -162,23 +185,40 @@ class _EvidenceCarrier:
         self.evidence_strength = evidence_strength
 
 
-def _finding_for_view(spec: object) -> object | None:
-    """Resolve the confidence-bearing finding for a view WITHOUT fabricating it.
+# The gate tag a claim's anchors allow, mapped back to the EvidenceStrength that
+# ``derive_confidence`` re-projects to the same tag (强↔STRONG, 中↔MEDIUM, 弱↔WEAK) —
+# so the curated view's badge equals the gate's allowed tag with no agent input.
+_TAG_TO_EVIDENCE: dict[str, EvidenceStrength] = {
+    "强": EvidenceStrength.STRONG,
+    "中": EvidenceStrength.MEDIUM,
+    "弱": EvidenceStrength.WEAK,
+}
 
-    Confidence (强/中/弱) is derived deterministically from the source Finding's
-    ``evidence_strength``, never authored by the agent. The workflow may resolve that
-    strength and stamp it on the view as ``evidence_strength``; if present we forward
-    it (wrapped so ``derive_confidence`` reads it), otherwise ``None`` degrades to the
-    weakest tag. Never raises.
+
+def _finding_for_view(
+    spec: object, claims_by_id: dict[str, dict], facts: dict
+) -> object | None:
+    """Resolve a view's confidence-bearing finding from its supporting claim's facts.
+
+    Rule 5: confidence (强/中/弱) is derived deterministically from the FactBook —
+    NEVER from an agent-authored field. We resolve the view's ``supports_claim`` to a
+    real claim and take :func:`allowed_confidence_tag` (the same strongest-anchor tag
+    the gate caps to). An agent-authored ``evidence_strength`` on the view spec is
+    ignored, so it cannot forge a stronger badge than the evidence allows. A view with
+    no resolvable claim degrades to the weakest tag (``None``). Never raises.
     """
-    if isinstance(spec, dict):
-        strength = spec.get("evidence_strength")
-        if strength is not None:
-            return _EvidenceCarrier(strength)
-    return None
+    if not isinstance(spec, dict):
+        return None
+    claim = claims_by_id.get(str(spec.get("supports_claim") or ""))
+    if not isinstance(claim, dict):
+        return None
+    tag = allowed_confidence_tag(claim, facts)
+    return _EvidenceCarrier(_TAG_TO_EVIDENCE.get(tag, EvidenceStrength.WEAK))
 
 
-def _curated_view_parts(section: object, result_tables: dict) -> list[str]:
+def _curated_view_parts(
+    section: object, result_tables: dict, claims_by_id: dict[str, dict], facts: dict
+) -> list[str]:
     """Render one section's ``curated_views`` to inline markdown parts.
 
     Each passing view contributes: its title (a subheading), the deterministic table
@@ -196,7 +236,8 @@ def _curated_view_parts(section: object, result_tables: dict) -> list[str]:
     parts: list[str] = []
     for spec in views:
         try:
-            view = render_view(spec, result_tables, finding=_finding_for_view(spec))
+            finding = _finding_for_view(spec, claims_by_id, facts)
+            view = render_view(spec, result_tables, finding=finding)
         except Exception:  # never-raise: render_view is already defensive, stay so
             continue
         parts.extend(_single_view_parts(view))

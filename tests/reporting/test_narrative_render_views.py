@@ -169,15 +169,39 @@ def test_degraded_view_is_skipped_report_still_renders():
     assert "GMV 回落。" in md
 
 
-def test_provenance_confidence_derived_from_view_evidence_strength():
-    # Confidence (强/中/弱) is derived deterministically from the source Finding's
-    # evidence_strength (forwarded on the view), never authored by the agent.
-    md = nr.bundle_to_markdown(
-        _bundle([_table_view(evidence_strength="strong")]),
-        _facts(),
-        result_tables=_tables(),
-    )
+def test_provenance_confidence_derived_from_supporting_claim_facts():
+    # Rule 5: the badge (强/中/弱) is derived from the supporting CLAIM's fact anchors
+    # in the trusted FactBook — the same strength the gate would allow — never from an
+    # agent-authored view field.
+    facts = _facts()
+    facts["facts"] = {"m.gmv": {"evidence_strength": "strong", "descriptive_reliability": "high"}}
+    claim = {**_claim(), "number_tokens": [{"token_id": "t0", "fact_id": "m.gmv"}]}
+    b = _bundle([_table_view()])  # the view carries NO evidence_strength
+    b["sections"][0]["claims"] = [claim]
+    md = nr.bundle_to_markdown(b, facts, result_tables=_tables())
     assert "证据:强" in md
+
+
+def test_view_evidence_strength_field_cannot_forge_a_stronger_badge():
+    # F2: an agent stamping evidence_strength="strong" on the view spec must NOT lift
+    # the badge above what the supporting claim's WEAK fact anchor allows.
+    facts = _facts()
+    facts["facts"] = {"m.gmv": {"evidence_strength": "weak", "descriptive_reliability": "low"}}
+    claim = {**_claim(), "number_tokens": [{"token_id": "t0", "fact_id": "m.gmv"}]}
+    b = _bundle([_table_view(evidence_strength="strong")])  # forgery attempt
+    b["sections"][0]["claims"] = [claim]
+    md = nr.bundle_to_markdown(b, facts, result_tables=_tables())
+    assert "证据:弱" in md
+    assert "证据:强" not in md
+
+
+def test_view_supports_unresolvable_claim_degrades_to_weak():
+    # No claim to anchor the badge → degrade to the weakest tag, even if the agent
+    # stamped a strong evidence_strength on the view.
+    b = _bundle([_table_view(supports_claim="nope", evidence_strength="strong")])
+    md = nr.bundle_to_markdown(b, _facts(), result_tables=_tables())
+    assert "证据:弱" in md
+    assert "证据:强" not in md
 
 
 def test_garbage_curated_views_never_raise():
