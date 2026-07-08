@@ -31,11 +31,11 @@ from xhs_ceramics_analytics.reporting.report_telemetry import (
 from xhs_ceramics_analytics.reporting.view_spec import CHART_TEMPLATES, TABLE_TEMPLATES
 
 MAX_FAN_AGENTS = 6
-MAX_GATE_ROUNDS = 2
+MAX_GATE_ROUNDS = 5
 # Review-stage patch budget (spec §Multi-Reviewer Review): a view whose 3 reviewers
 # reach no keep/drop majority is re-authored at most this many times; a view still
 # unconverged after the budget is spent is dropped, never blocking the report.
-MAX_REVIEW_PATCH_ROUNDS = 2
+MAX_REVIEW_PATCH_ROUNDS = 5
 
 _STATE_FILE = "state.json"
 _RESULT_TABLES_FILE = "result_tables.json"
@@ -43,11 +43,39 @@ _SLUG_STRIP = re.compile(r"[^\w一-鿿]+")
 _TERMINAL_STAGES = {"finalized", "blocked"}
 
 # The three adversarial reviewer lenses (spec §Multi-Reviewer Review). Each is a
-# distinct failure-mode lens — not a redundant voter. Prose only, no digits.
+# distinct failure-mode lens — NOT three copies of "默认拒绝". The old uniform
+# reject-bias starved the narrative: every lens defaulted to drop, so a view no one
+# actually objected to still died once the patch budget ran out. Calibrated bias by
+# lens: 价值 keeps when unsure (value = business-meaningful insight, not a required
+# action); 可读性 prefers revise over drop (most readability faults are fixable);
+# only 支撑 — the trust / anti-dump anchor — defaults toward drop. Prose only, no
+# ASCII digits (the old 可读性 lens leaked a bare "5 秒").
 _REVIEW_LENSES: tuple[tuple[str, str], ...] = (
-    ("价值", "能让商家做出一个动作吗?还是内部统计琐碎?默认拒绝无行动价值的视图。"),
-    ("可读性", "非分析师商家 5 秒看得懂吗?列太多/列名黑话/该用趋势线却用表,默认拒绝。"),
-    ("支撑", "真的证明了 supports_claim 那条结论吗?无关或方向相反,默认拒绝。"),
+    (
+        "价值",
+        "这张图表让商家知道了什么『不看它就不知道』的经营事实?能校正或印证商家很可能"
+        "持有的假设、把问题或机会定位到具体 SKU 渠道人群时段、给出量级占比趋势让商家"
+        "知道先看哪里、或直接指向一个可调的杠杆——满足任一即算有价值(可行动只是其中"
+        "一种,不是门槛)。仅当它是纯内部或流程统计而无经营含义,或只是把 claim 句里"
+        "已有的数字换个壳重复、无新增对比拆解排序时,才判 drop;拿不准就 keep。",
+    ),
+    (
+        "可读性",
+        "商家(非分析师)能否一眼读对?优先判 revise 而非 drop,因为多数可读性问题可修:"
+        "模板与数据形态错配(时间序列该用趋势线、构成占比该用占比条、增减分解该用瀑布、"
+        "并列对照才用表)判 revise 并指出正确模板;列或维度多到满屏扫不完或需横向滚动"
+        "判 revise 建议裁列;列名标题是内部字段黑话(如 delta_gmv)判 revise 建议用 "
+        "column_labels 写成商家能懂的词。只有排版到读不出任何信息且单轮 revise 修不好"
+        "时才 drop。",
+    ),
+    (
+        "支撑",
+        "它是否诚实地佐证了 supports_claim 那条结论且不误导?展示的维度必须就是该结论"
+        "讲的维度,无关判 drop;排序 TopN 高亮不能让商家读出与结论相反或被夸大的方向,"
+        "轻则 revise 加注、重则 drop;视图呈现的确定感不得超过它所支撑 claim 的证据档"
+        "(强中弱),拿弱证据撑起看似铁证的图判 revise 要求加『弱证据』标注。这条是 "
+        "anti-dump 与信任的底线,允许 drop。",
+    ),
 )
 
 # Verdict vocabulary a reviewer may return (spec: keep / revise / drop). Anything
@@ -109,11 +137,14 @@ def _view_action(verdicts, *, patch_rounds: int) -> str:
     Layers stage policy on the pure :func:`tally_votes`:
 
     - Missing / garbled reviewer input (no recognized keep/revise/drop verdict at
-      all) degrades to ``drop`` — the adversarial default is "prefer fewer visuals
-      over a dump", and a view no reviewer could judge is dropped, not kept.
-    - A ``patch`` outcome whose patch budget is already spent degrades to ``drop``
-      (bounded to ``MAX_REVIEW_PATCH_ROUNDS``), so an unconvergeable view never
-      blocks the report.
+      all) degrades to ``drop`` — a view no reviewer could judge is dropped, not
+      kept (unjudgeable ≠ endorsed).
+    - A ``patch`` outcome whose patch budget is already spent is resolved by whether
+      any reviewer actually voted to remove the view: with a ``drop`` vote it
+      degrades to ``drop`` (支撑's removal power survives exhaustion); with none it is
+      ``keep``. This is the calibrated reject-bias fix — an unconverged view that no
+      lens objected to (e.g. keep + two revise) is retained rather than starving the
+      narrative, while never blocking the report.
     - ``keep`` / ``drop`` pass through.
     """
     recognized = [
@@ -124,7 +155,8 @@ def _view_action(verdicts, *, patch_rounds: int) -> str:
         return "drop"
     outcome = tally_votes(recognized)
     if outcome == "patch" and patch_rounds >= MAX_REVIEW_PATCH_ROUNDS:
-        return "drop"
+        has_drop = any(v.strip().lower() == _DROP_VERDICT for v in recognized)
+        return "drop" if has_drop else "keep"
     return outcome
 
 
@@ -248,15 +280,17 @@ def _write_fan_briefs(
             "每个 number_token 的 fact_id 必须精确等于下方某个 facts[].fact_id;",
             "没有 fact_id 的 fact 是标签(非数值),不能被 number_token 绑定。",
             "",
-            "curated_views(可选,每域 ≤2 表 + ≤1 图):",
+            "curated_views(可选,每域 ≤2 表 + ≤1 图; 有合适时至少给 1 个图):",
+            '  必填 template, 只允许 "comparison_table"|"ranking_table"|"trend_line"|"breakdown_waterfall"|"share_bar";',
             '  source 形如 {"task_id":"…","table":"<下方 available_tables 里的表名>"};',
             "  columns 必须是该表列名的子集;只做选列/排序/TopN,严禁聚合或改数;",
+            '  图表必须同时给 chart, 如 {"x":"date","y":"gmv"} 或 {"x":"carrier","y":"gmv_share"};',
             "  supports_claim 必须指向本域某条 claim_id;标题/图注/列标签是纯文字,不得含裸数字;",
             "  只挑与本域 claim 相关的表(available_tables 是全量目录,并非都要用);",
             "  available_tables 只给表名与列名(不含数值)—— 人类可读列名写进 column_labels,",
             "  别把带数字的原始表名/列名抄进图注(会被判为裸数字而丢弃该视图)。",
             "",
-            'Return JSON only: {"section_id","title","claims":[...],"curated_views":[...]}.',
+            'Return JSON only: {"section_id","title","claims":[...],"curated_views":[...]}; 不要使用 type/view_type 代替 template.',
             "",
             "```json",
             json.dumps(payload, ensure_ascii=False, indent=2),

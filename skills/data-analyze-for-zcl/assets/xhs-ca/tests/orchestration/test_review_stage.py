@@ -154,6 +154,49 @@ def test_view_action_keep_and_drop_pass_through():
     assert nw._view_action(["drop", "drop"], patch_rounds=0) == "drop"
 
 
+# --- calibrated reject bias: only 支撑's drop forces removal at exhaustion --
+# The narrative was going thin because ANY unconverged view was dropped once the
+# patch budget ran out — value/readability quibbles (keep+revise, no drop) killed
+# otherwise-valuable visuals. Calibrated: at exhaustion a view is dropped ONLY if a
+# reviewer actually voted to remove it (支撑 is the one drop-capable lens); a view no
+# one voted to drop is KEPT rather than starve the narrative.
+
+
+def test_view_action_unconverged_without_drop_vote_is_kept():
+    # keep + revise + revise never reaches a majority, but NO reviewer said drop →
+    # at exhaustion it is kept (was previously dropped — the reject-bias bug).
+    assert nw._view_action(
+        ["keep", "revise", "revise"], patch_rounds=nw.MAX_REVIEW_PATCH_ROUNDS
+    ) == "keep"
+    # within budget it still routes to patch (a re-author may yet fix the quibbles)
+    assert nw._view_action(["keep", "revise", "revise"], patch_rounds=0) == "patch"
+
+
+def test_view_action_unconverged_with_drop_vote_still_drops():
+    # a single drop vote (支撑 flagged it) + never converging → still dropped at
+    # exhaustion: the trust/anti-dump anchor keeps its removal power.
+    assert nw._view_action(
+        ["keep", "revise", "drop"], patch_rounds=nw.MAX_REVIEW_PATCH_ROUNDS
+    ) == "drop"
+
+
+def test_review_lenses_encode_calibrated_intent():
+    lenses = dict(nw._REVIEW_LENSES)
+    assert set(lenses) == {"价值", "可读性", "支撑"}
+    # 价值: value = business-meaningful insight; actionability is one form, not the bar;
+    # the old "must let the merchant take an action" gate is gone, and unsure → keep.
+    assert "可行动只是其中一种" in lenses["价值"]
+    assert "拿不准就 keep" in lenses["价值"]
+    assert "能让商家做出一个动作" not in lenses["价值"]
+    # 可读性: fixable issues prefer revise over drop (so continuity can improve them)
+    assert "优先判 revise 而非 drop" in lenses["可读性"]
+    # 支撑: the one lens allowed to drop — the anti-dump / trust anchor
+    assert "底线" in lenses["支撑"] and "允许 drop" in lenses["支撑"]
+    # lenses stay ASCII-digit-free (the old 可读性 lens leaked a bare "5 秒")
+    for _name, text in nw._REVIEW_LENSES:
+        assert not any(ch.isdigit() for ch in text)
+
+
 # --- finalize carries retained curated views -------------------------------
 
 
