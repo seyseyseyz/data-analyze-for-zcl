@@ -1,11 +1,35 @@
 # audience_profile (manual entry — 9.人群分析 is PNG-only)
 
 Hand-fill this CSV if you want §6 audience-profile analysis; otherwise it stays needs-data.
+Source is the 9.人群分析 screenshot — transcribe the shares you read off it (截图识读). The
+finding stays WEAK / 描述可靠性 LOW and carries an explicit 截图识读 caveat; it is never precise.
 
-| column | 中文 | type |
-|---|---|---|
-| audience_segment | 人群分层 | str |
-| share | 占比 | float |
-| gmv | 支付金额 | float |
+## Columns
 
-Sample: `兴趣人群,0.32,15600`
+| column | 中文 | type | required |
+|---|---|---|---|
+| audience_segment | 人群分层 / 画像桶 | str | yes |
+| share | 占比 | float | yes |
+| dimension | 画像维度（性别 / 年龄 / 消费层级 / 地域…） | str | optional |
+| gmv | 支付金额 | float | optional |
+
+- **share-primary:** only `audience_segment` + `share` are required. The PNG usually gives
+  shares with no per-bucket GMV, so `gmv` is optional.
+- **multi-dimensional:** add the optional `dimension` column to carry several breakdowns in one
+  table (性别 / 年龄 / 消费层级 / 地域). Each dimension is summarised by its top bucket by share.
+- **single-dimension legacy:** omit `dimension`; if `gmv` is present the top segment is ranked by
+  GMV, otherwise by share.
+
+## Samples
+
+Multi-dimensional (share only):
+
+```
+dimension,audience_segment,share
+年龄,26-30岁,0.38
+年龄,31-35岁,0.20
+消费层级,中,0.57
+地域,上海,0.22
+```
+
+Single-dimension with GMV: `audience_segment,share,gmv` → `兴趣人群,0.32,15600`

@@ -378,6 +378,71 @@ def test_composition_real_when_profile_present(tmp_path):
     assert finding.key_numbers["top_segment"] == "高客单人群"
 
 
+# ---- Feature 5: multi-dimensional + share-primary PNG 画像 read ------------
+
+def _make_profile_multidim(con, rows):
+    con.execute(
+        """
+        CREATE TABLE audience_profile (
+          dimension VARCHAR, audience_segment VARCHAR, share DOUBLE
+        )
+        """
+    )
+    con.executemany("INSERT INTO audience_profile VALUES (?, ?, ?)", rows)
+
+
+def test_composition_multidim_share_primary(tmp_path):
+    # The 9.人群分析 PNG gives multi-dimensional SHARES (性别/年龄/消费层级/地域) with no
+    # per-bucket GMV. Transcribed into audience_profile(dimension, audience_segment, share),
+    # it must produce a WEAK snapshot finding — one breakdown per dimension — not not_judgable.
+    con, db_path = _con(tmp_path)
+    _make_funnel_full(
+        con, [("2026-06-01", "新客", "首购", 1000.0, 100.0, 400.0, 0.4, 0.25, 0.10)]
+    )
+    _make_profile_multidim(
+        con,
+        [
+            ("年龄", "26-30岁", 0.38),
+            ("年龄", "31-35岁", 0.20),
+            ("消费层级", "中", 0.57),
+            ("消费层级", "高", 0.40),
+            ("地域", "上海", 0.22),
+        ],
+    )
+    con.close()
+    result = run_task(TASK, db_path)
+    finding = next(f for f in result.findings if f.title == "人群构成")
+    assert finding.evidence_strength.value == "weak"
+    assert finding.descriptive_reliability.value == "low"
+    rows = result.tables["audience_composition"]
+    assert all("dimension" in r for r in rows)
+    assert {r["dimension"] for r in rows} == {"年龄", "消费层级", "地域"}
+    # conclusion summarizes the top bucket per dimension by share
+    assert "26-30岁" in finding.conclusion
+    assert "中" in finding.conclusion
+    assert finding.key_numbers["dimension_count"] == 3
+    # explicit 截图识读 caveat — never precise, only directional
+    assert any("截图" in c for c in finding.caveats)
+
+
+def test_composition_share_only_single_dimension(tmp_path):
+    # gmv is now optional — a share-only single-dimension profile still yields WEAK
+    con, db_path = _con(tmp_path)
+    _make_funnel_full(
+        con, [("2026-06-01", "新客", "首购", 1000.0, 100.0, 400.0, 0.4, 0.25, 0.10)]
+    )
+    con.execute("CREATE TABLE audience_profile (audience_segment VARCHAR, share DOUBLE)")
+    con.executemany(
+        "INSERT INTO audience_profile VALUES (?, ?)",
+        [("高客单人群", 0.6), ("尝鲜人群", 0.4)],
+    )
+    con.close()
+    result = run_task(TASK, db_path)
+    finding = next(f for f in result.findings if f.title == "人群构成")
+    assert finding.evidence_strength.value == "weak"
+    assert finding.key_numbers["top_segment"] == "高客单人群"
+
+
 # ---- Never raises on empty / dirty data -----------------------------------
 
 

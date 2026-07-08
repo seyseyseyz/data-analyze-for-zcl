@@ -590,7 +590,8 @@ def _customer_value_finding(con, limitations: list[str]) -> tuple[Finding | None
 def _composition_finding(con, limitations: list[str]) -> tuple[Finding, list[dict]]:
     gap_conclusion = (
         "人群构成需手工录入 audience_profile（9.人群分析 为图片，无法自动导入）。"
-        "请将截图中的人群分层份额与 GMV 手工整理为 audience_profile（列：audience_segment, share, gmv）后补录。"
+        "请将截图中的人群画像份额（性别 / 年龄 / 消费层级 / 地域等，可含可选的 dimension 列，"
+        "gmv 列可选）手工整理为 audience_profile（至少含 audience_segment, share）后补录。"
     )
     if not _table_exists(con, "audience_profile"):
         limitations.append(
@@ -599,9 +600,10 @@ def _composition_finding(con, limitations: list[str]) -> tuple[Finding, list[dic
         return _composition_gap_finding(gap_conclusion), []
 
     cols = _table_columns(con, "audience_profile")
-    if not {"audience_segment", "share", "gmv"} <= cols:
+    # share-primary: 只强制 audience_segment + share；gmv、dimension 皆为可选（PNG 画像通常只有份额）。
+    if not {"audience_segment", "share"} <= cols:
         limitations.append(
-            "audience_profile 缺少 audience_segment/share/gmv 列，人群构成需手工补齐。"
+            "audience_profile 缺少 audience_segment/share 列，人群构成需手工补齐。"
         )
         return _composition_gap_finding(gap_conclusion), []
 
@@ -610,45 +612,109 @@ def _composition_finding(con, limitations: list[str]) -> tuple[Finding, list[dic
         limitations.append("audience_profile 无数据，人群构成需手工补录。")
         return _composition_gap_finding(gap_conclusion), []
 
-    total_gmv = sum(_num(r.get("gmv")) for r in rows)
+    has_gmv = "gmv" in cols
+    has_dim = "dimension" in cols
+    total_gmv = sum(_num(r.get("gmv")) for r in rows) if has_gmv else 0.0
     comp_rows: list[dict] = []
     for r in rows:
-        gmv = _num(r.get("gmv"))
-        comp_rows.append(
-            {
-                "audience_segment": r.get("audience_segment"),
-                "share": bounded_rate(r.get("share")),
-                "gmv": gmv,
-                "gmv_share": (gmv / total_gmv) if total_gmv else None,
-            }
-        )
-    comp_rows.sort(key=lambda r: r["gmv"], reverse=True)
-    top = comp_rows[0] if comp_rows else None
-    top_segment = top["audience_segment"] if top else None
+        row: dict = {
+            "audience_segment": r.get("audience_segment"),
+            "share": bounded_rate(r.get("share")),
+        }
+        if has_dim:
+            row["dimension"] = r.get("dimension")
+        if has_gmv:
+            gmv = _num(r.get("gmv"))
+            row["gmv"] = gmv
+            row["gmv_share"] = (gmv / total_gmv) if total_gmv else None
+        comp_rows.append(row)
 
-    conclusion = (
-        f"共 {len(comp_rows)} 个人群分层，GMV 贡献最高的是 {top_segment}"
-        f"（GMV 占比 {round((top['gmv_share'] or 0) * 100)}%）。"
-        if top
-        else "audience_profile 无有效人群分层。"
-    )
+    # 有 GMV 按 GMV 排序（价值视角）；纯份额画像按 share 排序（结构视角）。
+    if has_gmv:
+        comp_rows.sort(key=lambda r: r.get("gmv") or 0.0, reverse=True)
+    else:
+        comp_rows.sort(key=lambda r: r.get("share") or 0.0, reverse=True)
+
+    caveats = [
+        M.causal_disclaimer("人群定义口径不同"),
+        "份额是手工录入的，口径要自己再核对一遍。",
+        "数据来自『9.人群分析』截图识读，仅供方向判断，不做精确拆分。",
+    ]
+
+    if has_dim:
+        conclusion, key_numbers = _multidim_composition(comp_rows)
+    else:
+        conclusion, key_numbers = _single_composition(comp_rows, has_gmv)
+
     finding = Finding(
         title="人群构成",
         conclusion=conclusion,
         evidence_strength=EvidenceStrength.WEAK,
-        key_numbers={
-            "segment_count": len(comp_rows),
-            "top_segment": top_segment,
-            "top_gmv_share": top["gmv_share"] if top else None,
-        },
-        caveats=[M.causal_disclaimer("人群定义口径不同"), "份额是手工录入的，口径要自己再核对一遍。"],
+        key_numbers=key_numbers,
+        caveats=caveats,
         # 手工录入快照 → 描述可靠性固定为 LOW，与其他计算型 finding 一样显式给出该正交轴。
         descriptive_reliability=DescriptiveReliability.LOW,
         recommended_action=_LEVER_COMPOSITION,
-        evidence_reason="人群构成为手工录入的份额/GMV 快照，仅作结构描述，无统计推断。",
+        evidence_reason="人群构成为截图识读的份额快照，仅作结构描述，无统计推断。",
         confounders=[],
     )
     return finding, comp_rows
+
+
+def _single_composition(comp_rows: list[dict], has_gmv: bool) -> tuple[str, dict]:
+    """Single-dimension profile → rank by GMV (if present) else by share."""
+    top = comp_rows[0] if comp_rows else None
+    top_segment = top["audience_segment"] if top else None
+    if not top:
+        conclusion = "audience_profile 无有效人群分层。"
+    elif has_gmv:
+        conclusion = (
+            f"共 {len(comp_rows)} 个人群分层，GMV 贡献最高的是 {top_segment}"
+            f"（GMV 占比 {round((top.get('gmv_share') or 0) * 100)}%）。"
+        )
+    else:
+        conclusion = (
+            f"共 {len(comp_rows)} 个人群分层，占比最高的是 {top_segment}"
+            f"（份额 {round((top.get('share') or 0) * 100)}%）。"
+        )
+    return conclusion, {
+        "segment_count": len(comp_rows),
+        "top_segment": top_segment,
+        "top_gmv_share": top.get("gmv_share") if (top and has_gmv) else None,
+    }
+
+
+def _multidim_composition(comp_rows: list[dict]) -> tuple[str, dict]:
+    """Multi-dimensional画像 → one top-by-share bucket summarised per dimension."""
+    # 保持维度首次出现顺序；每个维度取份额最高的桶。
+    dim_order: list[str] = []
+    dim_top: dict[str, dict] = {}
+    for r in comp_rows:
+        dim = r.get("dimension")
+        if dim is None:
+            continue
+        share = r.get("share") or 0.0
+        if dim not in dim_top:
+            dim_order.append(dim)
+            dim_top[dim] = r
+        elif share > (dim_top[dim].get("share") or 0.0):
+            dim_top[dim] = r
+
+    parts = [
+        f"{dim}以 {dim_top[dim].get('audience_segment')} 为主"
+        f"（份额 {round((dim_top[dim].get('share') or 0) * 100)}%）"
+        for dim in dim_order
+    ]
+    if parts:
+        conclusion = f"覆盖 {len(dim_order)} 个画像维度：" + "、".join(parts) + "。"
+    else:
+        conclusion = "audience_profile 无有效画像维度。"
+    return conclusion, {
+        "segment_count": len(comp_rows),
+        "dimension_count": len(dim_order),
+        "top_segment": dim_top[dim_order[0]].get("audience_segment") if dim_order else None,
+        "top_gmv_share": None,
+    }
 
 
 def _composition_gap_finding(conclusion: str) -> Finding:
@@ -659,8 +725,9 @@ def _composition_gap_finding(conclusion: str) -> Finding:
         key_numbers={"segment_count": 0, "top_segment": None},
         caveats=["人群构成为快照，非因果；当前无可用数据源，属已知导入缺口。"],
         recommended_action=(
-            "将『9.人群分析』截图中的人群分层份额与 GMV 手工录入 audience_profile"
-            "（列：audience_segment, share, gmv）后重新构建。"
+            "将『9.人群分析』截图中的人群画像份额手工录入 audience_profile 后重新构建。"
+            "多维画像（性别 / 年龄 / 消费层级 / 地域）用可选的 dimension 列区分，"
+            "每行至少填 audience_segment 与 share；若截图给出该桶 GMV 可再补 gmv 列（可选）。"
         ),
         evidence_reason="audience_profile 无自动导入器（PNG 来源），生产环境默认缺失，需手工补录。",
         confounders=[],
