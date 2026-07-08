@@ -11,8 +11,10 @@ edit/hash guards raise ValueError by design (callers treat them as gate failures
 """
 import copy
 import re
+from typing import NamedTuple
 
 from xhs_ceramics_analytics.evidence import EvidenceStrength
+from xhs_ceramics_analytics.reporting.charts import render_chart_template
 from xhs_ceramics_analytics.reporting.curated_view import render_view
 from xhs_ceramics_analytics.reporting.factcheck_gate import (
     allowed_confidence_tag,
@@ -159,7 +161,15 @@ def bundle_to_markdown(
             conf = claim.get("confidence")
             parts.append(f"{sentence}（{conf}）" if conf else sentence)
         if tables:
-            parts.extend(_curated_view_parts(section, tables, claims_by_id, facts))
+            view_parts, chart_count = _curated_view_parts(
+                section, tables, claims_by_id, facts
+            )
+            parts.extend(view_parts)
+            # Defense-in-depth: a CORE domain that produced no chart-template curated
+            # view gets one deterministic chart auto-injected from the source table,
+            # so the narrative reliably carries visuals instead of shipping prose-only.
+            if chart_count == 0:
+                parts.extend(_fallback_chart_parts(heading, tables))
     cannot = [
         s
         for s in (
@@ -218,8 +228,12 @@ def _finding_for_view(
 
 def _curated_view_parts(
     section: object, result_tables: dict, claims_by_id: dict[str, dict], facts: dict
-) -> list[str]:
+) -> tuple[list[str], int]:
     """Render one section's ``curated_views`` to inline markdown parts.
+
+    Returns ``(parts, chart_count)`` where ``chart_count`` is how many rendered views
+    actually carried a chart SVG — the signal :func:`bundle_to_markdown` uses to decide
+    whether to auto-inject the deterministic fallback chart (only when it is 0).
 
     Each passing view contributes: its title (a subheading), the deterministic table
     HTML and/or chart SVG (wrapped in raw-HTML passthrough markers so the narrative
@@ -229,19 +243,23 @@ def _curated_view_parts(
     keeps the prose rendered above it. Never raises: a pathological view is skipped.
     """
     if not isinstance(section, dict):
-        return []
+        return [], 0
     views = section.get("curated_views")
     if not isinstance(views, (list, tuple)):
-        return []
+        return [], 0
     parts: list[str] = []
+    chart_count = 0
     for spec in views:
         try:
             finding = _finding_for_view(spec, claims_by_id, facts)
             view = render_view(spec, result_tables, finding=finding)
         except Exception:  # never-raise: render_view is already defensive, stay so
             continue
-        parts.extend(_single_view_parts(view))
-    return parts
+        view_parts = _single_view_parts(view)
+        if view_parts and str(getattr(view, "chart_svg", "") or "").strip():
+            chart_count += 1
+        parts.extend(view_parts)
+    return parts, chart_count
 
 
 def _single_view_parts(view: object) -> list[str]:
@@ -301,6 +319,110 @@ def _raw_html_block(html: str) -> str:
     """Wrap already-safe deterministic HTML so the narrative HTML converter passes it
     through verbatim (see reporting.html.RAW_HTML_OPEN)."""
     return f"{RAW_HTML_OPEN}\n{html}\n{RAW_HTML_CLOSE}"
+
+
+class _FallbackChart(NamedTuple):
+    table: str  # source table name in result_tables (bare, as the engine keys it)
+    template: str  # a chart template in charts._CHART_TEMPLATES
+    x: str  # x-axis column
+    y: str  # y-axis column
+    title: str  # subheading shown above the auto-injected chart
+    caption: str  # neutral, non-interpretive caption (carries no conclusion/tier)
+
+
+# Per-domain deterministic chart fallback. Keyed by the domain title, which the
+# narrative bundle uses verbatim as each section's title/section_id (see
+# reporting.domains.DOMAINS). Each domain lists ORDERED candidates; the first whose
+# source table exists in result_tables and renders a non-empty SVG is injected — and
+# ONLY when the section produced zero chart-template curated views, so an agent-authored
+# chart is never doubled. Numbers are filled by render_chart_template straight from the
+# source-table cells (the numeric-trust boundary); nothing here is agent-authored. Only
+# the five data-bearing core domains are mapped — action/appendix domains have no chart.
+_FALLBACK_CHARTS: dict[str, tuple[_FallbackChart, ...]] = {
+    "生意大盘": (
+        _FallbackChart("business_trend", "trend_line", "date", "gmv",
+                       "GMV 走势（自动补图）", "每日 GMV 走势，数据来自事实层。"),
+    ),
+    "流量与内容": (
+        _FallbackChart("channel_scale", "share_bar", "carrier_zh", "gmv_share",
+                       "渠道结构（自动补图）", "各渠道 GMV 占比，数据来自事实层。"),
+        _FallbackChart("search_conversion_trend", "trend_line", "period", "avg_pay_conversion",
+                       "搜索支付转化走势（自动补图）", "搜索承接的支付转化走势，数据来自事实层。"),
+    ),
+    "商品结构": (
+        _FallbackChart("sku_category_l2_mix", "share_bar", "category_l2", "gmv_share",
+                       "品类 GMV 分布（自动补图）", "各二级品类 GMV 占比，数据来自事实层。"),
+        _FallbackChart("sku_category_mix", "share_bar", "category_l1", "gmv_share",
+                       "品类 GMV 分布（自动补图）", "各一级品类 GMV 占比，数据来自事实层。"),
+    ),
+    "用户与需求": (
+        _FallbackChart("audience_conversion_comparison", "share_bar", "audience_type", "conversion",
+                       "新老客转化对比（自动补图）", "新老客支付转化对比，数据来自事实层。"),
+        _FallbackChart("audience_gmv_contribution", "share_bar", "audience_type", "gmv_share",
+                       "新老客 GMV 贡献（自动补图）", "新老客 GMV 占比，数据来自事实层。"),
+    ),
+    "退款与售后": (
+        _FallbackChart("refund_by_ship_stage", "share_bar", "stage_zh", "rate",
+                       "退款环节分布（自动补图）", "发货前后退款率对比，数据来自事实层。"),
+        _FallbackChart("refund_by_category", "share_bar", "category_l1", "refund_rate",
+                       "各品类退款率（自动补图）", "各一级品类退款率，数据来自事实层。"),
+    ),
+}
+
+# Stamped under every auto-injected chart so a reader can tell a fallback visual apart
+# from an agent-curated one and trace its numbers back to the fact layer.
+_FALLBACK_PROVENANCE = "> 来源：事实层 result_tables · 叙事层未产出图表时自动补图"
+
+# The set of tables the fallback can actually chart — the definition of "the fact layer
+# had chartable data" that the visuals_missing degradation signal keys off.
+_CHARTABLE_TABLES: frozenset[str] = frozenset(
+    cand.table for cands in _FALLBACK_CHARTS.values() for cand in cands
+)
+
+
+def has_chartable_tables(result_tables: object) -> bool:
+    """True when ``result_tables`` holds at least one non-empty table the fallback knows
+    how to chart. Lets the finalizer tell a real visual gap (chartable data existed but
+    no chart shipped → ``visuals_missing``) apart from honestly thin data. Never raises."""
+    try:
+        if not isinstance(result_tables, dict):
+            return False
+        for name in _CHARTABLE_TABLES:
+            rows = result_tables.get(name)
+            if isinstance(rows, (list, tuple)) and any(isinstance(r, dict) for r in rows):
+                return True
+        return False
+    except Exception:
+        return False
+
+
+def _fallback_chart_parts(domain_title: str, result_tables: dict) -> list[str]:
+    """One deterministic chart for a core domain whose section produced no chart view.
+
+    Walks the domain's ordered candidates and emits the first whose source table renders
+    a non-empty SVG (via :func:`render_chart_template`, so every number comes from the
+    table cells — the numeric-trust boundary). The caption is neutral and carries no
+    conclusion or evidence tier — a fallback visual asserts nothing beyond the source
+    data. Returns ``[]`` for an unmapped domain or when no candidate table is usable.
+    Never raises: a pathological table drops the fallback silently."""
+    try:
+        for cand in _FALLBACK_CHARTS.get(domain_title, ()):  # unmapped domain → ()
+            rows = result_tables.get(cand.table)
+            if not isinstance(rows, (list, tuple)) or not rows:
+                continue
+            svg = render_chart_template(
+                cand.template, list(rows), {"x": cand.x, "y": cand.y}
+            )
+            if not str(svg).strip():
+                continue
+            parts = [f"### {cand.title}", _raw_html_block(str(svg))]
+            if cand.caption:
+                parts.append(cand.caption)
+            parts.append(_FALLBACK_PROVENANCE)
+            return parts
+        return []
+    except Exception:
+        return []
 
 
 def render_frozen(frozen: dict, facts_json: dict) -> tuple[str, str]:

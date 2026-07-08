@@ -279,3 +279,100 @@ def test_agent_markers_stripped_from_every_field_only_engine_block_remains():
     html = render_markdown_document_html(md)
     assert "<table>" in html
     assert "12000" in html
+
+
+# ---- deterministic per-domain chart fallback -------------------------------
+#
+# The narrative shipped prose-only (curated_views all empty) yet finalized as a
+# success. The renderer must guarantee charts: when a CORE domain section produced
+# ZERO chart-template curated views but the fact layer has a chartable table for that
+# domain, a deterministic chart is auto-injected from the source table cells (numbers
+# never authored by prose). An agent-authored chart suppresses the fallback (no double
+# render); a non-core domain / thin data degrades silently to prose-only.
+
+def _core_tables():
+    # Tables the per-domain fallback knows how to chart. Numbers live ONLY here, so a
+    # value in the output proves it came from the source table, never from prose.
+    return {
+        "business_trend": [
+            {"date": "2026-04-01", "gmv": 14356.0},
+            {"date": "2026-04-02", "gmv": 22687.0},
+        ],
+        "channel_scale": [
+            {"carrier_zh": "商品卡", "gmv_share": 0.6445},
+            {"carrier_zh": "笔记", "gmv_share": 0.3555},
+        ],
+    }
+
+
+def _prose_only_bundle(domain_title):
+    # A domain section with prose but ZERO curated views — the exact real-run failure.
+    return {
+        "facts_hash": "h",
+        "headline": "标题。",
+        "first_screen": {"spine": [], "panel": [], "actions": []},
+        "sections": [
+            {"section_id": "s", "title": domain_title,
+             "claims": [_claim()], "curated_views": []}
+        ],
+        "cannot_say": [],
+    }
+
+
+def test_fallback_injects_chart_when_section_has_no_curated_chart():
+    md = nr.bundle_to_markdown(
+        _prose_only_bundle("生意大盘"), _facts(), result_tables=_core_tables()
+    )
+    assert "GMV 回落。" in md            # prose preserved
+    assert nr.RAW_HTML_OPEN in md         # deterministic passthrough block emitted
+    assert "<svg" in md                   # a chart was auto-injected
+    assert "GMV 走势" in md               # the fallback title
+    html = render_markdown_document_html(md)
+    assert "<svg" in html and "&lt;svg" not in html   # survives md→HTML unescaped
+
+
+def test_fallback_numbers_come_from_source_table_cells():
+    md = nr.bundle_to_markdown(
+        _prose_only_bundle("流量与内容"), _facts(), result_tables=_core_tables()
+    )
+    assert "<svg" in md
+    assert "商品卡" in md      # category label from the source cell
+    assert "0.64" in md        # value formatted from the source cell (0.6445 → 0.64)
+
+
+def test_fallback_suppressed_when_curated_chart_present_no_double_render():
+    # The section already has an agent chart (waterfall on growth_bridge); a mapped
+    # table (business_trend) is also present — the fallback must NOT add a 2nd chart.
+    tables = {**_tables(), **_core_tables()}
+    md = nr.bundle_to_markdown(_bundle([_chart_view()]), _facts(), result_tables=tables)
+    assert md.count("<svg") == 1     # exactly the curated chart, no fallback
+    assert "GMV 走势" not in md       # the fallback title never appears
+    assert "GMV 瀑布" in md           # the curated chart is what rendered
+
+
+def test_fallback_only_for_mapped_core_domains():
+    # a non-core domain title has no fallback mapping → prose-only, no chart
+    md = nr.bundle_to_markdown(
+        _prose_only_bundle("实验与下周行动"), _facts(), result_tables=_core_tables()
+    )
+    assert "GMV 回落。" in md
+    assert "<svg" not in md
+
+
+def test_fallback_never_raises_on_garbage_tables():
+    for tables in ({"business_trend": "notalist"},
+                   {"business_trend": [None, 7]},
+                   {"business_trend": []},
+                   {"channel_scale": [{"wrong": 1}]}):
+        md = nr.bundle_to_markdown(
+            _prose_only_bundle("生意大盘"), _facts(), result_tables=tables
+        )
+        assert "GMV 回落。" in md   # prose always survives; fallback degrades silently
+
+
+def test_has_chartable_tables_detects_mapped_nonempty_tables():
+    assert nr.has_chartable_tables(_core_tables()) is True
+    assert nr.has_chartable_tables({"growth_bridge": [{"a": 1}]}) is False  # not mapped
+    assert nr.has_chartable_tables({"business_trend": []}) is False          # empty
+    for bad in (None, "x", 42, {"business_trend": "nope"}):
+        assert nr.has_chartable_tables(bad) is False
