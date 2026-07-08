@@ -19,7 +19,11 @@ def test_renders_headline_spine_panel_actions():
     assert "6月人均产出走低" in md
     assert "¥10.0 回落到 ¥8.7" in md
     assert "退款总额 ¥20.8万" in md
-    assert "（中）" in md  # panel conclusion carries its confidence tag
+    # D2: the 首屏 no longer suffixes every teaser line with its （强/中/弱）tag —
+    # the "每条结论后跟个弱" repetition is gone; confidence now lives on a per-section
+    # pill in the body, not after each 引子 line.
+    assert "（中）" not in md
+    assert "（强）" not in md
     assert "本周先核对千帆是否支持发货前拦截。" in md
 
 

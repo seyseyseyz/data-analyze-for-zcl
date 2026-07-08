@@ -59,8 +59,9 @@ _REVIEW_LENSES: tuple[tuple[str, str], ...] = (
     (
         "可读性",
         "商家(非分析师)能否一眼读对?优先判 revise 而非 drop,因为多数可读性问题可修:"
-        "模板与数据形态错配(时间序列该用趋势线、构成占比该用占比条、增减分解该用瀑布、"
-        "并列对照才用表)判 revise 并指出正确模板;列或维度多到满屏扫不完或需横向滚动"
+        "先看它有没有用最合适的呈现形式——模板与数据形态错配(时间序列该用趋势线、构成"
+        "占比该用占比条、增减分解该用瀑布、并列对照才用表)判 revise 并指出正确模板;列"
+        "或维度多到满屏扫不完或需横向滚动"
         "判 revise 建议裁列;列名标题是内部字段黑话(如 delta_gmv)判 revise 建议用 "
         "column_labels 写成商家能懂的词。只有排版到读不出任何信息且单轮 revise 修不好"
         "时才 drop。",
@@ -70,8 +71,9 @@ _REVIEW_LENSES: tuple[tuple[str, str], ...] = (
         "它是否诚实地佐证了 supports_claim 那条结论且不误导?展示的维度必须就是该结论"
         "讲的维度,无关判 drop;排序 TopN 高亮不能让商家读出与结论相反或被夸大的方向,"
         "轻则 revise 加注、重则 drop;视图呈现的确定感不得超过它所支撑 claim 的证据档"
-        "(强中弱),拿弱证据撑起看似铁证的图判 revise 要求加『弱证据』标注。这条是 "
-        "anti-dump 与信任的底线,允许 drop。",
+        "(强中弱),拿弱证据撑起看似铁证的图判 revise 要求加『弱证据』标注。整表照搬、"
+        "逐行堆砌、未做编辑取舍的原始数据倾倒判 drop。这条是 anti-dump 与信任的底线,"
+        "允许 drop。",
     ),
 )
 
@@ -282,6 +284,8 @@ def _write_fan_briefs(
             "说明原因 —— 缺图会被记为 visuals_missing):",
             '  必填 template, 只允许 "comparison_table"|"ranking_table"|"trend_line"|"breakdown_waterfall"|"share_bar"|"horizontal_bar";',
             '  ("horizontal_bar" 是横向条形图:类目标签较长时(搜索词/SKU 名/长中文)比 share_bar 更易读,优先选它;)',
+            "  先按数据形态选最合适的呈现形式:随时间变化用 trend_line、构成占比用 share_bar/占比条、"
+            "增减分解用 breakdown_waterfall、并列对照才用表 —— 形态选错会被 revise;",
             '  source 形如 {"task_id":"…","table":"<下方 available_tables 里的表名>"};',
             "  columns 必须是该表列名的子集;只做选列/排序/TopN,严禁聚合或改数;",
             '  图表必须同时给 chart, 如 {"x":"date","y":"gmv"} 或 {"x":"carrier","y":"gmv_share"};',

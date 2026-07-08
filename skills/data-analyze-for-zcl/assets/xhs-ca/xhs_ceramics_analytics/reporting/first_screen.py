@@ -8,15 +8,15 @@ Pure, never raises.
 """
 
 
-def _lines(claims: list[dict], *, tag: bool) -> list[str]:
+def _lines(claims: list[dict]) -> list[str]:
+    # No per-line confidence suffix: the 首屏 is an 引子, and confidence now lives on a
+    # per-section pill in the body (see narrative_render._section_confidence). Suffixing
+    # every teaser line with （强/中/弱）was the "每条结论后跟个弱" repetition.
     out: list[str] = []
     for claim in claims or []:
         sentence = str(claim.get("rendered_sentence") or claim.get("sentence") or "").strip()
         if not sentence:
             continue
-        conf = claim.get("confidence")
-        if tag and conf:
-            sentence = f"{sentence}（{conf}）"
         out.append(f"- {sentence}")
     return out
 
@@ -28,12 +28,12 @@ def first_screen_markdown(bundle: dict) -> str:
     if headline:
         parts.append(f"**{headline}**")
 
-    spine = _lines(fs.get("spine"), tag=True)
+    spine = _lines(fs.get("spine"))
     if spine:
         parts.append("**因果主线**")
         parts.extend(spine)
 
-    panel = _lines(fs.get("panel"), tag=True)
+    panel = _lines(fs.get("panel"))
     if panel:
         parts.append("**盘面**")
         parts.extend(panel)

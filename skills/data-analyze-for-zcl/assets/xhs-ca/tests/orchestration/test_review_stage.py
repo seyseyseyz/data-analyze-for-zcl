@@ -197,6 +197,20 @@ def test_review_lenses_encode_calibrated_intent():
         assert not any(ch.isdigit() for ch in text)
 
 
+def test_review_lenses_flag_form_choice_and_raw_dumping():
+    # D4: two editorial criteria made explicit at the enforcement point — 可读性 asks
+    # whether the view uses the most-appropriate FORM (图 vs 表), and 支撑 (the one
+    # drop-capable, anti-dump anchor) explicitly kills a raw-data dump. These target the
+    # original complaints (ugly/meaningless per-day tables; raw-export dumping).
+    lenses = dict(nw._REVIEW_LENSES)
+    assert "最合适的呈现形式" in lenses["可读性"]
+    assert "原始数据倾倒" in lenses["支撑"]
+    # unchanged: still exactly three calibrated lenses, still ASCII-digit-free
+    assert set(lenses) == {"价值", "可读性", "支撑"}
+    for _name, text in nw._REVIEW_LENSES:
+        assert not any(ch.isdigit() for ch in text)
+
+
 # --- finalize carries retained curated views -------------------------------
 
 

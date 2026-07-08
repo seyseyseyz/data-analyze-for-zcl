@@ -80,6 +80,21 @@ def test_value_labels_are_type_aware_money_column_unchanged():
     assert "800,357" in svg and "414,126" in svg and "120,000" in svg
 
 
+def test_boolean_category_label_renders_yes_no_not_raw_bool():
+    # A boolean x-column category must read 是/否 — same as the tables (format_scalar)
+    # — never the raw Python "True"/"False" (the "False/True值" complaint). Value labels
+    # were already type-aware; the category axis is closed here too.
+    rows = [
+        {"is_promo": True, "gmv": 12000.0},
+        {"is_promo": False, "gmv": 8000.0},
+    ]
+    svg = str(
+        render_chart_template("share_bar", rows, {"x": "is_promo", "y": "gmv"})
+    )
+    assert ">是<" in svg and ">否<" in svg
+    assert "True" not in svg and "False" not in svg
+
+
 # ---- breakdown_waterfall (reuses _waterfall) ------------------------------
 
 def test_breakdown_waterfall_stacks_one_rect_per_component():

@@ -125,6 +125,73 @@ def test_bundle_to_markdown_renders_curated_view_tables_and_charts():
     assert "core_business_diagnosis" not in md
 
 
+# ---- D2: one per-section confidence pill, not a （强/中/弱）after every sentence ----
+#
+# The merchant complaint was "每条结论后跟个弱" — the narrative suffixed EVERY claim
+# with its confidence tag, which mostly read 弱 and buried the prose in de-emphasis.
+# The fix aggregates each section's claim confidences into ONE pill (the modal tag,
+# ties broken toward the weaker/more-conservative tier) shown once after the heading;
+# the per-sentence suffixes are gone. Per-view provenance stamps keep their granular
+# 证据:{tier}, so the section pill summarizes without contradicting the audit trail.
+
+def test_section_confidence_pill_replaces_per_sentence_tags():
+    md = nr.bundle_to_markdown(
+        _bundle([_table_view()]), _facts(), result_tables=_tables()
+    )
+    # the claim (confidence 强) no longer trails its sentence with （强）
+    assert "GMV 回落。（强）" not in md
+    assert "（强）" not in md
+    # instead the section carries ONE confidence pill in the fact-layer .tag markup
+    assert '<span class="tag strong">证据 强</span>' in md
+
+
+def test_section_pill_uses_conservative_modal_tier():
+    # two 弱 + one 强 → modal is 弱 (2 vs 1); the pill reads 弱, never the outlier 强.
+    b = _bundle([])
+    b["sections"][0]["claims"] = [
+        {**_claim(), "claim_id": "a", "confidence": "弱", "rendered_sentence": "一。"},
+        {**_claim(), "claim_id": "b", "confidence": "弱", "rendered_sentence": "二。"},
+        {**_claim(), "claim_id": "c", "confidence": "强", "rendered_sentence": "三。"},
+    ]
+    md = nr.bundle_to_markdown(b, _facts(), result_tables={})
+    assert '<span class="tag weak">证据 弱</span>' in md
+    assert "证据 强" not in md
+
+
+def test_section_pill_tie_breaks_to_the_weaker_tier():
+    # one 强 + one 中 → tie on count; the conservative tie-break picks 中 (weaker).
+    b = _bundle([])
+    b["sections"][0]["claims"] = [
+        {**_claim(), "claim_id": "a", "confidence": "强", "rendered_sentence": "一。"},
+        {**_claim(), "claim_id": "b", "confidence": "中", "rendered_sentence": "二。"},
+    ]
+    md = nr.bundle_to_markdown(b, _facts(), result_tables={})
+    assert '<span class="tag medium">证据 中</span>' in md
+    assert "证据 强" not in md
+
+
+def test_section_without_confident_claims_emits_no_pill():
+    b = _bundle([])
+    b["sections"][0]["claims"] = [
+        {**_claim(), "confidence": None, "rendered_sentence": "无标签结论。"},
+    ]
+    md = nr.bundle_to_markdown(b, _facts(), result_tables={})
+    assert '<span class="tag' not in md
+    assert "无标签结论。" in md
+
+
+def test_section_pill_survives_md_to_html_unescaped_and_css_injected():
+    md = nr.bundle_to_markdown(
+        _bundle([_table_view()]), _facts(), result_tables=_tables()
+    )
+    html = render_markdown_document_html(md)
+    # the pill CSS shipped, so the chip is actually styled in the single-file HTML
+    assert ".tag.strong" in html
+    # and the pill span passed through the converter verbatim (never escaped)
+    assert '<span class="tag strong">证据 强</span>' in html
+    assert "&lt;span" not in html
+
+
 def test_html_conversion_preserves_raw_table_and_svg_not_escaped():
     md = nr.bundle_to_markdown(
         _bundle([_table_view(), _chart_view()]), _facts(), result_tables=_tables()

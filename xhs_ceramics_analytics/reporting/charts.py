@@ -893,6 +893,16 @@ def _cell(row: object, key: object) -> object:
     return row.get(key) if isinstance(row, dict) else None
 
 
+def _cat_label(value: object) -> str:
+    """Category-axis label for a curated/fallback chart cell. A boolean renders 是/否
+    (same as the tables via ``format_scalar``), never the raw Python "True"/"False"
+    (the "False/True值" leak). Every non-bool value keeps the existing enum→中文
+    mapping byte-for-byte, so byte-stable chart output is unchanged."""
+    if isinstance(value, bool):
+        return "是" if value else "否"
+    return labels.value_label(str(value))
+
+
 def _as_float(value: object) -> float | None:
     """Coerce a cell to float, or None when it is not a finite number. bool is
     treated as non-numeric so a True/False cell never becomes a 1/0 bar."""
@@ -942,7 +952,7 @@ def render_chart_template(
             return Markup("")
 
         de = _confidence_de_emphasize(confidence)
-        cats = [labels.value_label(str(_cell(r, x_key))) for r in rows]
+        cats = [_cat_label(_cell(r, x_key)) for r in rows]
         values = [_as_float(_cell(r, y_key)) for r in rows]
         # Value labels are TYPE-AWARE via the shared fact-layer formatter: a percent
         # column reads "64.5%" (not the raw ratio "0.64"), money rounds to whole yuan,

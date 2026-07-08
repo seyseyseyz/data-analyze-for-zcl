@@ -15,6 +15,7 @@ from typing import NamedTuple
 
 from xhs_ceramics_analytics.evidence import EvidenceStrength
 from xhs_ceramics_analytics.reporting.charts import render_chart_template
+from xhs_ceramics_analytics.reporting.confidence_pill import confidence_pill_html
 from xhs_ceramics_analytics.reporting.curated_view import render_view
 from xhs_ceramics_analytics.reporting.factcheck_gate import (
     allowed_confidence_tag,
@@ -126,6 +127,34 @@ def _rendered(claim: dict) -> str:
     return str(claim.get("rendered_sentence") or claim.get("sentence") or "").strip()
 
 
+# Confidence tiers, weakest→strongest, for the conservative modal tie-break below.
+_TAG_RANK: dict[str, int] = {"弱": 1, "中": 2, "强": 3}
+
+
+def _section_confidence(claims: object) -> str | None:
+    """The one confidence tag that summarizes a section's claims — the modal tag, with
+    a conservative (weaker-wins) tie-break.
+
+    This replaces the per-sentence （强/中/弱）repetition ("每条结论后跟个弱"): the tag
+    is now shown once as a section pill. Reads each shown claim's already-gate-capped
+    ``confidence`` (the same field the old per-sentence tag used, so the aggregate can
+    never overstate what the gate allowed). Returns ``None`` when no shown claim carries
+    a tag — the section then renders no pill. Never raises.
+    """
+    counts: dict[str, int] = {}
+    for claim in claims or []:
+        if not isinstance(claim, dict) or not _rendered(claim):
+            continue
+        tag = claim.get("confidence")
+        if tag in _TAG_RANK:
+            counts[tag] = counts.get(tag, 0) + 1
+    if not counts:
+        return None
+    # Highest count wins; on a tie prefer the weaker tier (smaller rank) — never let a
+    # single strong outlier lift a section's headline confidence above its typical claim.
+    return max(counts, key=lambda t: (counts[t], -_TAG_RANK[t]))
+
+
 def bundle_to_markdown(
     bundle: dict,
     facts_json: dict,
@@ -155,12 +184,18 @@ def bundle_to_markdown(
             str(section.get("title") or section.get("section_id") or "").strip()
         )
         parts.append(f"## {heading}")
+        # One per-section confidence pill (the modal tag) instead of a （强/中/弱）
+        # after every sentence. Wrapped as a raw-HTML passthrough block so the .tag
+        # chip survives the markdown→HTML conversion; the span is deterministic.
+        pill_tag = _section_confidence(section.get("claims"))
+        pill_html = confidence_pill_html(pill_tag) if pill_tag else ""
+        if pill_html:
+            parts.append(_raw_html_block(pill_html))
         for claim in section.get("claims") or []:
             sentence = _strip_raw_html_markers(_rendered(claim))
             if not sentence:
                 continue
-            conf = claim.get("confidence")
-            parts.append(f"{sentence}（{conf}）" if conf else sentence)
+            parts.append(sentence)
         if tables:
             view_parts, chart_count = _curated_view_parts(
                 section, tables, claims_by_id, facts

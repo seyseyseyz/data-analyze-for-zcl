@@ -17,6 +17,7 @@ from xhs_ceramics_analytics.reporting.markdown import render_markdown
 from xhs_ceramics_analytics.reporting.priority import build_priority_table
 from xhs_ceramics_analytics.reporting.section_order import APPENDIX_TASKS
 from xhs_ceramics_analytics.reporting.chart_style import CHART_STYLE
+from xhs_ceramics_analytics.reporting.confidence_pill import CONFIDENCE_PILL_STYLE
 from xhs_ceramics_analytics.reporting.table_labels import TABLE_LABELS as _TABLE_LABELS
 from xhs_ceramics_analytics.reporting.toc import TOC_STYLE, build_toc_nav
 from xhs_ceramics_analytics.reporting.formatting import (
@@ -463,6 +464,7 @@ def render_markdown_document_html(markdown_text: str, title: str | None = None) 
       h2 {{ font-size: 26px; }}
     }}
 {CHART_STYLE}
+{CONFIDENCE_PILL_STYLE}
 {narrative_toc_css}
   </style>
 </head>
