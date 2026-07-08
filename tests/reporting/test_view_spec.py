@@ -199,6 +199,49 @@ def test_reject_digit_in_why_it_matters():
     assert any("why_it_matters" in e for e in errs)
 
 
+def test_reject_cjk_magnitude_in_why_it_matters():
+    # A fabricated magnitude written in CJK numerals (九十九万 = 990000) must not slip
+    # past the digit scan just because it uses no ASCII digits — same trust-boundary
+    # breach as a bare "990000".
+    spec = _valid_spec()
+    spec["why_it_matters"] = "预计损失约九十九万元"
+    errs = validate_view_spec(spec, _tables())
+    assert any("why_it_matters" in e for e in errs)
+
+
+def test_reject_cjk_magnitude_in_title():
+    spec = _valid_spec()
+    spec["title"] = "GMV 增长三千万拆解"
+    errs = validate_view_spec(spec, _tables())
+    assert any("title" in e for e in errs)
+
+
+def test_reject_cjk_proportion_in_how_to_read():
+    # 三成 = 30% — a numeral bound to a magnitude unit is still a fabricated number.
+    spec = _valid_spec()
+    spec["how_to_read"] = "转化贡献约三成"
+    errs = validate_view_spec(spec, _tables())
+    assert any("how_to_read" in e for e in errs)
+
+
+def test_reject_fullwidth_digit_in_why_it_matters():
+    # Fullwidth digits (Unicode Nd) are numbers too; the scan must catch them.
+    spec = _valid_spec()
+    spec["why_it_matters"] = "被抵消了 ９９９９ 元"
+    errs = validate_view_spec(spec, _tables())
+    assert any("why_it_matters" in e for e in errs)
+
+
+def test_cjk_ordinal_in_prose_is_allowed():
+    # Incidental single CJK numerals — ordinals (第一) and "that block" (那一块) — are
+    # not magnitudes and must NOT false-reject; the design's own caption uses them.
+    spec = _valid_spec()
+    spec["title"] = "第一优先"
+    spec["how_to_read"] = "先看那一块,再看两个次要项"
+    spec["why_it_matters"] = "锁定被转化抵消的那一块,是本周第一优先"
+    assert validate_view_spec(spec, _tables()) == []
+
+
 def test_reject_digit_in_column_label():
     spec = _valid_spec()
     spec["column_labels"]["delta_gmv"] = "对GMV的拉动(单位:1000元)"
