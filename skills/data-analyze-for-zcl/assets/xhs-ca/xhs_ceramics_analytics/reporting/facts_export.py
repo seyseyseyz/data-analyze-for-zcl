@@ -105,7 +105,12 @@ _RENDER = {"money": render_cny, "percent": render_pct, "count": render_count}
 _UNIT = {"money": "cny", "percent": "percent", "count": "count"}
 
 
-def _numeric_facts_from_finding(task_id: str, finding) -> dict[str, Fact]:
+def numeric_facts_from_finding(task_id: str, finding) -> dict[str, Fact]:
+    """The single source of ``fact_id`` truth: one ``Fact`` per NUMERIC key_number,
+    keyed ``{task_id}.{key}`` and pre-rendered by Python. Non-numeric keys (labels)
+    are skipped. Reused by the narrative slice producer so a claim's ``{tN}`` binds to
+    the exact same ``fact_id`` the gate validates against — coupling by construction,
+    never by a re-derived formula. Pure, never raises."""
     facts: dict[str, Fact] = {}
     for key, raw in finding.key_numbers.items():
         v = to_finite_float(raw)
@@ -140,7 +145,7 @@ def build_factbook(
     module_reading: dict = {}
     for result in results:
         for finding in result.findings:
-            facts.update(_numeric_facts_from_finding(result.task_id, finding))
+            facts.update(numeric_facts_from_finding(result.task_id, finding))
         for example in result.named_examples:
             name = example.get("name")
             if name and name not in entities:

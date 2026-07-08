@@ -51,7 +51,8 @@ _KNOWN_VERDICTS: frozenset[str] = frozenset({"keep", "revise", "drop"})
 _NEXT_ACTION = {
     "seed": "read briefs/seed.md, spawn one sub-agent, ingest --stage seed, then advance",
     "fan": "read briefs/fan_*.md, spawn one sub-agent per brief, ingest --stage fan each, then advance",
-    "synth": "read the recorded sections, spawn one sub-agent, ingest --stage synth, then advance",
+    "synth": "read briefs/synth.md, spawn one sub-agent to assemble the first screen, "
+             "ingest --stage synth, then advance",
     "gate": "run advance to apply the deterministic fact-check gate",
     "patch": "read the patch brief, spawn one sub-agent, ingest --stage patch, then advance",
     "review": "read briefs/review_*.md, spawn 3 reviewers (价值/可读性/支撑) per domain, "
@@ -188,9 +189,22 @@ def _write_fan_briefs(run_dir: Path, capped_slices: list[dict]) -> list[Path]:
         body = [
             f"# Fan brief — {s['title']}",
             "",
-            f"Write the merchant-facing prose for section `{section_id}`.",
-            "Ground every number in the facts below. Do not invent numbers or causal claims.",
-            "Return JSON only: {\"section_id\", \"title\", \"body\"}.",
+            f"为版块 `{section_id}` 写「claims + 策展视图」。数字只出现在 claim 的 number_tokens 里,",
+            "由确定性引擎从下方 facts 回填 —— 你只写句子模板(用 {tN} 占位)与结构,绝不写裸数字。",
+            "",
+            "每条 claim 的结构:",
+            '  {"claim_id","section_id","claim_kind":"measurement|mechanism|sizing",',
+            '   "sentence":"…{t0}…(仅含 {tN} 占位,不得含任何裸数字)",',
+            '   "number_tokens":[{"token_id":"t0","fact_id":"<下方 facts 里的 fact_id>",'
+            '"expected_metric_key":"<该 fact 的 metric_key>"}],',
+            '   "entity_refs":[],"confidence":"强|中|弱"}',
+            "每个 number_token 的 fact_id 必须精确等于下方某个 facts[].fact_id;",
+            "没有 fact_id 的 fact 是标签(非数值),不能被 number_token 绑定。",
+            "",
+            "curated_views(可选,每域 ≤2 表 + ≤1 图):只从已算好的源表里选列/排序/TopN,",
+            "supports_claim 必须指向本域某条 claim_id;标题/图注是纯文字,不得含裸数字。",
+            "",
+            'Return JSON only: {"section_id","title","claims":[...],"curated_views":[...]}.',
             "",
             "```json",
             json.dumps(payload, ensure_ascii=False, indent=2),
@@ -200,6 +214,60 @@ def _write_fan_briefs(run_dir: Path, capped_slices: list[dict]) -> list[Path]:
         path.write_text("\n".join(body) + "\n", encoding="utf-8")
         paths.append(path)
     return paths
+
+
+def _claim_summaries(state: dict) -> list[dict]:
+    """Flatten the recorded fan claims into compact summaries so the synth agent can
+    reference real ``claim_id``s when assembling the first screen. Ordered by the
+    prepared slice order (falling back to any extra recorded sections at the end)."""
+    sections = state.get("sections", {})
+    order = state.get("_section_order", [])
+    ordered_ids = [sid for sid in order if sid in sections]
+    seen = set(ordered_ids)
+    ordered_ids += [sid for sid in sections if sid not in seen]
+    out: list[dict] = []
+    for sid in ordered_ids:
+        section = sections[sid]
+        for claim in section.get("claims", []):
+            if not isinstance(claim, dict):
+                continue
+            out.append(
+                {
+                    "claim_id": claim.get("claim_id", ""),
+                    "section_id": claim.get("section_id", section.get("section_id", sid)),
+                    "claim_kind": claim.get("claim_kind", ""),
+                    "sentence": claim.get("sentence", ""),
+                    "confidence": claim.get("confidence", ""),
+                }
+            )
+    return out
+
+
+def _write_synth_brief(run_dir: Path, state: dict) -> None:
+    """Write the synth brief: surface every recorded fan claim (so synth can reference
+    real ``claim_id``s) and request the bundle-level first screen. The synth agent
+    invents no numbers — spine/panel entries stay claim-like dicts whose ``{tN}`` tokens
+    the deterministic engine later fills from facts.json."""
+    summaries = _claim_summaries(state)
+    lines = [
+        "# Synth brief — 组装首屏与全局综合",
+        "",
+        "下面是各版块 fan agent 已产出的 claims 摘要。据此组装「首屏」:挑出最能支撑主结论的",
+        "claim 进 spine/panel(整条 claim-like dict,含 sentence 与 number_tokens;数字仍由确定性",
+        "引擎回填,你绝不写裸数字),并给出 headline / cannot_say / spine_final。",
+        "",
+        'Return JSON only: {"headline","first_screen":{"spine":[…],"panel":[…],"actions":[…]},'
+        '"cannot_say":[…],"spine_final":{…}}.',
+        "spine/panel 每条须是 claim-like dict(可直接复用下方某条 claim,或组合其 claim_id);",
+        "actions 是纯文字行动建议;cannot_say 是本次数据答不了的问题。",
+        "",
+        "## 已产出的 claims",
+        "",
+        "```json",
+        json.dumps(summaries, ensure_ascii=False, indent=2),
+        "```",
+    ]
+    (run_dir / "briefs" / "synth.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def prepare_run(
@@ -358,13 +426,76 @@ def _record_section(state: dict, section: dict) -> None:
         "title": title,
         "body": section.get("body", ""),
     }
+    # Preserve the agent-emitted claims (Option A: the renderer/gate/first_screen are
+    # all built on ``section.claims[]``, not on prose ``body``). Kept as opaque dicts —
+    # sentence carries only {tN}, number_tokens bind to real fact_ids, confidence is
+    # gate-capped. Only added when present, so prose-only/skeleton sections that carry
+    # no claims stay byte-identical to before.
+    claims = section.get("claims")
+    if isinstance(claims, (list, tuple)):
+        recorded["claims"] = [c for c in claims if isinstance(c, dict)]
     # Preserve the agent-emitted curated view-specs so they survive into the
-    # bundle (via _bundle_from_state) and reach the gate / review / render. Only
-    # added when present, so prose-only sections are byte-identical to before.
+    # bundle (via _bundle_from_state) and reach the gate / review / render.
     views = section.get("curated_views")
     if isinstance(views, (list, tuple)):
         recorded["curated_views"] = [v for v in views]
+    # Preserve section→spine callbacks so the gate's cross-section continuity check
+    # (DANGLING_CALLBACK / MISSING_SPINE_CALLBACK) sees them.
+    callbacks = section.get("spine_callbacks")
+    if isinstance(callbacks, (list, tuple)):
+        recorded["spine_callbacks"] = list(callbacks)
     state["sections"][section_id] = recorded
+
+
+# Bundle-level synthesis the SYNTH agent assembles once, across all sections (spec
+# §First screen). Captured into state['_synth'] and re-emitted by _bundle_from_state.
+_BUNDLE_LEVEL_KEYS = ("first_screen", "headline", "cannot_say", "spine_final")
+# What marks a synth dict as a section payload (vs a pure first-screen payload) — used
+# so a bare {first_screen, headline, ...} is NOT mis-recorded as a bogus section.
+_SECTION_MARKERS = ("section_id", "claims", "body", "curated_views")
+
+
+def _capture_bundle_fields(state: dict, parsed) -> None:
+    """Capture the synth agent's bundle-level synthesis into ``state['_synth']``.
+
+    Only keys actually present are copied, so a synth output carrying just some of the
+    fields (or none) degrades gracefully — a later ``_bundle_from_state`` simply omits
+    the absent ones. Never raises."""
+    if not isinstance(parsed, dict):
+        return
+    synth = state.setdefault("_synth", {})
+    for key in _BUNDLE_LEVEL_KEYS:
+        if key in parsed:
+            synth[key] = parsed[key]
+
+
+def _looks_like_section(parsed) -> bool:
+    """True if a dict carries section content (so synth can still fold in a section it
+    re-emits alongside the first screen), False for a pure bundle-level payload."""
+    return isinstance(parsed, dict) and any(k in parsed for k in _SECTION_MARKERS)
+
+
+def _ingest_synth(state: dict, text: str) -> None:
+    """Ingest a SYNTH result: capture the bundle-level first screen AND record any
+    section(s) the synth agent re-emitted. Unlike the generic path, a bare
+    ``{first_screen, headline, …}`` payload (no section markers) records NO section, so
+    it is never mistaken for a section titled 'section'. Never raises beyond a genuinely
+    unparseable payload (extract_json), matching the other stages."""
+    parsed = extract_json(text)
+    if isinstance(parsed, list):
+        for section in parsed:
+            _record_section(state, section)
+        return
+    if isinstance(parsed, dict):
+        _capture_bundle_fields(state, parsed)
+        sections = parsed.get("sections")
+        if isinstance(sections, list):
+            for section in sections:
+                _record_section(state, section)
+        elif _looks_like_section(parsed):
+            _record_section(state, parsed)
+        return
+    raise ValueError("ingested JSON is neither an object nor a list of sections")
 
 
 def ingest_output(run_dir, *, stage: str, source=None, text=None, section_id=None) -> dict:
@@ -397,6 +528,14 @@ def ingest_output(run_dir, *, stage: str, source=None, text=None, section_id=Non
             parsed = None
         _ingest_review_verdicts(state, parsed)
         state.setdefault("history", []).append("ingest:review")
+        _write_state(run_dir, state)
+        return state
+
+    if stage == "synth":
+        # SYNTH assembles the bundle-level first screen (+ may re-emit sections). Handled
+        # separately so a pure first-screen payload is captured, not recorded as a section.
+        _ingest_synth(state, text)
+        state.setdefault("history", []).append("ingest:synth")
         _write_state(run_dir, state)
         return state
 
@@ -433,7 +572,15 @@ def _bundle_from_state(state: dict) -> dict:
     ordered = [sections[sid] for sid in order if sid in sections]
     ordered_ids = set(order)
     extras = [section for sid, section in sections.items() if sid not in ordered_ids]
-    return {"sections": ordered + extras}
+    bundle: dict = {"sections": ordered + extras}
+    # Fold in the synth agent's bundle-level synthesis (first_screen / headline /
+    # cannot_say / spine_final). Only keys actually captured are added, so a prose-only
+    # or pre-synth run yields exactly {"sections": [...]} as before (backward compatible).
+    synth = state.get("_synth") or {}
+    for key in _BUNDLE_LEVEL_KEYS:
+        if key in synth:
+            bundle[key] = synth[key]
+    return bundle
 
 
 # ---- curated-view review stage (spec §Multi-Reviewer Review) --------------
@@ -717,6 +864,8 @@ def status_json(run_dir) -> dict:
         briefs = [str(briefs_dir / "seed.md")]
     elif stage == "fan":
         briefs = [str(p) for p in sorted(briefs_dir.glob("fan_*.md"))]
+    elif stage == "synth":
+        briefs = [str(briefs_dir / "synth.md")]
     elif stage == "review":
         briefs = [str(p) for p in sorted(briefs_dir.glob("review_*.md")) if p.name != "review_patch.md"]
     elif stage == "patch" and state.get("_review_patch_pending"):
@@ -782,6 +931,9 @@ def advance_run(run_dir, *, project_root=None) -> dict:
         state["stage"] = "fan"
     elif stage == "fan":
         state["stage"] = "synth"
+        # Surface the recorded fan claims so the synth agent can assemble the first
+        # screen from real claim_ids (Option A). Falls through to _write_state below.
+        _write_synth_brief(run_dir, state)
     elif stage == "synth":
         bundle = render_draft(_bundle_from_state(state), facts_json)
         state["_bundle"] = bundle

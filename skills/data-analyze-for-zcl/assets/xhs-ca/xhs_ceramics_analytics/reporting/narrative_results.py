@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.reporting.domains import group_by_domain
+from xhs_ceramics_analytics.reporting.facts_export import numeric_facts_from_finding
 
 
 def _iter_findings(result: AnalysisResult) -> list[Finding]:
@@ -24,13 +25,33 @@ def _iter_findings(result: AnalysisResult) -> list[Finding]:
     return findings
 
 
-def _finding_facts(finding: Finding) -> list[dict[str, object]]:
-    """把一条 Finding 的 key_numbers 摊平成 facts,逐条带证据档与来源结论标题。"""
+def _finding_facts(task_id: str, finding: Finding) -> list[dict[str, object]]:
+    """把一条 Finding 的 key_numbers 摊平成 facts,逐条带证据档与来源结论标题。
+
+    NUMERIC 的 key_number 额外带上 FactBook 里逐字节相同的 ``fact_id`` /
+    ``metric_key`` / ``rendered`` —— 直接复用 :func:`numeric_facts_from_finding`
+    (facts_export 里 fact_id 的唯一真源),这样 fan agent 的 claim 用 ``{tN}`` 绑上
+    ``fact_id`` 后能在 gate 里被 facts.json 解析。非数值 key_number(如 SKU 名称)不是
+    FactBook 里的 fact,故不带 ``fact_id``,以免 claim 绑到一个不存在的键上。
+    """
     tier = str(finding.evidence_strength)
-    return [
-        {"metric": metric, "value": value, "evidence": tier, "finding": finding.title}
-        for metric, value in finding.key_numbers.items()
-    ]
+    numeric = numeric_facts_from_finding(task_id, finding)
+    by_metric = {fact.metric_key: fact for fact in numeric.values()}
+    out: list[dict[str, object]] = []
+    for metric, value in finding.key_numbers.items():
+        fact: dict[str, object] = {
+            "metric": metric,
+            "value": value,
+            "evidence": tier,
+            "finding": finding.title,
+        }
+        canonical = by_metric.get(metric)
+        if canonical is not None:  # 数值 fact —— 带上可被 gate 解析的 fact_id
+            fact["fact_id"] = canonical.fact_id
+            fact["metric_key"] = canonical.metric_key
+            fact["rendered"] = canonical.rendered
+        out.append(fact)
+    return out
 
 
 def _reading(findings: list[Finding]) -> dict[str, str]:
@@ -74,8 +95,15 @@ def build_narrative_results(
     """
     slices: list[dict[str, object]] = []
     for group in group_by_domain(results):
-        findings = [f for result in group.results for f in _iter_findings(result)]
-        facts = [fact for finding in findings for fact in _finding_facts(finding)]
+        # task_id 挂在 result 上而非 finding 上,所以要保留 (task_id, finding) 配对,
+        # 才能把 fact_id 的域前缀正确传进 _finding_facts。
+        pairs = [
+            (result.task_id, finding)
+            for result in group.results
+            for finding in _iter_findings(result)
+        ]
+        findings = [finding for _task_id, finding in pairs]
+        facts = [fact for task_id, finding in pairs for fact in _finding_facts(task_id, finding)]
         slices.append(
             {
                 "title": group.title,

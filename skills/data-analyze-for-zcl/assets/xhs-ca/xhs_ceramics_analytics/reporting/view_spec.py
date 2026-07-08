@@ -33,7 +33,32 @@ TEMPLATES: frozenset[str] = TABLE_TEMPLATES | CHART_TEMPLATES
 _ALLOWED_ROW_KEYS: frozenset[str] = frozenset({"sort_by", "order", "top_n", "highlight"})
 _ALLOWED_ORDERS: frozenset[str] = frozenset({"asc", "desc"})
 
-_DIGIT_RE = re.compile(r"\d")
+_DIGIT_RE = re.compile(r"\d")  # any Unicode decimal digit — incl. fullwidth ０-９
+
+# A fabricated magnitude can also be smuggled in CJK numerals (九十九万 = 990000),
+# which carry no ASCII digit and so slip past ``_DIGIT_RE``. We flag either a run of
+# ≥2 adjacent CJK numerals (九十九万 / 三千万 / 十万) or a single numeral bound to a
+# magnitude unit (三成 / 五元). Incidental *single* numerals — ordinals (第一) and
+# "that block" (那一块) — carry no scale/unit neighbour and are tolerated, so the
+# design's own captions still pass. The bias is deliberate: a false-reject only drops
+# one curated view (the section keeps its prose), whereas a miss would ship a
+# fabricated number — over-blocking is the safe direction, so rare idioms like 千万别
+# are accepted casualties.
+_CJK_NUMERAL = "〇零一二三四五六七八九十百千万亿两"
+_CJK_MAGNITUDE_UNIT = "元成％%‰"
+_CJK_MAGNITUDE_RE = re.compile(
+    rf"[{_CJK_NUMERAL}]{{2,}}|[{_CJK_NUMERAL}]\s*[{_CJK_MAGNITUDE_UNIT}]"
+)
+
+
+def contains_fabricated_number(text: object) -> bool:
+    """True if ``text`` carries a bare number the numeric-trust boundary forbids.
+
+    Covers ASCII/fullwidth digits (``_DIGIT_RE``) and CJK-numeral magnitudes
+    (``_CJK_MAGNITUDE_RE``). Pure and never raises — non-str input is stringified,
+    so callers can scan any agent-authored caption/sentence uniformly."""
+    s = str(text)
+    return bool(_DIGIT_RE.search(s) or _CJK_MAGNITUDE_RE.search(s))
 
 # evidence_strength → reader-facing confidence tag (rule 5). NOT_JUDGABLE and any
 # unrecognized value degrade to the weakest tag rather than raising.
@@ -286,19 +311,19 @@ def _check_no_digits(spec: dict, errors: list[str]) -> None:
     content, and scanning it would false-reject a legitimate view."""
     for field_name in ("title", "how_to_read", "why_it_matters"):
         value = spec.get(field_name)
-        if value is not None and _DIGIT_RE.search(str(value)):
+        if value is not None and contains_fabricated_number(value):
             errors.append(f"{field_name} 含裸数字(数字只能出现在表格单元格中)")
     labels = spec.get("column_labels")
     if isinstance(labels, dict):
         for col, label in labels.items():
-            if label is not None and _DIGIT_RE.search(str(label)):
+            if label is not None and contains_fabricated_number(label):
                 errors.append(
                     f"column_labels[{col!r}] 含裸数字(数字只能出现在表格单元格中)"
                 )
     source = spec.get("source")
     if isinstance(source, dict):
         task_id = source.get("task_id")
-        if task_id is not None and _DIGIT_RE.search(str(task_id)):
+        if task_id is not None and contains_fabricated_number(task_id):
             errors.append(
                 "source.task_id 含裸数字(会被原样写入溯源脚注,数字只能出现在表格单元格中)"
             )
