@@ -10,7 +10,14 @@ import re
 from pathlib import Path
 
 from xhs_ceramics_analytics.paths import outputs_dir, state_dir
-from xhs_ceramics_analytics.reporting.factcheck_gate import run_gate
+from xhs_ceramics_analytics.reporting.factcheck_gate import (
+    _MAX_CHARTS_PER_SECTION,
+    _MAX_TABLES_PER_SECTION,
+    run_gate,
+)
+from xhs_ceramics_analytics.reporting.factcheck_gate import (
+    _view_label as _gate_view_label,
+)
 from xhs_ceramics_analytics.reporting.html import render_markdown_document_html
 from xhs_ceramics_analytics.reporting.narrative_render import (
     apply_continuity_edits,
@@ -21,6 +28,7 @@ from xhs_ceramics_analytics.reporting.report_telemetry import (
     append_run_record,
     build_run_record,
 )
+from xhs_ceramics_analytics.reporting.view_spec import CHART_TEMPLATES, TABLE_TEMPLATES
 
 MAX_FAN_AGENTS = 6
 MAX_GATE_ROUNDS = 2
@@ -881,6 +889,93 @@ def status_json(run_dir) -> dict:
     }
 
 
+# Gate failure codes that target ONE curated view (keyed by its `_view_label`), as
+# opposed to a claim (keyed by claim_id) or a whole section. A view carrying any of
+# these drops under the never-block contract; a claim-level failure has no view to
+# drop and keeps the exhaust→skeleton path.
+_PER_VIEW_GATE_CODES = frozenset(
+    {"VIEW_SPEC_INVALID", "VIEW_VALUE_MISMATCH", "VIEW_SUPPORTS_UNKNOWN_CLAIM"}
+)
+
+
+def _trim_views_to_cap(views: list) -> list:
+    """Keep views in order up to the per-domain cap (≤ tables + ≤ charts), dropping the
+    surplus that pushed a section over ``VIEW_OVERCAP``. A view with an unknown template
+    would already have failed ``VIEW_SPEC_INVALID`` and been dropped by label, so it is
+    kept here without counting (defensive). Never raises."""
+    tables = charts = 0
+    kept: list = []
+    for view in views:
+        template = view.get("template") if isinstance(view, dict) else None
+        if template in TABLE_TEMPLATES:
+            if tables >= _MAX_TABLES_PER_SECTION:
+                continue
+            tables += 1
+        elif template in CHART_TEMPLATES:
+            if charts >= _MAX_CHARTS_PER_SECTION:
+                continue
+            charts += 1
+        kept.append(view)
+    return kept
+
+
+def _drop_gate_failed_views(state: dict, hard_failures) -> bool:
+    """Drop every curated view the gate hard-failed, in place on ``state['sections']``.
+
+    The never-block contract (design §"any malformed spec, missing table, or unresolved
+    review drops that single view; the report still delivers exactly two artifacts. A
+    section with zero passing views degrades to prose-only"): a bad view is removed so
+    the next patch rebuild (via :func:`_bundle_from_state`) omits it, instead of
+    re-rendering the identical failing bundle every round until gate exhaustion routes
+    to the skeleton.
+
+    Per-view failures (:data:`_PER_VIEW_GATE_CODES`) are keyed by the gate's own
+    ``_view_label`` — reused verbatim so the drop matches the gate byte-for-byte,
+    including the positional ``{section_id}:curated_view[{idx}]`` fallback. ``VIEW_OVERCAP``
+    is keyed by ``section_id`` and trims that section back to the per-domain cap.
+    Claim-level failures carry no view label, so nothing drops for them — they keep the
+    exhaust→skeleton path (never-block is view-specific). Returns ``True`` iff any view
+    was removed/trimmed. Never raises."""
+    failed_labels: set[str] = set()
+    overcap_sections: set = set()
+    for failure in hard_failures or []:
+        if not isinstance(failure, dict):
+            continue
+        code = failure.get("code")
+        key = failure.get("claim_id")
+        if code in _PER_VIEW_GATE_CODES and isinstance(key, str) and key:
+            failed_labels.add(key)
+        elif code == "VIEW_OVERCAP":
+            overcap_sections.add(key)
+    if not failed_labels and not overcap_sections:
+        return False
+
+    sections = state.get("sections")
+    if not isinstance(sections, dict):  # a truthy non-dict (list/str) must not crash .items()
+        return False
+    changed = False
+    for sid, section in sections.items():
+        if not isinstance(section, dict):
+            continue
+        views = section.get("curated_views")
+        if not isinstance(views, (list, tuple)) or not views:
+            continue
+        # The gate labels views against the section_id it saw in the bundle
+        # (_bundle_from_state passes these very section dicts), so use the same.
+        section_id = section.get("section_id", sid)
+        kept = [
+            view
+            for idx, view in enumerate(views)
+            if _gate_view_label(view, section_id, idx) not in failed_labels
+        ]
+        if section_id in overcap_sections:
+            kept = _trim_views_to_cap(kept)
+        if len(kept) != len(views):
+            section["curated_views"] = kept
+            changed = True
+    return changed
+
+
 def _run_gate_stage(run_dir: Path, state: dict, facts_json: dict, project_root) -> dict:
     result_tables = _load_result_tables(run_dir)
     report = _run_gate(state.get("_bundle", _bundle_from_state(state)), facts_json, result_tables)
@@ -889,6 +984,10 @@ def _run_gate_stage(run_dir: Path, state: dict, facts_json: dict, project_root) 
         # numeric trust is now locked; a bundle with curated views goes to the
         # adversarial review stage, a prose-only bundle straight to continuity.
         return _enter_review_or_continuity(run_dir, state)
+    # Never-block: drop the curated views this round's gate hard-failed so the next
+    # patch rebuild omits them, rather than re-rendering the identical failing bundle
+    # until exhaustion. Claim-level failures drop nothing and still route to skeleton.
+    _drop_gate_failed_views(state, report.hard_failures)
     rounds = state.get("_gate_rounds", 0) + 1
     state["_gate_rounds"] = rounds
     if rounds > MAX_GATE_ROUNDS:

@@ -17,6 +17,7 @@ module only exposes :func:`count_view_kinds` for the gate to use.
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass, field
 
 from xhs_ceramics_analytics.evidence import EvidenceStrength
@@ -36,29 +37,77 @@ _ALLOWED_ORDERS: frozenset[str] = frozenset({"asc", "desc"})
 _DIGIT_RE = re.compile(r"\d")  # any Unicode decimal digit — incl. fullwidth ０-９
 
 # A fabricated magnitude can also be smuggled in CJK numerals (九十九万 = 990000),
-# which carry no ASCII digit and so slip past ``_DIGIT_RE``. We flag either a run of
-# ≥2 adjacent CJK numerals (九十九万 / 三千万 / 十万) or a single numeral bound to a
-# magnitude unit (三成 / 五元). Incidental *single* numerals — ordinals (第一) and
-# "that block" (那一块) — carry no scale/unit neighbour and are tolerated, so the
-# design's own captions still pass. The bias is deliberate: a false-reject only drops
-# one curated view (the section keeps its prose), whereas a miss would ship a
-# fabricated number — over-blocking is the safe direction, so rare idioms like 千万别
-# are accepted casualties.
+# which carry no ASCII digit and so slip past ``_DIGIT_RE``. We flag any of:
+#   • a run of ≥2 adjacent CJK numerals (九十九万 / 三千万 / 十万 / 五十);
+#   • a 点-linked decimal (三点五 = 3.5);
+#   • a single numeral bound to a magnitude unit — proportion/money (三成 / 五元), a
+#     multiplier (五倍) or a discount (八折);
+#   • a 分之-connective proportion (百分之五 = 5% / 三分之一 = 1/3 / 千分之二 = 2‰), plus
+#     the 百分百 contraction (= 100%). This is the dangerous case a single-numeral
+#     percentage/fraction otherwise escapes: 百分之五十 (2-run) and 五成 (unit) are
+#     caught, but 百分之五 has no run and no bound unit — the 之 connective separates its
+#     numerals — so without this branch a fabricated "5%" ships un-gated. The branch
+#     requires BOTH the 之 connective and a bound numeral, so non-quantity 分-words stay
+#     allowed: 十分满意 (very), 部分, 分析, 百分点 (几 not a numeral) all pass.
+# Incidental *single* numerals — ordinals (第一) and "that block" (那一块) — carry no
+# scale/unit neighbour and are tolerated, so the design's own captions still pass. The
+# bias is deliberate: a false-reject only drops one curated view (the section keeps its
+# prose), whereas a miss would ship a fabricated number — over-blocking is the safe
+# direction, so rare idioms (千万别, 万一 = "just in case", 一一 = "one by one") are
+# accepted casualties.
+#
+# Deliberately EXCLUDED: 块/角 (colloquial money) as units — they collide with the
+# measure-word phrase 一块 (a piece/area) that the design's own caption uses ("那一块"),
+# so treating them as magnitude units would false-reject legitimate prose (倍/折 have no
+# such collision — 翻倍/打折 carry no bound numeral — so they are safe). And 半 as a
+# numeral — it is a qualitative "half/semi" descriptor (减半/过半), and admitting it would
+# false-reject 半成品 (semi-finished ware, core ceramics vocabulary) via the 成 unit.
 _CJK_NUMERAL = "〇零一二三四五六七八九十百千万亿两"
-_CJK_MAGNITUDE_UNIT = "元成％%‰"
+_CJK_MAGNITUDE_UNIT = "元成％%‰倍折"
 _CJK_MAGNITUDE_RE = re.compile(
-    rf"[{_CJK_NUMERAL}]{{2,}}|[{_CJK_NUMERAL}]\s*[{_CJK_MAGNITUDE_UNIT}]"
+    rf"[{_CJK_NUMERAL}]{{2,}}"
+    rf"|[{_CJK_NUMERAL}]\s*点\s*[{_CJK_NUMERAL}]"
+    rf"|[{_CJK_NUMERAL}]\s*[{_CJK_MAGNITUDE_UNIT}]"
+    rf"|[{_CJK_NUMERAL}]\s*分\s*之\s*[{_CJK_NUMERAL}]"  # 百分之N / X分之Y 百分比·分数
+    rf"|百\s*分\s*百"  # 百分百 = 100% 的口语缩写(两个 百 不相邻,run 分支漏掉)
 )
+
+
+def _has_foreign_numeric_glyph(s: str) -> bool:
+    """True if any char is a *non-decimal* number glyph the plain ``\\d`` scan misses:
+    a vulgar fraction (½ ⅓), circled/parenthesised or superscript digit (① ③ ³), or a
+    Roman numeral (Ⅳ). These are Unicode number categories ``No``/``Nl`` — never used in
+    legitimate merchant prose, so a single one is a fabricated number. CJK numerals
+    (三 / 五 / 兆) are category ``Lo`` (ideographs), NOT ``No``/``Nl``, so this never
+    fires on them or on ideographic words like 征兆 — they are handled with nuance by
+    ``_CJK_MAGNITUDE_RE`` instead. ``〇`` is ``Nl`` but a CJK numeral, so it is skipped
+    explicitly. Decimal digits (``Nd``) are left to ``_DIGIT_RE``. Never raises."""
+    for ch in s:
+        if ch in _CJK_NUMERAL:
+            continue
+        if unicodedata.category(ch) in ("No", "Nl"):
+            return True
+    return False
 
 
 def contains_fabricated_number(text: object) -> bool:
     """True if ``text`` carries a bare number the numeric-trust boundary forbids.
 
-    Covers ASCII/fullwidth digits (``_DIGIT_RE``) and CJK-numeral magnitudes
-    (``_CJK_MAGNITUDE_RE``). Pure and never raises — non-str input is stringified,
-    so callers can scan any agent-authored caption/sentence uniformly."""
+    Three complementary detectors:
+      1. ASCII / fullwidth decimal digits (``_DIGIT_RE``);
+      2. CJK-numeral magnitudes (``_CJK_MAGNITUDE_RE``) — a ≥2-numeral run, a 点-linked
+         decimal, a numeral bound to a magnitude unit (成/元/倍/折), or a 分之-connective
+         proportion (百分之五 / 三分之一 / 百分百);
+      3. non-decimal number glyphs — fractions, circled/superscript digits, Roman
+         numerals (:func:`_has_foreign_numeric_glyph`).
+    Pure and never raises — non-str input is stringified, so callers can scan any
+    agent-authored caption/sentence uniformly."""
     s = str(text)
-    return bool(_DIGIT_RE.search(s) or _CJK_MAGNITUDE_RE.search(s))
+    return bool(
+        _DIGIT_RE.search(s)
+        or _CJK_MAGNITUDE_RE.search(s)
+        or _has_foreign_numeric_glyph(s)
+    )
 
 # evidence_strength → reader-facing confidence tag (rule 5). NOT_JUDGABLE and any
 # unrecognized value degrade to the weakest tag rather than raising.

@@ -213,3 +213,165 @@ def test_real_gate_passes_assembled_claims_bundle_and_renders_prose(tmp_path):
     # first-screen headline rendered too
     assert "大盘承压" in md
     assert "确定性骨架版" not in md  # narrative path, not skeleton fallback
+
+
+# ---- never-block: gate-failing curated views drop, report never skeletons ----
+# Design (§"any malformed spec, missing table, or unresolved review drops that single
+# view; the report still delivers exactly two artifacts. A section with zero passing
+# views degrades to prose-only"): a gate view-failure must DROP that view before the
+# next patch round, never re-render the identical failing bundle until exhaustion →
+# skeleton. Claim-level failures carry no view to drop and keep the exhaust→skeleton
+# path (never-block is view-specific).
+
+
+def test_drop_gate_failed_views_removes_labeled_view():
+    # A per-view failure (VIEW_SPEC_INVALID) is keyed by the gate's view label; the
+    # matching view drops, its healthy sibling stays.
+    state = {"sections": {
+        "生意大盘": {"section_id": "生意大盘", "curated_views": [
+            {"view_id": "v_bad", "template": "comparison_table"},
+            {"view_id": "v_ok", "template": "comparison_table"},
+        ]},
+    }}
+    hard = [{"code": "VIEW_SPEC_INVALID", "claim_id": "v_bad", "detail": "x"}]
+    assert nw._drop_gate_failed_views(state, hard) is True
+    assert [v["view_id"] for v in state["sections"]["生意大盘"]["curated_views"]] == ["v_ok"]
+
+
+def test_drop_gate_failed_views_uses_positional_label_when_no_view_id():
+    # A view with no view_id is labeled `{section_id}:curated_view[{idx}]` by the gate;
+    # the drop must map that positional label back to the right view.
+    state = {"sections": {
+        "s1": {"section_id": "s1", "curated_views": [
+            {"template": "comparison_table"},   # idx 0 -> "s1:curated_view[0]" -> drop
+            {"template": "ranking_table"},       # idx 1 -> kept
+        ]},
+    }}
+    hard = [{"code": "VIEW_VALUE_MISMATCH", "claim_id": "s1:curated_view[0]", "detail": "x"}]
+    assert nw._drop_gate_failed_views(state, hard) is True
+    kept = state["sections"]["s1"]["curated_views"]
+    assert len(kept) == 1 and kept[0]["template"] == "ranking_table"
+
+
+def test_drop_gate_failed_views_trims_overcap_section():
+    # An over-capped section (>2 tables) hard-fails VIEW_OVERCAP keyed by section_id;
+    # trim to the per-domain cap (≤2 tables + ≤1 chart) so a re-gate stops failing.
+    state = {"sections": {"s1": {"section_id": "s1", "curated_views": [
+        {"view_id": "t1", "template": "comparison_table"},
+        {"view_id": "t2", "template": "ranking_table"},
+        {"view_id": "t3", "template": "comparison_table"},  # 3rd table -> over cap
+        {"view_id": "c1", "template": "trend_line"},          # 1 chart is within cap
+    ]}}}
+    hard = [{"code": "VIEW_OVERCAP", "claim_id": "s1", "detail": "x"}]
+    assert nw._drop_gate_failed_views(state, hard) is True
+    kept = [v["view_id"] for v in state["sections"]["s1"]["curated_views"]]
+    assert kept == ["t1", "t2", "c1"]  # first two tables + the one chart; surplus table dropped
+
+
+def test_drop_gate_failed_views_noop_on_claim_level_failures():
+    # Claim-level failures (INVENTED_ENTITY / MISSING_FACT …) are NOT view failures —
+    # nothing drops, so they legitimately keep the exhaust→skeleton path.
+    state = {"sections": {"s1": {"section_id": "s1", "curated_views": [{"view_id": "v"}]}}}
+    hard = [{"code": "INVENTED_ENTITY", "claim_id": "c0", "detail": "x"}]
+    assert nw._drop_gate_failed_views(state, hard) is False
+    assert len(state["sections"]["s1"]["curated_views"]) == 1
+
+
+def test_drop_gate_failed_views_never_raises_on_garbage():
+    assert nw._drop_gate_failed_views({}, None) is False
+    assert nw._drop_gate_failed_views({"sections": None}, [{"code": "VIEW_SPEC_INVALID", "claim_id": "x"}]) is False
+    assert nw._drop_gate_failed_views({"sections": {"s": "not-a-dict"}}, ["garbage", 42]) is False
+    # a TRUTHY non-dict `sections` (list/str) must not blow up .items() — the never-raise
+    # contract covers malformed state, not just the falsy/None case.
+    hard = [{"code": "VIEW_SPEC_INVALID", "claim_id": "x"}]
+    assert nw._drop_gate_failed_views({"sections": ["not-a-dict"]}, hard) is False
+    assert nw._drop_gate_failed_views({"sections": "garbage"}, hard) is False
+
+
+def _analysis_with_table():
+    # Like _real_analysis but carries a real result.tables so build_narrative_results
+    # populates result_tables → the gate actually polices curated views (a bad view can
+    # then fail and be dropped, instead of the tables-empty prose-only short-circuit).
+    return [
+        AnalysisResult(
+            task_id="core_business_diagnosis",
+            title="大盘",
+            findings=[
+                Finding(
+                    title="GMV",
+                    conclusion="大盘走弱",
+                    evidence_strength=EvidenceStrength.STRONG,
+                    key_numbers={"gmv": 120000},
+                )
+            ],
+            tables={"growth_bridge": [
+                {"component": "转化", "delta_gmv": 12000},
+                {"component": "流量", "delta_gmv": 8000},
+            ]},
+        )
+    ]
+
+
+def test_gate_failed_view_drops_and_report_finalizes_not_skeleton(tmp_path):
+    # End-to-end never-block: a curated view referencing a ghost table hard-fails the
+    # REAL gate (VIEW_SPEC_INVALID). The controller must DROP that view and finalize
+    # the narrative — NOT re-render the identical failing bundle every round until
+    # gate exhaustion routes to the 确定性骨架版 skeleton.
+    analysis = _analysis_with_table()
+    results = build_narrative_results(analysis)
+    facts_json = json.loads(factbook_to_json(build_factbook(analysis)))
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    run_dir = tmp_path / "run"
+    nw.prepare_run(run_dir, results=results, facts_json=facts_json,
+                   report_name="叙事报告", project_root=proj)
+
+    claim = {
+        "claim_id": "c0",
+        "section_id": "生意大盘",
+        "claim_kind": "measurement",
+        "sentence": "GMV 为 {t0}。",
+        "number_tokens": [
+            {"token_id": "t0", "fact_id": "core_business_diagnosis.gmv", "expected_metric_key": "gmv"}
+        ],
+        "entity_refs": [],
+        "confidence": "强",
+    }
+    bad_view = {
+        "view_id": "core.ghost",
+        "section_id": "生意大盘",
+        "supports_claim": "c0",
+        "template": "comparison_table",
+        "source": {"task_id": "core_business_diagnosis", "table": "ghost_table"},  # not in result.tables
+        "columns": ["component"],
+        "title": "幽灵视图",
+        "how_to_read": "无",
+        "why_it_matters": "无",
+    }
+
+    nw.advance_run(run_dir, project_root=proj)  # seed -> fan
+    nw.ingest_output(run_dir, stage="fan",
+                     text=json.dumps({"section_id": "生意大盘", "title": "生意大盘",
+                                      "claims": [claim], "curated_views": [bad_view]},
+                                     ensure_ascii=False))
+    nw.advance_run(run_dir, project_root=proj)  # fan -> synth
+    nw.ingest_output(run_dir, stage="synth",
+                     text=json.dumps({
+                         "headline": "大盘承压",
+                         "first_screen": {"spine": [claim], "panel": [], "actions": ["复盘选品结构"]},
+                         "cannot_say": ["暂无法把订单归因到具体笔记"],
+                     }, ensure_ascii=False))
+
+    # Drive the controller to a terminal stage — robust to the exact number of internal
+    # gate/patch/continuity transitions (the drop adds one patch round vs the clean path).
+    state = nw._load_state(run_dir)
+    for _ in range(8):
+        state = nw.advance_run(run_dir, project_root=proj)
+        if state["stage"] in ("finalized", "blocked"):
+            break
+
+    assert state["stage"] == "finalized", "never-block: the bad view drops, the report finalizes"
+    md = (outputs_dir(proj) / "叙事报告.md").read_text(encoding="utf-8")
+    assert "确定性骨架版" not in md          # narrative path, NOT the exhaustion skeleton
+    assert "GMV 为 ¥12.0万" in md            # the healthy claim still renders as prose
+    assert "幽灵视图" not in md              # the dropped view left no trace in the output
