@@ -16,6 +16,7 @@ from typing import NamedTuple
 from xhs_ceramics_analytics.evidence import EvidenceStrength
 from xhs_ceramics_analytics.reporting.charts import render_chart_template
 from xhs_ceramics_analytics.reporting.confidence_pill import confidence_pill_html
+from xhs_ceramics_analytics.reporting.content_templates import content_templates_markdown
 from xhs_ceramics_analytics.reporting.curated_view import render_view
 from xhs_ceramics_analytics.reporting.factcheck_gate import (
     allowed_confidence_tag,
@@ -267,6 +268,10 @@ def bundle_to_markdown(
             # so the narrative reliably carries visuals instead of shipping prose-only.
             if chart_count == 0:
                 parts.extend(_fallback_chart_parts(heading, tables))
+    # 可复用内容模板: a static, number-free ceramics content playbook (领域内容模板库).
+    # Deterministic and reproducible — appended after the data sections and before the
+    # open-questions caveats, so the reader meets findings, then what-to-make, then gaps.
+    parts.append(content_templates_markdown())
     cannot = [
         s
         for s in (
