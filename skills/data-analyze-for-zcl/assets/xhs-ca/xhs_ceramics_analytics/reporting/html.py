@@ -1,5 +1,5 @@
 import re
-from html import escape
+from html import escape, unescape
 
 from jinja2 import Environment, PackageLoader
 
@@ -16,6 +16,7 @@ from xhs_ceramics_analytics.reporting.domains import (
 from xhs_ceramics_analytics.reporting.markdown import render_markdown
 from xhs_ceramics_analytics.reporting.priority import build_priority_table
 from xhs_ceramics_analytics.reporting.section_order import APPENDIX_TASKS
+from xhs_ceramics_analytics.reporting.toc import TOC_STYLE, build_toc_nav
 from xhs_ceramics_analytics.reporting.formatting import (
     field_help as _field_help,
     field_label as _field_label,
@@ -354,8 +355,38 @@ def render_html(
 
 def render_markdown_document_html(markdown_text: str, title: str | None = None) -> str:
     report_title = title or _extract_markdown_title(markdown_text) or "小红书账号分析报告"
-    body_html = _markdown_document_body(markdown_text)
+    body_html, toc_entries = _markdown_document_body(markdown_text)
+    toc_nav_html = build_toc_nav(toc_entries)
     escaped_title = escape(report_title)
+    # Narrative reading measure (960px); the wide envelope (960 + 232 rail + 44 gap
+    # = 1236, rounded to 1240) seats the rail beside the full 960px body. --toc-pad
+    # is left to TOC_STYLE's responsive value so it is not shadowed here.
+    narrative_toc_css = TOC_STYLE + (
+        "\n    .page-grid { --toc-content: 960px; --toc-content-wide: 1240px; }\n"
+    )
+
+    main_html = f"""<main class="report-shell">
+      <header class="topbar">
+        <div class="brand">小红书经营分析</div>
+        <div>Single-file HTML</div>
+      </header>
+      <article class="report-card">
+        <span class="eyebrow">Integrated Report</span>
+{body_html}
+      </article>
+    </main>"""
+
+    # Wrap in the sticky-TOC grid only when there is something to index; a doc with
+    # no sub-headings renders the bare shell (no empty rail column). The 960px reading
+    # measure and 32px gutter carry over via the narrative --toc-* overrides.
+    if toc_nav_html:
+        content_html = f"""<div class="page-grid">
+    {toc_nav_html}
+    {main_html}
+  </div>"""
+    else:
+        content_html = main_html
+
     return f"""<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -381,10 +412,15 @@ def render_markdown_document_html(markdown_text: str, title: str | None = None) 
       font-family: 'SF Pro Display', 'Geist Sans', 'Helvetica Neue', sans-serif;
       line-height: 1.68;
     }}
+    /* Width/centering belongs to .page-grid when the TOC rail is present; a
+       rail-less document (only an h1, no sub-headings) renders .report-shell as a
+       direct child of <body>, so it self-centers via the body> rule below. */
     .report-shell {{
-      width: min(960px, calc(100% - 32px));
-      margin: 0 auto;
       padding: 32px 0 72px;
+    }}
+    body > .report-shell {{
+      width: min(960px, calc(100% - 24px));
+      margin: 0 auto;
     }}
     .topbar {{
       display: flex;
@@ -485,23 +521,14 @@ def render_markdown_document_html(markdown_text: str, title: str | None = None) 
       margin: 32px 0;
     }}
     @media (max-width: 700px) {{
-      .report-shell {{ width: min(100% - 24px, 960px); }}
       .report-card {{ border-radius: 8px; }}
       h2 {{ font-size: 26px; }}
     }}
+{narrative_toc_css}
   </style>
 </head>
 <body>
-  <main class="report-shell">
-    <header class="topbar">
-      <div class="brand">小红书经营分析</div>
-      <div>Single-file HTML</div>
-    </header>
-    <article class="report-card">
-      <span class="eyebrow">Integrated Report</span>
-{body_html}
-    </article>
-  </main>
+  {content_html}
 </body>
 </html>
 """
@@ -516,9 +543,21 @@ def _extract_markdown_title(markdown_text: str) -> str | None:
     return None
 
 
-def _markdown_document_body(markdown_text: str) -> str:
+def _markdown_document_body(
+    markdown_text: str,
+) -> tuple[str, list[dict[str, object]]]:
+    """Convert markdown to the report body HTML AND collect its TOC entries.
+
+    Every level-2/level-3 heading gets a stable sequential id (``sec-N``) so the
+    persistent rail can anchor-scroll to it; the returned entry list (in document
+    order, carrying each heading's level, anchor id, and cleaned label) is handed
+    to :func:`reporting.toc.build_toc_nav`. The h1 title is intentionally excluded
+    — it is the document header, not a navigable section.
+    """
     lines = markdown_text.splitlines()
     blocks: list[str] = []
+    toc_entries: list[dict[str, object]] = []
+    heading_counter = 0
     index = 0
     while index < len(lines):
         line = lines[index]
@@ -560,7 +599,18 @@ def _markdown_document_body(markdown_text: str) -> str:
         heading_level = _heading_level(stripped)
         if heading_level is not None:
             text = stripped[heading_level + 1 :].strip()
-            blocks.append(f"<h{heading_level}>{_inline_markdown(text)}</h{heading_level}>")
+            if heading_level in (2, 3):
+                heading_counter += 1
+                anchor = f"sec-{heading_counter}"
+                toc_entries.append(
+                    {"level": heading_level, "anchor": anchor, "label": _toc_label(text)}
+                )
+                blocks.append(
+                    f'<h{heading_level} id="{anchor}">'
+                    f"{_inline_markdown(text)}</h{heading_level}>"
+                )
+            else:
+                blocks.append(f"<h{heading_level}>{_inline_markdown(text)}</h{heading_level}>")
             index += 1
             continue
 
@@ -608,7 +658,22 @@ def _markdown_document_body(markdown_text: str) -> str:
             index += 1
         blocks.append(f"<p>{_inline_markdown(' '.join(paragraph_lines))}</p>")
 
-    return "\n".join(f"      {block}" for block in blocks)
+    return "\n".join(f"      {block}" for block in blocks), toc_entries
+
+
+def _toc_label(text: str) -> str:
+    """Plain-text rail label matching the heading's *rendered* text.
+
+    Runs the same inline-markdown pass the heading body uses, then drops the
+    only tags it can emit (``<strong>``/``<code>``) and unescapes. This removes
+    *paired* emphasis/code markers (``**bold**`` → ``bold``, `` `code` `` →
+    ``code``) exactly as the body shows them, while a lone ``*``/`` ` `` that is
+    genuine content (``3*2``, a footnote asterisk) — and every emoji — is
+    preserved verbatim rather than globally deleted.
+    """
+    rendered = re.sub(r"</?(?:strong|code)>", "", _inline_markdown(text))
+    label = unescape(rendered).strip()
+    return label or text.strip()
 
 
 def _heading_level(stripped: str) -> int | None:
@@ -694,22 +759,67 @@ def _inline_markdown(text: str) -> str:
     return "".join(rendered)
 
 
+# Fact-layer TOC widths: keep the historical 1180px shell. The wide envelope must
+# seat the full 1180px content column BESIDE the 232px rail + 44px gap, so it is
+# sized 1180 + 232 + 44 = 1456px — otherwise the content column would stay narrower
+# on wide screens than it was just below the breakpoint. Only --toc-content* is
+# overridden; --toc-pad stays responsive inside TOC_STYLE.
+_FACT_TOC_STYLE = TOC_STYLE + (
+    "\n    .page-grid { --toc-content: 1180px; --toc-content-wide: 1456px; }\n"
+)
+
+
+def _fact_toc_entries(
+    analysis_groups: list[dict[str, object]],
+    has_priority: bool,
+    assistant_name: str,
+) -> list[dict[str, object]]:
+    """Ordered TOC entries mirroring the fact-layer section order.
+
+    The static top-level sections always render (so they are always listed); the
+    priority section is conditional; each analysis domain becomes a level-3
+    sub-entry under 详细分析, anchored to its ``.section-panel`` id.
+    """
+    entries: list[dict[str, object]] = [
+        {"level": 2, "anchor": "how-to-read", "label": "怎么读"},
+        {"level": 2, "anchor": "guide", "label": "经营导读"},
+    ]
+    if has_priority:
+        entries.append({"level": 2, "anchor": "priority", "label": "先动顺序"})
+    entries.append({"level": 2, "anchor": "actions", "label": "行动计划"})
+    entries.append({"level": 2, "anchor": "analysis", "label": "详细分析"})
+    for group in analysis_groups:
+        anchor = group.get("anchor_id")
+        label = group.get("title")
+        if isinstance(anchor, str) and isinstance(label, str):
+            entries.append({"level": 3, "anchor": anchor, "label": label})
+    entries.append({"level": 2, "anchor": "appendix", "label": "数据附录"})
+    entries.append({"level": 2, "anchor": "assistant", "label": f"{assistant_name} 追问"})
+    return entries
+
+
 def _build_report_context(
     results: list[AnalysisResult], assistant: str | None = None
 ) -> dict[str, object]:
     findings = [finding for result in results for finding in result.findings]
     total_table_rows = sum(len(rows) for result in results for rows in result.tables.values())
     result_views = [_result_view(result) for result in results]
+    assistant_name = (assistant or _DEFAULT_ASSISTANT_NAME).strip() or _DEFAULT_ASSISTANT_NAME
+    priority_table = _priority_table_view(results)
+    analysis_groups = _analysis_groups(results, result_views)
+    toc_entries = _fact_toc_entries(analysis_groups, bool(priority_table), assistant_name)
     return {
         "task_count": len(results),
         "finding_count": len(findings),
         "table_count": sum(len(result.tables) for result in results),
         "total_table_rows": total_table_rows,
-        "assistant_name": (assistant or _DEFAULT_ASSISTANT_NAME).strip() or _DEFAULT_ASSISTANT_NAME,
+        "assistant_name": assistant_name,
         "highlights": _business_highlights(results),
-        "priority_table": _priority_table_view(results),
+        "priority_table": priority_table,
         "actions": _business_actions(results, findings),
-        "analysis_groups": _analysis_groups(results, result_views),
+        "analysis_groups": analysis_groups,
+        "toc_nav_html": build_toc_nav(toc_entries),
+        "toc_style": _FACT_TOC_STYLE,
         "evidence_counts": _evidence_counts(findings),
         "evidence_chart_svg": charts.evidence_distribution(_evidence_counts(findings)),
         "assistant_questions": _codex_questions(results),
@@ -852,7 +962,7 @@ def _row_cells(row: dict[str, object], columns: list[str]) -> list[dict[str, str
 
 
 def _domain_group_view(
-    title: str, intro: str, views: list[dict[str, object]]
+    title: str, intro: str, views: list[dict[str, object]], anchor_id: str
 ) -> dict[str, object]:
     """Two-level shape: one headline result (rendered as a big card) + the rest folded.
 
@@ -860,10 +970,14 @@ def _domain_group_view(
     ``APPENDIX_TASKS`` order), so the first is the one the reader should act on first;
     the rest fold into a ``<details>`` so the domain reads as "here's the lever, expand
     for the supporting modules" rather than an undifferentiated pile (#2/#19).
+
+    ``anchor_id`` is the stable in-page id the persistent TOC rail links to (the
+    template stamps it on the domain's ``.section-panel``).
     """
     return {
         "title": title,
         "intro": intro,
+        "anchor_id": anchor_id,
         "headline_result": views[0] if views else None,
         "secondary_results": views[1:],
     }
@@ -891,7 +1005,11 @@ def _analysis_groups(
         ]
         if not views:
             continue
-        grouped.append(_domain_group_view(domain.title, domain.intro, views))
+        grouped.append(
+            _domain_group_view(
+                domain.title, domain.intro, views, f"analysis-{len(grouped) + 1}"
+            )
+        )
 
     appendix_views = [
         views_by_task[task_id] for task_id in APPENDIX_TASKS if task_id in views_by_task
@@ -902,6 +1020,7 @@ def _analysis_groups(
                 str(_APPENDIX_GROUP["title"]),
                 str(_APPENDIX_GROUP["description"]),
                 appendix_views,
+                f"analysis-{len(grouped) + 1}",
             )
         )
     return grouped
