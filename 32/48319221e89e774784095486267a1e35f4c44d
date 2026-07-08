@@ -1,0 +1,55 @@
+xhs_ceramics_analytics/reporting/toc.py
+  s_6bd2349b4ebd4d::t_0cc4c07cb5381f 141-144
+  s_6bd2349b4ebd4d::t_c0a13d0a2d8606 1-140,145-152,157-213,215-259
+  s_6bd2349b4ebd4d::t_8da4e7e4cd6bff 153-156
+  s_6bd2349b4ebd4d::t_275bb3f183072e 214
+tests/test_report_rendering.py
+  s_6bd2349b4ebd4d::t_47cdad69612da4 438-439
+tests/reporting/test_toc.py
+  s_6bd2349b4ebd4d::t_73b0cae65ba856 226-247
+  s_6bd2349b4ebd4d::t_a96e78790811c5 1-173,191-225
+  s_6bd2349b4ebd4d::t_40f37e527a780f 174-190
+xhs_ceramics_analytics/reporting/html.py
+  s_6bd2349b4ebd4d::t_a01711c4759ead 762-766,768
+  s_6bd2349b4ebd4d::t_099455bdd52a90 19
+  s_6bd2349b4ebd4d::t_f30b97709f6153 665,667-672,674-675
+  s_6bd2349b4ebd4d::t_fd0beae977c890 807-810,816,818,820-822
+  s_6bd2349b4ebd4d::t_3f8f85593357d0 546-556,559-560
+  s_6bd2349b4ebd4d::t_497e585bd53b9a 767,769-800
+  s_6bd2349b4ebd4d::t_d8ee387405d7d2 361-363,365
+  s_6bd2349b4ebd4d::t_0d01dda0cf1aa5 1008-1012,1023
+  s_6bd2349b4ebd4d::t_4aa57047a463b8 602-613
+  s_6bd2349b4ebd4d::t_5284b2c2f5142f 527
+  s_6bd2349b4ebd4d::t_10161ce36bd79c 358-359,367-389
+  s_6bd2349b4ebd4d::t_afb44319c9cb21 661-664,666,673,676
+  s_6bd2349b4ebd4d::t_adf9b909e8716a 965,973-975,980
+  s_6bd2349b4ebd4d::t_0134cb7b2788d2 422
+  s_6bd2349b4ebd4d::t_9bd12f0ba37753 2
+  s_6bd2349b4ebd4d::t_57fefd6d0cb534 415-417,421
+  s_6bd2349b4ebd4d::t_987a20491ed940 364,366
+  s_6bd2349b4ebd4d::t_b08f09e89185de 531
+xhs_ceramics_analytics/reporting/templates/report.html.j2
+  s_6bd2349b4ebd4d::t_de814a22a957c6 1289
+  s_6bd2349b4ebd4d::t_86daee32595b31 1296
+  s_6bd2349b4ebd4d::t_90fe2e5f20c545 1049-1050
+  s_6bd2349b4ebd4d::t_c47fe8496197ef 289-290
+  s_6bd2349b4ebd4d::t_fbae8875b20066 1055-1057,1060
+  s_6bd2349b4ebd4d::t_a2743eac89a809 999,1007,1017
+  s_6bd2349b4ebd4d::t_d68783498754d6 1222
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.32-trip",
+  "base_commit_sha": "3248319221e89e774784095486267a1e35f4c44d",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
