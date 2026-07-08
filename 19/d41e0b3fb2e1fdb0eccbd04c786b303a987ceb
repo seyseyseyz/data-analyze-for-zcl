@@ -1,0 +1,37 @@
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/orchestration/test_runbook.py
+  ai_agent 111,113-120
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/reporting/test_factcheck_gate_views.py
+  ai_agent 9-12,105-107,112-113,117,188-193,195,202-203,206,210,213-214
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/reporting/factcheck_gate.py
+  ai_agent 20,25-27,239,241-244
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/reporting/view_spec.py
+  ai_agent 14-16,26-27,183-185,203-204
+skills/data-analyze-for-zcl/assets/xhs-ca/orchestration/runbook.md
+  s_6bd2349b4ebd4d::t_5123830c86f8ef 87-91
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/orchestration/test_narrative_workflow_claims.py
+  ai_agent 300-303,307-309,311-312,314
+skills/data-analyze-for-zcl/assets/xhs-ca/references/cheatsheet.md
+  s_6bd2349b4ebd4d::t_5123830c86f8ef 90
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/reporting/test_view_spec.py
+  ai_agent 4-5,493
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/orchestration/narrative_workflow.py
+  ai_agent 13,28,280-282,998-1002,1011
+skills/data-analyze-for-zcl/assets/xhs-ca/orchestration/dag.md
+  s_6bd2349b4ebd4d::t_5123830c86f8ef 72-75
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.33-trip",
+  "base_commit_sha": "19d41e0b3fb2e1fdb0eccbd04c786b303a987ceb",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
