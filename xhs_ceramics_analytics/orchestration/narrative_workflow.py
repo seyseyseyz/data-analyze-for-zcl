@@ -183,7 +183,42 @@ def _write_seed_brief(run_dir: Path, capped_slices: list[dict], report_name: str
     (run_dir / "briefs" / "seed.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def _write_fan_briefs(run_dir: Path, capped_slices: list[dict]) -> list[Path]:
+def _tables_catalog(result_tables: object) -> dict[str, list[str]]:
+    """Compact ``{table_name: [column names]}`` inventory of the already-computed
+    ``result.tables`` — the schema the fan brief hands the curation agent so it can
+    name a REAL ``source.table`` + ``columns`` instead of guessing blind (whereupon the
+    gate drops the view and the section silently degrades to prose-only).
+
+    NAMES ONLY — never row values, so the brief stays number-free by construction and no
+    new fabrication channel opens (the deterministic engine still fills every displayed
+    number from ``result.tables``, independent of what the agent was shown). Column order
+    is first-seen across rows (deterministic → stable brief output). Empty/garbage tables
+    and tables with no dict rows are dropped (nothing authorable there). A missing/garbage
+    ``result_tables`` yields ``{}`` so prose-only runs still get a valid brief. Never raises.
+    """
+    catalog: dict[str, list[str]] = {}
+    if not isinstance(result_tables, dict):
+        return catalog
+    for name, rows in result_tables.items():
+        if not isinstance(name, str) or not name or not isinstance(rows, (list, tuple)):
+            continue
+        cols: list[str] = []
+        seen: set[str] = set()
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            for col in row.keys():
+                if isinstance(col, str) and col not in seen:
+                    seen.add(col)
+                    cols.append(col)
+        if cols:
+            catalog[name] = cols
+    return catalog
+
+
+def _write_fan_briefs(
+    run_dir: Path, capped_slices: list[dict], tables_catalog: dict[str, list[str]]
+) -> list[Path]:
     paths: list[Path] = []
     briefs = run_dir / "briefs"
     for idx, s in enumerate(capped_slices):
@@ -193,6 +228,10 @@ def _write_fan_briefs(run_dir: Path, capped_slices: list[dict]) -> list[Path]:
             "title": s["title"],
             "facts": s.get("facts", []),
             "reading": s.get("reading", {}),
+            # NAMES ONLY (no values) — the schema the curation agent selects source.table
+            # + columns from; the same catalog is shared by every section (the gate imposes
+            # no per-section allowlist; relevance is governed by supports_claim discipline).
+            "available_tables": tables_catalog,
         }
         body = [
             f"# Fan brief — {s['title']}",
@@ -209,8 +248,13 @@ def _write_fan_briefs(run_dir: Path, capped_slices: list[dict]) -> list[Path]:
             "每个 number_token 的 fact_id 必须精确等于下方某个 facts[].fact_id;",
             "没有 fact_id 的 fact 是标签(非数值),不能被 number_token 绑定。",
             "",
-            "curated_views(可选,每域 ≤2 表 + ≤1 图):只从已算好的源表里选列/排序/TopN,",
-            "supports_claim 必须指向本域某条 claim_id;标题/图注是纯文字,不得含裸数字。",
+            "curated_views(可选,每域 ≤2 表 + ≤1 图):",
+            '  source 形如 {"task_id":"…","table":"<下方 available_tables 里的表名>"};',
+            "  columns 必须是该表列名的子集;只做选列/排序/TopN,严禁聚合或改数;",
+            "  supports_claim 必须指向本域某条 claim_id;标题/图注/列标签是纯文字,不得含裸数字;",
+            "  只挑与本域 claim 相关的表(available_tables 是全量目录,并非都要用);",
+            "  available_tables 只给表名与列名(不含数值)—— 人类可读列名写进 column_labels,",
+            "  别把带数字的原始表名/列名抄进图注(会被判为裸数字而丢弃该视图)。",
             "",
             'Return JSON only: {"section_id","title","claims":[...],"curated_views":[...]}.',
             "",
@@ -315,8 +359,17 @@ def prepare_run(
         ),
         encoding="utf-8",
     )
+    # Resolve the already-computed result.tables up front: it is BOTH the numeric-trust
+    # source persisted below (for the curated-view engine + gate) AND the schema the fan
+    # brief exposes so the curation agent can name a real source.table + columns instead
+    # of guessing blind. Absent/garbage degrades to {} → prose-only. (Persist happens later
+    # so the write stays alongside facts.json; the value is computed once here.)
+    tables = results.get("result_tables")
+    if not isinstance(tables, dict):
+        tables = results.get("tables") if isinstance(results.get("tables"), dict) else {}
+
     _write_seed_brief(run_dir, capped, report_name)
-    _write_fan_briefs(run_dir, capped)
+    _write_fan_briefs(run_dir, capped, _tables_catalog(tables))
 
     state = {
         "stage": "seed",
@@ -335,10 +388,7 @@ def prepare_run(
         json.dumps(facts_json, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     # persist the already-computed result.tables (numeric-trust source for the
-    # curated-view engine + gate). Absent/garbage degrades to {} → prose-only.
-    tables = results.get("result_tables")
-    if not isinstance(tables, dict):
-        tables = results.get("tables") if isinstance(results.get("tables"), dict) else {}
+    # curated-view engine + gate; resolved above so the brief could expose its schema).
     (run_dir / _RESULT_TABLES_FILE).write_text(
         json.dumps(tables, ensure_ascii=False, indent=2), encoding="utf-8"
     )

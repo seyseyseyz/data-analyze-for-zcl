@@ -50,6 +50,50 @@ def test_fan_brief_requests_claims_and_exposes_fact_ids(tmp_path):
     assert "core_business_diagnosis.gmv" in brief
 
 
+# ---- Gap C: fan brief exposes the table/column catalog so source.table is authorable --
+# Without a schema inventory the curation agent guesses source.table + columns blind and
+# the gate drops every view → the section silently degrades to prose-only. The brief must
+# hand the agent the real table NAMES + COLUMN names (never values/rows — the brief stays
+# number-free by design) so it can reference a real table.
+
+
+def test_tables_catalog_lists_columns_by_table_names_only():
+    catalog = nw._tables_catalog({
+        "growth_bridge": [
+            {"component": "转化", "delta_gmv": 34567},
+            {"component": "流量", "delta_gmv": 8000, "note": "x"},  # 'note' is new in a later row
+        ],
+        "empty": [],          # no rows → dropped (nothing authorable)
+        "": [{"a": 1}],        # blank table name → dropped
+    })
+    # names + first-seen column order, deterministic, NO values
+    assert catalog["growth_bridge"] == ["component", "delta_gmv", "note"]
+    assert "empty" not in catalog
+    assert "" not in catalog
+    assert "34567" not in str(catalog)  # values never enter the catalog
+
+
+def test_tables_catalog_never_raises_on_garbage():
+    assert nw._tables_catalog(None) == {}
+    assert nw._tables_catalog("nope") == {}
+    assert nw._tables_catalog({"t": "not-rows"}) == {}
+    assert nw._tables_catalog({"t": ["not-a-dict", 42]}) == {}
+
+
+def test_fan_brief_exposes_available_table_names_and_columns(tmp_path):
+    results = {
+        "domain_slices": [_slice_with_fact()],
+        "result_tables": {"growth_bridge": [{"component": "转化", "delta_gmv": 34567}]},
+    }
+    facts_json = {"facts_hash": "h", "facts": {}}
+    nw.prepare_run(tmp_path, results=results, facts_json=facts_json, report_name="r")
+    brief = (tmp_path / "briefs" / "fan_00_生意大盘.md").read_text(encoding="utf-8")
+    assert "available_tables" in brief             # the catalog key the agent consumes
+    assert "growth_bridge" in brief                # a real table name it may reference
+    assert "component" in brief and "delta_gmv" in brief  # its real columns
+    assert "34567" not in brief                    # NAMES ONLY — no row value leaks in
+
+
 # ---- (d) _record_section preserves claims + spine_callbacks ---------------
 
 def test_record_section_preserves_claims_and_callbacks(tmp_path):
