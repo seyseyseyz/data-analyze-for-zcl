@@ -26,6 +26,7 @@ from xhs_ceramics_analytics.reporting.formatting import (
     format_scalar,
     is_timeseries_table,
 )
+from xhs_ceramics_analytics.reporting.table_labels import table_label
 from xhs_ceramics_analytics.reporting.view_spec import (
     CHART_TEMPLATES,
     ViewSpec,
@@ -299,11 +300,15 @@ def _source_columns(source_rows: object) -> list[str]:
 
 
 def _provenance(view: ViewSpec, confidence: str) -> str:
-    """The light audit stamp ``来源:{task_id} · {table} · 证据:{confidence}``."""
+    """The light audit stamp ``来源:{table_label} · 证据:{confidence}``.
+
+    The internal ``task_id`` is deliberately dropped — it is a system slug that meant
+    nothing to a merchant and only cluttered the footer. The table is named by its
+    human :func:`table_label` (the same name the fact-layer appendix uses), so the
+    reader sees "来源:高机会/高流失搜索词" rather than "来源:xxx · search_term_opportunities"."""
     source = view.source if isinstance(view.source, dict) else {}
-    task_id = str(source.get("task_id") or "")
-    table = str(source.get("table") or "")
-    return f"来源:{task_id} · {table} · 证据:{confidence}"
+    table = source.get("table")
+    return f"来源:{table_label(table)} · 证据:{confidence}"
 
 
 def _safe_confidence(finding: object) -> str:

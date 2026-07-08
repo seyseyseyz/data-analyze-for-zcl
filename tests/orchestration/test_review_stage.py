@@ -215,8 +215,10 @@ def test_finalize_narrative_carries_retained_curated_views(tmp_path):
     assert "拉新" in md and "45" in md
     # agent-authored caption + emoji survive verbatim
     assert "增长拆解 🍵" in md
-    # provenance stamp locates the source table in the audit trail
-    assert "来源:core_business_diagnosis" in md
+    # provenance stamp locates the source table in the audit trail — de-leaked:
+    # named by the table's human label, no internal task_id
+    assert "来源:growth bridge" in md
+    assert "core_business_diagnosis" not in md
     # both artifacts land
     assert (outputs_dir(tmp_path) / "叙事报告.html").exists()
 

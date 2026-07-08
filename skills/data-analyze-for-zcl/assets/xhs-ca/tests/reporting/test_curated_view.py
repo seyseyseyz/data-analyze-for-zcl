@@ -176,9 +176,12 @@ def test_confidence_degrades_to_weak_without_a_finding():
 
 # ---- provenance stamp format ----------------------------------------------
 
-def test_provenance_stamp_format():
+def test_provenance_stamp_drops_task_id_and_names_table_by_label():
     view = render_view(_table_spec(), _tables(), finding=_finding(EvidenceStrength.MEDIUM))
-    assert view.provenance == "来源:core_business_diagnosis · growth_bridge · 证据:中"
+    # De-leak: the internal task_id no longer reaches the merchant-facing footer; the
+    # table is named by its human label (this synthetic key degrades to a readable form).
+    assert view.provenance == "来源:growth bridge · 证据:中"
+    assert "core_business_diagnosis" not in view.provenance
 
 
 # ---- degradation: malformed spec / missing table / missing column ---------

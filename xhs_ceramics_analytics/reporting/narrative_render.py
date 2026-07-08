@@ -27,6 +27,7 @@ from xhs_ceramics_analytics.reporting.html import (
     render_markdown_document_html,
 )
 from xhs_ceramics_analytics.reporting.markdown import render_markdown
+from xhs_ceramics_analytics.reporting.table_labels import table_label
 
 _TOKEN_RE = re.compile(r"\{t\d+\}")
 _DIGIT_RE = re.compile(r"\d")
@@ -341,37 +342,41 @@ class _FallbackChart(NamedTuple):
 _FALLBACK_CHARTS: dict[str, tuple[_FallbackChart, ...]] = {
     "生意大盘": (
         _FallbackChart("business_trend", "trend_line", "date", "gmv",
-                       "GMV 走势（自动补图）", "每日 GMV 走势，数据来自事实层。"),
+                       "GMV 走势", "每日 GMV 走势。"),
     ),
     "流量与内容": (
         _FallbackChart("channel_scale", "share_bar", "carrier_zh", "gmv_share",
-                       "渠道结构（自动补图）", "各渠道 GMV 占比，数据来自事实层。"),
+                       "渠道结构", "各渠道 GMV 占比。"),
         _FallbackChart("search_conversion_trend", "trend_line", "period", "avg_pay_conversion",
-                       "搜索支付转化走势（自动补图）", "搜索承接的支付转化走势，数据来自事实层。"),
+                       "搜索支付转化走势", "搜索承接的支付转化走势。"),
     ),
     "商品结构": (
         _FallbackChart("sku_category_l2_mix", "share_bar", "category_l2", "gmv_share",
-                       "品类 GMV 分布（自动补图）", "各二级品类 GMV 占比，数据来自事实层。"),
+                       "品类 GMV 分布", "各二级品类 GMV 占比。"),
         _FallbackChart("sku_category_mix", "share_bar", "category_l1", "gmv_share",
-                       "品类 GMV 分布（自动补图）", "各一级品类 GMV 占比，数据来自事实层。"),
+                       "品类 GMV 分布", "各一级品类 GMV 占比。"),
     ),
     "用户与需求": (
         _FallbackChart("audience_conversion_comparison", "share_bar", "audience_type", "conversion",
-                       "新老客转化对比（自动补图）", "新老客支付转化对比，数据来自事实层。"),
+                       "新老客转化对比", "新老客支付转化对比。"),
         _FallbackChart("audience_gmv_contribution", "share_bar", "audience_type", "gmv_share",
-                       "新老客 GMV 贡献（自动补图）", "新老客 GMV 占比，数据来自事实层。"),
+                       "新老客 GMV 贡献", "新老客 GMV 占比。"),
     ),
     "退款与售后": (
         _FallbackChart("refund_by_ship_stage", "share_bar", "stage_zh", "rate",
-                       "退款环节分布（自动补图）", "发货前后退款率对比，数据来自事实层。"),
+                       "退款环节分布", "发货前后退款率对比。"),
         _FallbackChart("refund_by_category", "share_bar", "category_l1", "refund_rate",
-                       "各品类退款率（自动补图）", "各一级品类退款率，数据来自事实层。"),
+                       "各品类退款率", "各一级品类退款率。"),
     ),
 }
 
-# Stamped under every auto-injected chart so a reader can tell a fallback visual apart
-# from an agent-curated one and trace its numbers back to the fact layer.
-_FALLBACK_PROVENANCE = "> 来源：事实层 result_tables · 叙事层未产出图表时自动补图"
+
+def _fallback_provenance(table: str) -> str:
+    """Provenance stamped under an auto-injected chart, naming its source table by the
+    same human :func:`table_label` the curated views and appendix use. The internal
+    "事实层 result_tables · 自动补图" wording is deliberately gone — it named an
+    implementation layer, not anything a merchant recognizes."""
+    return f"> 来源:{table_label(table)}"
 
 # The set of tables the fallback can actually chart — the definition of "the fact layer
 # had chartable data" that the visuals_missing degradation signal keys off.
@@ -418,7 +423,7 @@ def _fallback_chart_parts(domain_title: str, result_tables: dict) -> list[str]:
             parts = [f"### {cand.title}", _raw_html_block(str(svg))]
             if cand.caption:
                 parts.append(cand.caption)
-            parts.append(_FALLBACK_PROVENANCE)
+            parts.append(_fallback_provenance(cand.table))
             return parts
         return []
     except Exception:

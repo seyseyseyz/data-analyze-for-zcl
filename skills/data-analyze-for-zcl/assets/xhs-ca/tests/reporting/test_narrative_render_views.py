@@ -120,8 +120,9 @@ def test_bundle_to_markdown_renders_curated_view_tables_and_charts():
     assert "GMV 增长拆解" in md
     assert "越靠上影响越大" in md
     assert "锁定被抵消的那一块" in md
-    # provenance stamp footer
-    assert "来源:core_business_diagnosis · growth_bridge · 证据:" in md
+    # provenance stamp footer — de-leaked: table named by label, no task_id
+    assert "来源:growth bridge · 证据:" in md
+    assert "core_business_diagnosis" not in md
 
 
 def test_html_conversion_preserves_raw_table_and_svg_not_escaped():
@@ -328,6 +329,11 @@ def test_fallback_injects_chart_when_section_has_no_curated_chart():
     assert nr.RAW_HTML_OPEN in md         # deterministic passthrough block emitted
     assert "<svg" in md                   # a chart was auto-injected
     assert "GMV 走势" in md               # the fallback title
+    # De-leak: the internal "auto-filled"/"fact-layer" wording never reaches the reader;
+    # the fallback provenance names its source table by its human label instead.
+    assert "（自动补图）" not in md
+    assert "事实层" not in md
+    assert "来源:GMV 趋势与结构性变化" in md
     html = render_markdown_document_html(md)
     assert "<svg" in html and "&lt;svg" not in html   # survives md→HTML unescaped
 
