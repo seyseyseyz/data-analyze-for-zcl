@@ -22,6 +22,7 @@ from xhs_ceramics_analytics.reporting.html import render_markdown_document_html
 from xhs_ceramics_analytics.reporting.narrative_render import (
     apply_continuity_edits,
     bundle_to_markdown,
+    has_chartable_tables,
     render_draft,
 )
 from xhs_ceramics_analytics.reporting.report_telemetry import (
@@ -284,7 +285,8 @@ def _write_fan_briefs(
             "每个 number_token 的 fact_id 必须精确等于下方某个 facts[].fact_id;",
             "没有 fact_id 的 fact 是标签(非数值),不能被 number_token 绑定。",
             "",
-            "curated_views(可选,每域 ≤2 表 + ≤1 图; 有合适时至少给 1 个图):",
+            "curated_views(每域必须给 1-2 表 + 1 个图;仅当本域 available_tables 里确无可画的表时,"
+            "才可省略图并在对应 claim 里说明原因 —— 缺图会被记为 visuals_missing):",
             '  必填 template, 只允许 "comparison_table"|"ranking_table"|"trend_line"|"breakdown_waterfall"|"share_bar";',
             '  source 形如 {"task_id":"…","table":"<下方 available_tables 里的表名>"};',
             "  columns 必须是该表列名的子集;只做选列/排序/TopN,严禁聚合或改数;",
@@ -349,7 +351,9 @@ def _write_synth_brief(run_dir: Path, state: dict) -> None:
         'Return JSON only: {"headline","first_screen":{"spine":[…],"panel":[…],"actions":[…]},'
         '"cannot_say":[…],"spine_final":{…}}.',
         "spine/panel 每条须是 claim-like dict(可直接复用下方某条 claim,或组合其 claim_id);",
-        "actions 是纯文字行动建议;cannot_say 是本次数据答不了的问题。",
+        "复用/新写的 claim 都遵守同一数字纪律:sentence 仅含 {tN} 占位、绝不含任何裸数字,",
+        "且句中出现的每个 {tN} 必须与 number_tokens 里声明的 token_id 精确一一对应(多一个或少一个都会被判 MAGNITUDE_UNBOUND 而拒绝);",
+        "actions 是纯文字行动建议,同样不得含裸数字/金额/百分比;cannot_say 是本次数据答不了的问题。",
         "",
         "## 已产出的 claims",
         "",
@@ -1218,6 +1222,24 @@ def _deterministic_markdown(run_dir, facts_json: dict, report_name: str) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _visual_coverage_reason(markdown: str, result_tables: object) -> str | None:
+    """Non-blocking success-path signal: ``"visuals_missing"`` when the fact layer HAD
+    chartable data yet the finalized narrative carries zero charts, else ``None``.
+
+    This is the honest last line of defense behind the deterministic chart fallback
+    (reporting.narrative_render): the fallback auto-injects a chart per core domain that
+    *has a section present*, so the only way chartable data survives with no ``<svg>`` is
+    a total gap — e.g. the bundle dropped every domain section. It is a SIGNAL, never a
+    failure: the caller still finalizes (no skeleton, no gate FAIL), it just stamps the
+    reason so the delivery note can say charts are missing. Never raises."""
+    try:
+        if has_chartable_tables(result_tables) and "<svg" not in (markdown or ""):
+            return "visuals_missing"
+        return None
+    except Exception:
+        return None
+
+
 def finalize_narrative(run_dir, *, project_root=None) -> dict:
     """Success delivery boundary — render the gate-passed narrative bundle to the two
     artifacts (<report_name>.md + <report_name>.html) under outputs_dir(project_root).
@@ -1248,6 +1270,12 @@ def finalize_narrative(run_dir, *, project_root=None) -> dict:
     out_dir = outputs_dir(project_root)
     (out_dir / f"{report_name}.md").write_text(markdown, encoding="utf-8")
 
+    # Non-blocking visual audit of the delivered markdown: if the fact layer had
+    # chartable data but not one chart survived (fallback included), record the gap so
+    # the delivery note surfaces it. This never routes to skeleton or fails the gate —
+    # the report still finalizes with whatever visuals it does carry.
+    reason = _visual_coverage_reason(markdown, result_tables)
+
     try:
         html = render_markdown_document_html(markdown, title=report_name)
         (out_dir / f"{report_name}.html").write_text(html, encoding="utf-8")
@@ -1260,7 +1288,7 @@ def finalize_narrative(run_dir, *, project_root=None) -> dict:
             facts_hash=facts_json.get("facts_hash", ""),
             cache_hit=False,
             hard_fail_counts={},
-            degradation_reason=None,
+            degradation_reason=reason,
         )
         append_run_record(state_dir(project_root) / "report_runs.jsonl", record)
     except Exception:
@@ -1269,6 +1297,7 @@ def finalize_narrative(run_dir, *, project_root=None) -> dict:
     state = {
         **state,
         "stage": "finalized",
+        "degradation_reason": reason,
         "history": [*state.get("history", []), "finalize_narrative"],
     }
     _write_state(run_dir, state)

@@ -83,6 +83,17 @@ Output: Always produce a Markdown report and a single-file HTML report. Built-in
 
 ---
 
+### Narrative Visual Contract (叙事版必须带图)
+
+The narrative (叙事版) report must carry deterministic visuals, not prose alone:
+
+- **Floor:** every core domain with a chartable fact-layer table (生意大盘 / 流量与内容 / 商品结构 / 用户与需求 / 退款与售后) shows **1–2 tables + ≥1 chart**. Agents curate only the *view* (source table, columns/rows, captions); the engine fills every number from the fact layer — agents write no bare numbers.
+- **Fallback:** if an agent leaves a core domain chart-less, `finalize` deterministically auto-injects one chart for that domain from the fact layer (captioned `自动补图`), so the narrative reliably ships charts.
+- **Degradation signal:** if chartable data existed yet no chart reached the HTML, the run records `degradation_reason=visuals_missing`. This is a non-blocking success-path signal — the report still delivers — but it MUST be surfaced in the delivery summary. A prose-only narrative finalized *without* `visuals_missing` is a defect.
+- **Audit before delivery:** `grep -c "<svg" <叙事版>.html` ≥ 1 unless the run legitimately recorded `visuals_missing` (fact layer had no chartable table).
+
+---
+
 ### Anti-patterns (NEVER do)
 
 1. **Deterministic attribution without link table** — Do not claim note-to-order causation unless explicit `note_sku_links` source data supports it. Inferred links get at most Weak evidence. (SKILL.md L50; `evidence.py` hard-codes `has_controls=False` in `sku_lift`.)
@@ -90,3 +101,4 @@ Output: Always produce a Markdown report and a single-file HTML report. Built-in
 3. **Skip evidence tier** — Every finding must carry an evidence tier; omitting it violates the report contract section 3. (`report_contract.md` L9; `evidence_strength.md` L3.)
 4. **Invent metrics not in metric_definitions.md** — All metrics used in reports must trace back to `references/metric_definitions.md`. If a metric is absent, add it to the reference first.
 5. **Treat Weak evidence as recommendation** — Weak findings are hypotheses only; they must not appear as "recommended action" without upgrade path stated. (`evidence_strength.md` L43: "Weak findings should become hypotheses, not recommendations.")
+6. **Ship a prose-only 叙事版** — Do not present a narrative report as complete when a core domain had chartable data but no chart reached the HTML. The deterministic fallback should prevent this; if it still happens, `finalize` records `degradation_reason=visuals_missing` and that caveat must be surfaced. (See *Narrative Visual Contract* above.)

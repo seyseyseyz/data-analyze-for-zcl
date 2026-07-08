@@ -526,3 +526,59 @@ def test_advance_exhaustion_preserves_finalize_history(tmp_path, monkeypatch):
     reloaded = nw._load_state(run_dir)
     assert reloaded["stage"] == "blocked"
     assert reloaded["history"][-1] == "finalize_deterministic:gate_exhausted"
+
+
+# ---- visuals_missing degradation (non-blocking success-path signal) ---------
+#
+# The narrative may finalize with charts genuinely missing while the fact layer HAD
+# chartable data (agents gave none AND the bundle carried no section the deterministic
+# fallback could chart). That is a real, honest gap: finalize STILL succeeds (never
+# skeleton, never a gate FAIL) but stamps degradation_reason="visuals_missing" on both
+# the state and the telemetry line, so the delivery note can surface it.
+
+def _finalize_with(tmp_path, *, bundle, result_tables):
+    results = {"domain_slices": [_slice(0)], "result_tables": result_tables}
+    facts_json = {"facts_hash": "abc123", "facts": {}}
+    nw.prepare_run(tmp_path, results=results, facts_json=facts_json,
+                   report_name="r", project_root=tmp_path)
+    raw = json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))
+    raw["_bundle"] = bundle
+    raw["stage"] = "continuity"
+    (tmp_path / "state.json").write_text(json.dumps(raw, ensure_ascii=False), encoding="utf-8")
+    return nw.finalize_narrative(tmp_path, project_root=tmp_path)
+
+
+def test_finalize_flags_visuals_missing_when_chartable_data_but_no_chart(tmp_path):
+    from xhs_ceramics_analytics.paths import state_dir
+    bundle = {"headline": "h", "sections": [], "cannot_say": []}  # no chartable section
+    tables = {"business_trend": [{"date": "2026-04-01", "gmv": 14356.0}]}
+    state = _finalize_with(tmp_path, bundle=bundle, result_tables=tables)
+    assert state["stage"] == "finalized"                    # NOT skeleton / blocked
+    assert state["degradation_reason"] == "visuals_missing"
+    runs = (state_dir(tmp_path) / "report_runs.jsonl").read_text(encoding="utf-8")
+    assert '"degradation_reason": "visuals_missing"' in runs
+    assert '"mode": "gate"' in runs                          # still a success-path run
+
+
+def test_finalize_no_degradation_when_fallback_injects_chart(tmp_path):
+    from xhs_ceramics_analytics.paths import outputs_dir
+    bundle = {"headline": "h",
+              "sections": [{"section_id": "s", "title": "生意大盘",
+                            "claims": [{"rendered_sentence": "GMV 稳。", "confidence": "中"}],
+                            "curated_views": []}],
+              "cannot_say": []}
+    tables = {"business_trend": [{"date": "2026-04-01", "gmv": 14356.0},
+                                 {"date": "2026-04-02", "gmv": 22687.0}]}
+    state = _finalize_with(tmp_path, bundle=bundle, result_tables=tables)
+    assert state["stage"] == "finalized"
+    assert state.get("degradation_reason") is None
+    md = (outputs_dir(tmp_path) / "r.md").read_text(encoding="utf-8")
+    assert "<svg" in md    # the fallback chart landed in the delivered artifact
+
+
+def test_finalize_no_degradation_when_no_chartable_data(tmp_path):
+    # thin data (no mapped chartable table) → chart-less is honest, not a degradation
+    bundle = {"headline": "h", "sections": [], "cannot_say": []}
+    state = _finalize_with(tmp_path, bundle=bundle, result_tables={"growth_bridge": [{"a": 1}]})
+    assert state["stage"] == "finalized"
+    assert state.get("degradation_reason") is None
