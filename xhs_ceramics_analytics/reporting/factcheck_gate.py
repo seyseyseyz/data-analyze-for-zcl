@@ -17,15 +17,14 @@ from dataclasses import dataclass, field
 from html import escape
 
 from xhs_ceramics_analytics.reporting.curated_view import render_view
-from xhs_ceramics_analytics.reporting.view_spec import count_view_kinds, validate_view_spec
+from xhs_ceramics_analytics.reporting.view_spec import validate_view_spec
 
 _TOKEN_RE = re.compile(r"\{t\d+\}")
 _TD_RE = re.compile(r"<td[^>]*>(.*?)</td>", re.DOTALL)
 
-# Anti-dump cap (spec §Trust & anti-dump rules, rule 4): ≤2 tables + ≤1 chart per
-# domain section. Over-cap is a hard failure, not a silent drop.
-_MAX_TABLES_PER_SECTION = 2
-_MAX_CHARTS_PER_SECTION = 1
+# There is deliberately NO per-domain view cap. Anti-dump is enforced per view
+# (rules 1-3: every curated view must be spec-valid, value-matched, and support a
+# real claim), so a section may carry as many tables/charts as it can back.
 _DIGIT_RE = re.compile(r"\d")
 # first_screen.actions are writer free-text (no token mechanism), so the {tN} gate can't
 # cover them. We can't ban every digit — advice legitimately says "发 2 到 3 条内容" — but a
@@ -237,24 +236,18 @@ def _check_one_view(
 
 
 def _check_curated_views(bundle: dict, result_tables: dict, hard: list) -> None:
-    """Police every section's ``curated_views`` (rules 1-4). Never raises — a
+    """Police every section's ``curated_views`` (rules 1-3). Never raises — a
     malformed section/view degrades to a hard failure or is skipped, but the gate
-    still returns a report (the whole report must still produce its artifacts)."""
+    still returns a report (the whole report must still produce its artifacts).
+
+    There is no per-domain view cap: a section may carry as many curated views as it
+    can back. Anti-dump is enforced per view (rules 1-3), not by a table/chart count."""
     claim_ids = _all_claim_ids(bundle)
     for section in bundle.get("sections") or []:
         if not isinstance(section, dict):
             continue
         section_id = section.get("section_id")
         views = section.get("curated_views")
-
-        # rule 4: per-domain cap (≤2 tables + ≤1 chart). count_view_kinds tolerates
-        # garbage entries, so this is safe even when `views` is not a clean list.
-        counts = count_view_kinds(views)
-        if counts["tables"] > _MAX_TABLES_PER_SECTION or counts["charts"] > _MAX_CHARTS_PER_SECTION:
-            hard.append(_fail("VIEW_OVERCAP", section_id,
-                              f"每域上限 ≤{_MAX_TABLES_PER_SECTION} 表 + "
-                              f"≤{_MAX_CHARTS_PER_SECTION} 图,实为 {counts['tables']} 表 + "
-                              f"{counts['charts']} 图"))
 
         if not isinstance(views, (list, tuple)):
             continue

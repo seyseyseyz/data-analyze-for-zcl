@@ -1,8 +1,8 @@
 """Tests for the declarative view-spec data model + pure validation.
 
 Covers the numeric-trust boundary rules 1-3 (source/columns/rows/supports_claim/
-digit-free prose), derive_confidence (rule 5), the count_view_kinds gate helper,
-and the never-raise contract on garbage input.
+digit-free prose), derive_confidence (rule 5), the count_view_kinds view-kind
+helper, and the never-raise contract on garbage input.
 """
 from xhs_ceramics_analytics.analysis.result import Finding
 from xhs_ceramics_analytics.evidence import EvidenceStrength
@@ -490,7 +490,7 @@ def test_derive_confidence_never_raises_on_garbage():
     assert derive_confidence(Bad()) == "弱"
 
 
-# ---- count_view_kinds (gate helper, rule 4 lives in the gate) -------------
+# ---- count_view_kinds (view-kind counter; no cap — a section may carry any #) --
 
 def test_count_view_kinds_splits_tables_and_charts():
     specs = [

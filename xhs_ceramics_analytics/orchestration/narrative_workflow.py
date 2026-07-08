@@ -10,11 +10,7 @@ import re
 from pathlib import Path
 
 from xhs_ceramics_analytics.paths import outputs_dir, state_dir
-from xhs_ceramics_analytics.reporting.factcheck_gate import (
-    _MAX_CHARTS_PER_SECTION,
-    _MAX_TABLES_PER_SECTION,
-    run_gate,
-)
+from xhs_ceramics_analytics.reporting.factcheck_gate import run_gate
 from xhs_ceramics_analytics.reporting.factcheck_gate import (
     _view_label as _gate_view_label,
 )
@@ -29,11 +25,7 @@ from xhs_ceramics_analytics.reporting.report_telemetry import (
     append_run_record,
     build_run_record,
 )
-from xhs_ceramics_analytics.reporting.view_spec import (
-    CHART_TEMPLATES,
-    TABLE_TEMPLATES,
-    _template_of,
-)
+from xhs_ceramics_analytics.reporting.view_spec import _template_of
 
 MAX_FAN_AGENTS = 6
 MAX_GATE_ROUNDS = 5
@@ -285,8 +277,9 @@ def _write_fan_briefs(
             "每个 number_token 的 fact_id 必须精确等于下方某个 facts[].fact_id;",
             "没有 fact_id 的 fact 是标签(非数值),不能被 number_token 绑定。",
             "",
-            "curated_views(每域必须给 1-2 表 + 1 个图;仅当本域 available_tables 里确无可画的表时,"
-            "才可省略图并在对应 claim 里说明原因 —— 缺图会被记为 visuals_missing):",
+            "curated_views(每域至少给 1 表 + 1 图,无上限:本域有几个值得展示的角度就给几个,"
+            "把数据讲透;仅当本域 available_tables 里确无可画的表时,才可省略图并在对应 claim 里"
+            "说明原因 —— 缺图会被记为 visuals_missing):",
             '  必填 template, 只允许 "comparison_table"|"ranking_table"|"trend_line"|"breakdown_waterfall"|"share_bar";',
             '  source 形如 {"task_id":"…","table":"<下方 available_tables 里的表名>"};',
             "  columns 必须是该表列名的子集;只做选列/排序/TopN,严禁聚合或改数;",
@@ -990,27 +983,6 @@ _PER_VIEW_GATE_CODES = frozenset(
 )
 
 
-def _trim_views_to_cap(views: list) -> list:
-    """Keep views in order up to the per-domain cap (≤ tables + ≤ charts), dropping the
-    surplus that pushed a section over ``VIEW_OVERCAP``. A view with an unknown template
-    would already have failed ``VIEW_SPEC_INVALID`` and been dropped by label, so it is
-    kept here without counting (defensive). Never raises."""
-    tables = charts = 0
-    kept: list = []
-    for view in views:
-        template = _template_of(view)  # normalize aliases like the gate's cap counter does
-        if template in TABLE_TEMPLATES:
-            if tables >= _MAX_TABLES_PER_SECTION:
-                continue
-            tables += 1
-        elif template in CHART_TEMPLATES:
-            if charts >= _MAX_CHARTS_PER_SECTION:
-                continue
-            charts += 1
-        kept.append(view)
-    return kept
-
-
 def _drop_gate_failed_views(state: dict, hard_failures) -> bool:
     """Drop every curated view the gate hard-failed, in place on ``state['sections']``.
 
@@ -1023,13 +995,12 @@ def _drop_gate_failed_views(state: dict, hard_failures) -> bool:
 
     Per-view failures (:data:`_PER_VIEW_GATE_CODES`) are keyed by the gate's own
     ``_view_label`` — reused verbatim so the drop matches the gate byte-for-byte,
-    including the positional ``{section_id}:curated_view[{idx}]`` fallback. ``VIEW_OVERCAP``
-    is keyed by ``section_id`` and trims that section back to the per-domain cap.
-    Claim-level failures carry no view label, so nothing drops for them — they keep the
-    exhaust→skeleton path (never-block is view-specific). Returns ``True`` iff any view
-    was removed/trimmed. Never raises."""
+    including the positional ``{section_id}:curated_view[{idx}]`` fallback. There is no
+    per-domain cap, so a section is only ever trimmed by its own failed views, never by
+    a table/chart count. Claim-level failures carry no view label, so nothing drops for
+    them — they keep the exhaust→skeleton path (never-block is view-specific). Returns
+    ``True`` iff any view was removed. Never raises."""
     failed_labels: set[str] = set()
-    overcap_sections: set = set()
     for failure in hard_failures or []:
         if not isinstance(failure, dict):
             continue
@@ -1037,9 +1008,7 @@ def _drop_gate_failed_views(state: dict, hard_failures) -> bool:
         key = failure.get("claim_id")
         if code in _PER_VIEW_GATE_CODES and isinstance(key, str) and key:
             failed_labels.add(key)
-        elif code == "VIEW_OVERCAP":
-            overcap_sections.add(key)
-    if not failed_labels and not overcap_sections:
+    if not failed_labels:
         return False
 
     sections = state.get("sections")
@@ -1060,8 +1029,6 @@ def _drop_gate_failed_views(state: dict, hard_failures) -> bool:
             for idx, view in enumerate(views)
             if _gate_view_label(view, section_id, idx) not in failed_labels
         ]
-        if section_id in overcap_sections:
-            kept = _trim_views_to_cap(kept)
         if len(kept) != len(views):
             section["curated_views"] = kept
             changed = True

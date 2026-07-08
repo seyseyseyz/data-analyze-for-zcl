@@ -11,8 +11,9 @@ computed.
 Everything here is pure and never raises — a malformed spec (even a non-dict) or a
 missing/garbage ``result_tables`` returns a list of human-readable error strings
 (empty list == valid), so a bad view degrades to "dropped" rather than crashing the
-report. The per-domain cap (rule 4) is cross-view and belongs to the gate; this
-module only exposes :func:`count_view_kinds` for the gate to use.
+report. :func:`count_view_kinds` is a small cross-view helper that splits a view
+list into {tables, charts} counts so callers can describe a section's visuals;
+there is deliberately no per-domain cap — a section may carry any number of each.
 """
 from __future__ import annotations
 
@@ -22,8 +23,8 @@ from dataclasses import dataclass, field
 
 from xhs_ceramics_analytics.evidence import EvidenceStrength
 
-# Whitelist enum (spec §Templates). Split by rendered kind so the gate's per-domain
-# cap (≤2 tables + ≤1 chart) can count each view without re-deriving the mapping.
+# Whitelist enum (spec §Templates). Split by rendered kind so callers (e.g.
+# count_view_kinds, status views) can classify a view without re-deriving the mapping.
 TABLE_TEMPLATES: frozenset[str] = frozenset({"comparison_table", "ranking_table"})
 CHART_TEMPLATES: frozenset[str] = frozenset(
     {"trend_line", "breakdown_waterfall", "share_bar"}
@@ -179,8 +180,9 @@ def derive_confidence(finding: object) -> str:
 
 
 def count_view_kinds(specs: object) -> dict[str, int]:
-    """Split a list of view-specs into {tables, charts} counts for the gate's
-    per-domain cap (rule 4). Ignores unknown/garbage entries. Never raises."""
+    """Split a list of view-specs into {tables, charts} counts. A general view-kind
+    counter (there is no per-domain cap — a section may carry any number of each).
+    Ignores unknown/garbage entries. Never raises."""
     tables = charts = 0
     if not isinstance(specs, (list, tuple)):
         return {"tables": 0, "charts": 0}
@@ -198,8 +200,8 @@ def validate_view_spec(spec: object, result_tables: object) -> list[str]:
 
     Returns human-readable error strings; an empty list means valid. Pure — it
     never mutates its inputs and never raises, so any malformed input (including a
-    non-dict spec) yields errors instead of an exception. rules 4 (per-domain cap)
-    and 5 (confidence) are handled elsewhere (gate / :func:`derive_confidence`).
+    non-dict spec) yields errors instead of an exception. Rule 5 (confidence) is
+    handled elsewhere (:func:`derive_confidence`); there is no per-domain cap rule.
     """
     if not isinstance(spec, dict):
         return ["view-spec 必须是对象(dict)"]

@@ -108,12 +108,16 @@ def test_runbook_documents_review_tally_precedence():
     assert "patch ≤2 rounds, then drop" in body
 
 
-def test_runbook_documents_per_domain_cap():
+def test_runbook_documents_no_per_domain_cap():
     body = _text("runbook.md")
-    # anti-dump cap enforced deterministically by the gate.
-    assert "≤2 tables" in body
-    assert "≤1 chart" in body
-    assert "per domain" in body
+    # No per-domain view cap: anti-dump is enforced per view (real supports_claim +
+    # gate rules 1-3), not by a table/chart count. The runbook must not resurrect a
+    # numeric cap.
+    assert "≤2 tables" not in body
+    assert "≤1 chart" not in body
+    assert "no per-domain cap" in body
+    # per-view anti-dump anchor still stated.
+    assert "supports_claim" in body
 
 
 def test_review_docs_stay_host_neutral():

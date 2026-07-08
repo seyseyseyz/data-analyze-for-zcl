@@ -6,8 +6,10 @@ deterministic gate must HARD-fail a view that (1) is structurally invalid agains
 the real ``result.tables`` (bad template / nonexistent column / aggregation /
 missing supports_claim / digits in captions), (2) cannot be value-matched — the
 numbers the engine would display must come from the source table, never from
-agent text, (3) cites a ``supports_claim`` that is not a real claim in the bundle,
-or (4) blows the per-domain anti-dump cap (≤2 tables + ≤1 chart).
+agent text, or (3) cites a ``supports_claim`` that is not a real claim in the
+bundle. There is deliberately NO per-domain view cap — a section may carry as
+many curated views as it can back; anti-dump lives in rules 1-3 (every view must
+be spec-valid, value-matched, and support a real claim), not in a table/chart count.
 
 Each rule gets one FAILING case here; a valid view passes; and the whole gate
 never raises on garbage. The pre-existing gate rules stay green (see
@@ -100,14 +102,19 @@ def test_valid_curated_view_passes():
     assert r.hard_failures == []
 
 
-def test_two_tables_and_one_chart_is_at_the_cap_and_passes():
+def test_rich_section_many_tables_and_charts_passes_no_cap():
+    # No per-domain cap: a rich section (multiple tables AND multiple charts) passes
+    # as long as each view individually satisfies rules 1-3.
     views = [
         _view(view_id="v1", template="ranking_table"),
         _view(view_id="v2", template="comparison_table"),
         _view(view_id="v3", template="share_bar", chart={"x": "component", "y": "delta_gmv"}),
+        _view(view_id="v4", template="trend_line", chart={"x": "component", "y": "delta_gmv"}),
+        _view(view_id="v5", template="breakdown_waterfall", chart={"x": "component", "y": "delta_gmv"}),
     ]
     r = run_gate(_bundle(views), _facts(), _tables())
     assert r.status == "PASS", r.hard_failures
+    assert "VIEW_OVERCAP" not in _codes(r)
 
 
 # ---- rule 1: structural view-spec validation ------------------------------
@@ -178,27 +185,33 @@ def test_supports_claim_not_in_bundle_hard_fails():
     assert "VIEW_SUPPORTS_UNKNOWN_CLAIM" in _codes(r)
 
 
-# ---- rule 4: per-domain anti-dump cap (≤2 tables + ≤1 chart) ---------------
+# ---- no per-domain view cap (anti-dump lives in per-view rules 1-3) --------
+#
+# The ≤2-table / ≤1-chart per-domain cap was removed: a section may carry as many
+# curated views as it can back. Anti-dump is still enforced per view — each must be
+# spec-valid, value-matched, and support a real claim — so a section cannot pad
+# itself with irrelevant or fabricated tables. VIEW_OVERCAP no longer exists.
 
-def test_over_cap_three_tables_hard_fails():
+def test_three_tables_pass_no_overcap():
     views = [
         _view(view_id="v1", template="ranking_table"),
         _view(view_id="v2", template="comparison_table"),
         _view(view_id="v3", template="ranking_table"),
     ]
     r = run_gate(_bundle(views), _facts(), _tables())
-    assert r.status == "FAIL"
-    assert "VIEW_OVERCAP" in _codes(r)
+    assert r.status == "PASS", r.hard_failures
+    assert "VIEW_OVERCAP" not in _codes(r)
 
 
-def test_over_cap_two_charts_hard_fails():
+def test_many_charts_pass_no_overcap():
     views = [
         _view(view_id="c1", template="share_bar", chart={"x": "component", "y": "delta_gmv"}),
         _view(view_id="c2", template="trend_line", chart={"x": "component", "y": "delta_gmv"}),
+        _view(view_id="c3", template="breakdown_waterfall", chart={"x": "component", "y": "delta_gmv"}),
     ]
     r = run_gate(_bundle(views), _facts(), _tables())
-    assert r.status == "FAIL"
-    assert "VIEW_OVERCAP" in _codes(r)
+    assert r.status == "PASS", r.hard_failures
+    assert "VIEW_OVERCAP" not in _codes(r)
 
 
 # ---- never-raise + backward compatibility ---------------------------------
