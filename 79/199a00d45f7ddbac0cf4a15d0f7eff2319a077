@@ -1,0 +1,27 @@
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/reporting/test_narrative_render_views.py
+  ai_agent 172-181,185-204
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_reporting_narrative_results.py
+  ai_agent 11,82-114
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/reporting/factcheck_gate.py
+  ai_agent 63-69,313
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/reporting/narrative_render.py
+  ai_agent 15,17-20,54-69,143-145,162,188-195,198-201,203-221,239-240
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/orchestration/narrative_workflow.py
+  ai_agent 54-55,192-207,219-272,429-436,438,442-446,450-500,534-541,575-583,867-868,934-936
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/reporting/test_view_spec.py
+  ai_agent 202-244
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/reporting/facts_export.py
+  ai_agent 108-113,148
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/orchestration/test_narrative_workflow_claims.py
+  ai_agent 1-215
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/reporting/narrative_results.py
+  ai_agent 17,28-36,38-54,98-106
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/reporting/view_spec.py
+  ai_agent 36-61,314,319,326
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.32-trip",
+  "base_commit_sha": "79199a00d45f7ddbac0cf4a15d0f7eff2319a077",
+  "prompts": {}
+}
