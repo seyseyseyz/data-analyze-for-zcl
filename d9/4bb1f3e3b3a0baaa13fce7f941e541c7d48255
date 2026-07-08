@@ -1,0 +1,53 @@
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/reporting/test_table_labels.py
+  ai_agent 1-29
+tests/reporting/test_curated_view.py
+  s_6bd2349b4ebd4d::t_f42cf54d4b03c2 179,181-184
+xhs_ceramics_analytics/reporting/narrative_render.py
+  s_6bd2349b4ebd4d::t_46e36182b88cc4 30
+  s_6bd2349b4ebd4d::t_48ee04d9af59cc 345,349,351,355,357,361,363,367,369,373-379
+  s_6bd2349b4ebd4d::t_1caf9458a46255 426
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/reporting/test_narrative_render_views.py
+  ai_agent 123-125,332-336
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/reporting/curated_view.py
+  ai_agent 29,303-308,310-311
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/reporting/narrative_render.py
+  ai_agent 30,345,349,351,355,357,361,363,367,369,373-379,426
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/reporting/table_labels.py
+  ai_agent 1-85
+tests/reporting/test_table_labels.py
+  s_6bd2349b4ebd4d::t_888a19ec89694c 1-29
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/reporting/test_curated_view.py
+  ai_agent 179,181-184
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/reporting/html.py
+  ai_agent 20
+xhs_ceramics_analytics/reporting/html.py
+  s_6bd2349b4ebd4d::t_46ad226cc807a1 20
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/orchestration/test_review_stage.py
+  ai_agent 218-221
+tests/orchestration/test_review_stage.py
+  s_6bd2349b4ebd4d::t_8518628504c76b 218-221
+tests/reporting/test_narrative_render_views.py
+  s_6bd2349b4ebd4d::t_628fb21d20428e 123-125
+  s_6bd2349b4ebd4d::t_096f008c3d254e 332-336
+xhs_ceramics_analytics/reporting/table_labels.py
+  s_6bd2349b4ebd4d::t_6862255778f07c 1-85
+xhs_ceramics_analytics/reporting/curated_view.py
+  s_6bd2349b4ebd4d::t_77eff4af95842b 29
+  s_6bd2349b4ebd4d::t_a9ac89f6efe0ea 303-308,310-311
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.33-trip",
+  "base_commit_sha": "d94bb1f3e3b3a0baaa13fce7f941e541c7d48255",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
