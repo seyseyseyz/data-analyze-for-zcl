@@ -314,6 +314,25 @@ def test_drop_gate_failed_views_keeps_large_section_no_cap():
     assert kept == ["t1", "t2", "t3", "c1", "c2"]  # all kept; no cap trimming
 
 
+def test_drop_gate_failed_views_keeps_surplus_on_large_section_with_one_failure():
+    # Old-cap-resurrection guard: a large section (well over the removed ≤2-table /
+    # ≤1-chart cap) with exactly ONE gate-failed view loses only that view. The surplus
+    # tables/charts the old cap would have trimmed all survive — the drop pass is
+    # per-view, never a count-based trim.
+    state = {"sections": {"s1": {"section_id": "s1", "curated_views": [
+        {"template": "comparison_table"},  # idx 0 -> kept
+        {"template": "ranking_table"},       # idx 1 -> kept
+        {"template": "ranking_table"},       # idx 2 -> gate-failed, dropped
+        {"template": "trend_line"},          # idx 3 -> kept
+        {"template": "share_bar"},           # idx 4 -> kept
+    ]}}}
+    hard = [{"code": "VIEW_SPEC_INVALID", "claim_id": "s1:curated_view[2]", "detail": "x"}]
+    assert nw._drop_gate_failed_views(state, hard) is True
+    kept = [v["template"] for v in state["sections"]["s1"]["curated_views"]]
+    # 2 tables + 2 charts survive (over the old cap) — only the failed view is gone.
+    assert kept == ["comparison_table", "ranking_table", "trend_line", "share_bar"]
+
+
 def test_drop_gate_failed_views_noop_on_claim_level_failures():
     # Claim-level failures (INVENTED_ENTITY / MISSING_FACT …) are NOT view failures —
     # nothing drops, so they legitimately keep the exhaust→skeleton path.
