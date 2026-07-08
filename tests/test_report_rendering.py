@@ -114,12 +114,20 @@ def test_html_drops_technical_traceback_tier_and_meta_narrative():
 
 
 def test_html_glossary_defines_new_and_returning_customers():
-    # #16: 报告频繁用「新客/老客」，术语表必须给出挂钩首购窗口的定义。
+    # #16: 报告频繁用「新客/老客」，术语表必须说明来自平台导出字段，
+    # 不能暗示本报告独立重算了买家的首购时间。
     html = render_html(_priority_results())
     assert "新客" in html
     assert "老客" in html
-    # 定义须点明首购窗口口径（365 天），与 real-export rollup 说明一致。
+    assert "人群类型" in html
+    assert "不独立重算买家的首购时间" in html
+    # 定义须点明固定取 365 天窗口，避免 180/365 天累计窗口重复计数。
     assert "365" in html
+
+
+def test_html_glossary_omits_percentage_point_definition():
+    html = render_html(_priority_results())
+    assert "两个百分比之间的差，例如从 5% 到 7% 是涨了 2 个百分点，而不是涨了 2%。" not in html
 
 
 def test_html_renders_priority_table_section():
