@@ -44,10 +44,37 @@ def _num(value: float) -> str:
 def _frame(body: str, width: int, height: int, label: str = "数据图表，详见下方表格") -> str:
     # role="img" + aria-label gives screen readers a single accessible name; the
     # detailed numbers stay reachable in the accompanying data table below.
+    # ``max-width`` caps the chart at its OWN viewBox width: the shared
+    # ``.chart-svg { width:100% }`` rule would otherwise stretch a 640/308-wide
+    # chart to the full content column (the "宽高太大" complaint). It still shrinks
+    # responsively on a narrower column; it just never scales ABOVE its design size.
     return (
         f'<svg viewBox="0 0 {width} {height}" class="chart-svg" role="img" '
-        f'aria-label="{_esc(label)}" preserveAspectRatio="xMidYMid meet">{_HATCH}{body}</svg>'
+        f'aria-label="{_esc(label)}" preserveAspectRatio="xMidYMid meet" '
+        f'style="max-width:{width}px">{_HATCH}{body}</svg>'
     )
+
+
+# --- dense-axis form guards (a chart is a shape, not a data dump) -----------
+# A curated line/bar can be fed 90–600 rows; drawing a label or dot for each
+# produces an unreadable "wall" and a giant SVG. These mirror the already-correct
+# _timeseries_line (ticks=min(6,n)) / _rank_bars (top_n) thinning, applied to the
+# curated-template path (_line / _vbar / _waterfall) that previously had neither.
+_MAX_AXIS_LABELS = 12   # most category / x-axis labels drawn; the rest are thinned
+_MAX_LINE_MARKERS = 24  # above this a line drops per-point circles (keeps the path)
+_MAX_BARS = 12          # curated bar templates cap to this many categories
+
+
+def _axis_label_indices(n: int, max_labels: int = _MAX_AXIS_LABELS) -> set[int]:
+    """Evenly-spaced label indices (always including first & last) to thin a dense
+    axis to at most ``max_labels`` labels. For ``n <= max_labels`` every index is
+    kept, so small charts are byte-identical to before."""
+    if n <= 0:
+        return set()
+    if n <= max_labels:
+        return set(range(n))
+    step = (n - 1) / (max_labels - 1)
+    return {round(step * t) for t in range(max_labels)}
 
 
 def _title(text: str) -> str:
@@ -263,6 +290,7 @@ def _vbar(
         f'<line x1="{pad_x}" y1="{_num(baseline_y)}" x2="{width - pad_x}" '
         f'y2="{_num(baseline_y)}" class="ca-axis"/>'
     )
+    label_idx = _axis_label_indices(len(plotted))  # thin a dense category axis
     for i, (cat, value, text) in enumerate(plotted):
         cx = pad_x + slot * (i + 0.5)
         bh = (value / vmax) * plot_h
@@ -275,10 +303,11 @@ def _vbar(
             f'<text x="{_num(cx)}" y="{_num(baseline_y - bh - 8)}" text-anchor="middle" '
             f'class="ca-num">{_esc(text)}</text>'
         )
-        body.append(
-            f'<text x="{_num(cx)}" y="{_num(baseline_y + 20)}" text-anchor="middle" '
-            f'class="ca-cat">{_esc(cat)}</text>'
-        )
+        if i in label_idx:
+            body.append(
+                f'<text x="{_num(cx)}" y="{_num(baseline_y + 20)}" text-anchor="middle" '
+                f'class="ca-cat">{_esc(cat)}</text>'
+            )
     return _frame("".join(body), width, height)
 
 
@@ -312,6 +341,7 @@ def _waterfall(
     fill = "url(#ca-hatch)" if de_emphasize else "var(--ink-strong)"
     opacity = "0.55" if de_emphasize else "1"
     body = [_title(title)]
+    label_idx = _axis_label_indices(len(plotted))  # thin a dense category axis
     running = 0.0
     for i, (cat, value, text) in enumerate(plotted):
         cx = pad_x + slot * (i + 0.5)
@@ -327,10 +357,11 @@ def _waterfall(
             f'<text x="{_num(cx)}" y="{_num(y + seg_h / 2)}" text-anchor="middle" '
             f'class="ca-num">{_esc(text)}</text>'
         )
-        body.append(
-            f'<text x="{_num(cx)}" y="{_num(top_y + plot_h + 20)}" text-anchor="middle" '
-            f'class="ca-cat">{_esc(cat)}</text>'
-        )
+        if i in label_idx:
+            body.append(
+                f'<text x="{_num(cx)}" y="{_num(top_y + plot_h + 20)}" text-anchor="middle" '
+                f'class="ca-cat">{_esc(cat)}</text>'
+            )
     return _frame("".join(body), width, height)
 
 
@@ -432,11 +463,18 @@ def _line(
         f'<line x1="{pad_l}" y1="{_num(baseline_y)}" x2="{width - pad_r}" '
         f'y2="{_num(baseline_y)}" class="ca-axis"/>'
     ]
+    label_idx = _axis_label_indices(n_x)  # thin a dense x-axis to a readable handful
     for i, label in enumerate(x_labels):
+        if i not in label_idx:
+            continue
         body.append(
             f'<text x="{_num(xs[i])}" y="{_num(baseline_y + 20)}" text-anchor="middle" '
             f'class="ca-cat">{_esc(label)}</text>'
         )
+    # A long series is a shape, not a scatter of dots: keep the connecting path but
+    # drop the per-point circles (600 dots is noise + a huge SVG). A short series
+    # keeps its markers (also the only glyph for a 1-point series).
+    draw_markers = n_x <= _MAX_LINE_MARKERS
 
     def draw(ys, *, color, opacity, dash):
         pts = [(xs[i], y_of(v)) for i, v in enumerate(ys) if v is not None]
@@ -446,11 +484,12 @@ def _line(
                 f'<path d="{d}" fill="none" stroke="{color}" stroke-width="2" '
                 f'stroke-opacity="{opacity}"{dash}/>'
             )
-        for x, y in pts:  # markers (also the only glyph for 1-point series)
-            body.append(
-                f'<circle cx="{_num(x)}" cy="{_num(y)}" r="4" fill="{color}" '
-                f'fill-opacity="{opacity}"/>'
-            )
+        if draw_markers:
+            for x, y in pts:
+                body.append(
+                    f'<circle cx="{_num(x)}" cy="{_num(y)}" r="4" fill="{color}" '
+                    f'fill-opacity="{opacity}"/>'
+                )
 
     line_opacity = "0.35"
     dash = ' stroke-dasharray="4 3"' if de_emphasize else ""
@@ -961,6 +1000,22 @@ def render_chart_template(
         texts = [
             format_scalar(y_key, v) if v is not None else "暂无数据" for v in values
         ]
+
+        # Bar templates cap their category count: 50–250 bars render as unreadable
+        # 2px slivers with overlapping numbers (a form failure, like a wall-of-dates
+        # table). Ranking bars keep the top-N BY VALUE (SELECT-only — values stay
+        # verbatim); a waterfall keeps its first-N so the cumulative story survives.
+        if template in ("share_bar", "horizontal_bar") and len(values) > _MAX_BARS:
+            keep = sorted(
+                range(len(values)),
+                key=lambda i: (values[i] is not None, abs(values[i] or 0.0)),
+                reverse=True,
+            )[:_MAX_BARS]
+            cats = [cats[i] for i in keep]
+            values = [values[i] for i in keep]
+            texts = [texts[i] for i in keep]
+        elif template == "breakdown_waterfall" and len(values) > _MAX_BARS:
+            cats, values, texts = cats[:_MAX_BARS], values[:_MAX_BARS], texts[:_MAX_BARS]
 
         if template == "share_bar":
             svg = _vbar(cats, values, texts, title="", de_emphasize=de)

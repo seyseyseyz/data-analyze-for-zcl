@@ -159,6 +159,51 @@ def test_horizontal_bar_is_registered_as_a_chart_template():
     assert "horizontal_bar" in TEMPLATES
 
 
+# ---- large-series form guards (label walls + oversized dumps) -------------
+
+def _daily_rows(n):
+    # n ascending-valued daily points; deterministic, no Date.now.
+    return [{"date": f"2026-04-{i + 1:02d}", "gmv": float(1000 + i)} for i in range(n)]
+
+
+def test_trend_line_thins_x_labels_and_drops_markers_for_long_series():
+    # A 90-point daily series must NOT render a 90-label x-axis wall or 90 dots.
+    svg = str(render_chart_template("trend_line", _daily_rows(90), {"x": "date", "y": "gmv"}))
+    assert "<path" in svg                       # the line shape is preserved (all points)
+    assert svg.count('class="ca-cat"') <= 12    # x-axis thinned to a readable handful
+    assert svg.count("<circle") == 0            # per-point markers dropped for a long series
+
+
+def test_trend_line_keeps_all_labels_and_markers_for_short_series():
+    # The small-series behaviour is untouched: 3 points → 3 labels, 3 markers.
+    svg = str(render_chart_template("trend_line", _trend_rows(), {"x": "date", "y": "gmv"}))
+    assert svg.count('class="ca-cat"') == 3
+    assert svg.count("<circle") == 3
+
+
+def test_share_bar_caps_categories_to_top_values():
+    # 50 categories would render as unreadable 2px bars — cap to the top-12 by value.
+    rows = [{"sku": f"sku{i}", "gmv": float(i)} for i in range(50)]
+    svg = str(render_chart_template("share_bar", rows, {"x": "sku", "y": "gmv"}))
+    assert svg.count("<rect x=") == 12
+    assert ">sku49<" in svg and ">sku0<" not in svg  # kept the highest, dropped the lowest
+
+
+def test_horizontal_bar_caps_categories_to_top_values():
+    rows = [{"term": f"词{i}", "gmv": float(i)} for i in range(50)]
+    svg = str(render_chart_template("horizontal_bar", rows, {"x": "term", "y": "gmv"}))
+    assert svg.count("<rect x=") == 12
+
+
+def test_chart_svg_caps_render_width_to_its_native_viewbox():
+    # The SVG must not stretch to the full content column (the "太大了" complaint):
+    # each chart caps at its own viewBox width via an inline max-width.
+    line = str(render_chart_template("trend_line", _trend_rows(), {"x": "date", "y": "gmv"}))
+    assert "max-width:640px" in line              # line viewBox is 640 wide
+    bar = str(render_chart_template("share_bar", _share_rows(), {"x": "channel", "y": "gmv"}))
+    assert "max-width:308px" in bar               # vbar viewBox is 308 wide
+
+
 # ---- byte-determinism (no random ids, no timestamps) ----------------------
 
 def test_every_template_is_byte_deterministic():
