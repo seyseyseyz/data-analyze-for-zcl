@@ -88,7 +88,7 @@ def test_markdown_renders_limitations_and_table_preview(tmp_path: Path):
     assert "笔记表缺少漏斗指标字段" in report
     assert "notes columns missing for funnel rates" not in report
     assert "表格 `note_funnel`：共 1 行，当前展示 1 行" in report
-    assert "| note_id | reads | read_rate | like_rate | collect_rate | comment_rate |" in report
+    assert "| note_title | reads | read_rate | like_rate | collect_rate | comment_rate |" in report
 
 
 def test_cli_run_writes_markdown_and_html(tmp_path: Path, fixture_dir: Path, monkeypatch):

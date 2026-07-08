@@ -40,7 +40,8 @@ def run(db_path: Path) -> AnalysisResult:
                 recommended_action=str(link_context["recommended_action"]),
             )
 
-        rows = _response_rows(con, str(link_context["query"]))
+        has_title = _table_exists(con, "notes") and "title" in _table_columns(con, "notes")
+        rows = _response_rows(con, str(link_context["query"]), has_title)
     finally:
         con.close()
 
@@ -95,14 +96,27 @@ def run(db_path: Path) -> AnalysisResult:
     )
 
 
-def _response_rows(con, link_query: str) -> list[dict[str, object]]:
+def _response_rows(con, link_query: str, has_title: bool) -> list[dict[str, object]]:
+    # Display the human note title; fall back to the internal id only when the
+    # notes export carries no title column (graceful degradation).
+    if has_title:
+        note_select = "COALESCE(n_meta.title, lc.note_id) AS note_title"
+        note_join = (
+            "LEFT JOIN notes AS n_meta "
+            "ON CAST(n_meta.note_id AS VARCHAR) = lc.note_id"
+        )
+        group_extra = ", n_meta.title"
+    else:
+        note_select = "lc.note_id AS note_title"
+        note_join = ""
+        group_extra = ""
     result = con.sql(
         f"""
         WITH link_candidates AS (
           {link_query}
         )
         SELECT
-          lc.note_id,
+          {note_select},
           lc.sku_id,
           CAST(lc.publish_time AS VARCHAR) AS publish_time,
           COALESCE(
@@ -159,7 +173,8 @@ def _response_rows(con, link_query: str) -> list[dict[str, object]]:
         FROM link_candidates AS lc
         LEFT JOIN daily_sku_sales AS sales
           ON CAST(sales.sku_id AS VARCHAR) = lc.sku_id
-        GROUP BY lc.note_id, lc.sku_id, lc.publish_time
+        {note_join}
+        GROUP BY lc.note_id, lc.sku_id, lc.publish_time{group_extra}
         ORDER BY lc.note_id, lc.sku_id, lc.publish_time
         """
     )

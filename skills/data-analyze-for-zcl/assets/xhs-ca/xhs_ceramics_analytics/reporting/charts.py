@@ -511,7 +511,7 @@ def _build_response_curve(result: AnalysisResult, confidence: ReaderConfidence) 
     x_labels = [labels.value_label(key) for _, key in _RESPONSE_WINDOWS]
     series = [
         (
-            f'{row.get("note_id")}·{row.get("sku_id")}',
+            f'{row.get("note_title") or row.get("note_id")}·{row.get("sku_id")}',
             [row.get(col) for col, _ in _RESPONSE_WINDOWS],
         )
         for row in rows

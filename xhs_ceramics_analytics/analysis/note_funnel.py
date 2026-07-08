@@ -14,6 +14,12 @@ def run(db_path: Path) -> AnalysisResult:
         if "note_id" not in columns:
             return _missing_result("notes 表缺少 note_id 字段。")
 
+        # Show the human note title; fall back to the internal id only when the
+        # export carries no title column (graceful degradation, never a raw id in
+        # the report when a title exists).
+        note_label_expr = (
+            "CAST(title AS VARCHAR)" if "title" in columns else "CAST(note_id AS VARCHAR)"
+        )
         reads_expr = "CAST(reads AS DOUBLE)" if "reads" in columns else "NULL"
         impressions_expr = (
             "CAST(impressions AS DOUBLE)" if "impressions" in columns else "NULL"
@@ -24,7 +30,7 @@ def run(db_path: Path) -> AnalysisResult:
         result = con.sql(
             f"""
             SELECT
-              CAST(note_id AS VARCHAR) AS note_id,
+              {note_label_expr} AS note_title,
               {reads_expr} AS reads,
               CASE
                 WHEN {impressions_expr} > 0 THEN {reads_expr} * 1.0 / {impressions_expr}

@@ -199,7 +199,7 @@ def test_task9_uses_publish_anchored_windows_and_exposes_long_tail(tmp_path):
 
     assert curve.tables["response_windows"] == [
         {
-            "note_id": "n1",
+            "note_title": "n1",
             "sku_id": "s1",
             "publish_time": "2026-06-10 09:00:00",
             "d0_1_units": 5.0,

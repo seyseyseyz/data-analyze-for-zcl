@@ -107,7 +107,7 @@ _USER_TABLE_COLUMNS = {
         "perf_lift",
     ),
     "note_funnel": (
-        "note_id",
+        "note_title",
         "reads",
         "read_rate",
         "like_rate",
@@ -126,7 +126,7 @@ _USER_TABLE_COLUMNS = {
         "relative_lift",
     ),
     "response_windows": (
-        "note_id",
+        "note_title",
         "sku_name",
         "window",
         "pre_units",
@@ -213,10 +213,18 @@ _USER_TABLE_COLUMNS = {
         "is_saturation",
     ),
     "note_referral_attribution": (
-        "note_id",
+        "note_title",
         "referral_orders",
         "referral_gmv",
         "note_gmv",
+    ),
+    "high_refund_notes": (
+        "title",
+        "note_refund_rate",
+        "n",
+        "composition_type",
+        "scene_hint",
+        "copy_angle",
     ),
     "sku_category_l2_mix": (
         "category_l2",
@@ -1201,7 +1209,7 @@ def _business_actions(
     reshoot = results_by_task.get("reshoot_repost_candidates")
     reshoot_row = _first_row(reshoot, "reshoot_candidates") if reshoot else None
     if reshoot_row:
-        title = str(reshoot_row.get("title") or reshoot_row.get("note_id") or "队首候选")
+        title = str(reshoot_row.get("title") or "队首候选")
         actions.append(
             _action(
                 reshoot,

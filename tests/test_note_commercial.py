@@ -119,8 +119,9 @@ def test_conversion_zero_inflation_uses_positive_baseline(tmp_path):
     # The high-traffic-low-conversion rule now actually fires (was always 0).
     assert kn["high_traffic_low_conv_count"] == 1
     outliers = result.tables["note_conversion_outliers"]
+    # The displayed column is the note TITLE, never the internal note_id.
     assert any(
-        r["note_id"] == "low" and r["outlier_type"] == "high_traffic_low_conv"
+        r["note_title"] == "低转化" and r["outlier_type"] == "high_traffic_low_conv"
         for r in outliers
     )
     assert "仅" in conv.conclusion
@@ -146,11 +147,12 @@ def test_refund_fdr_flags_only_strong_outliers(tmp_path):
     assert "expected_false_positives" in kn
     assert kn["fdr_survivors"] <= kn["high_refund_note_count"]
     outliers = result.tables["note_refund_outliers"]
-    hot = next(r for r in outliers if r["note_id"] == "hot")
+    # Rows are labelled by note title, not the internal note_id.
+    hot = next(r for r in outliers if r["note_title"] == "高退款")
     assert hot["fdr_significant"] is True
     assert kn["fdr_survivors"] >= 1
     # BH excludes the borderline tiny-sample note.
-    bl = next(r for r in outliers if r["note_id"] == "bl")
+    bl = next(r for r in outliers if r["note_title"] == "临界")
     assert bl["fdr_significant"] is False
 
 
@@ -200,7 +202,8 @@ def test_referral_finding_surfaces_off_note_gmv(tmp_path):
     assert kn["live_referral_gmv"] == 0.0
     # Table ranks notes by shop-page-referral GMV; the zero-referral note is excluded.
     table = result.tables["note_referral_attribution"]
-    assert [r["note_id"] for r in table] == ["n1", "n2"]
+    # Ranked notes are named by title, not the internal note_id.
+    assert [r["note_title"] for r in table] == ["引流强笔记", "引流中笔记"]
     # Caliber caveat must warn against summing the two lenses.
     assert any("不" in c and ("相加" in c or "重复" in c) for c in referral.caveats)
 

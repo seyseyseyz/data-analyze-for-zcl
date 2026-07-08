@@ -151,7 +151,7 @@ def _gmv_pareto_finding(con, limitations: list[str]) -> tuple[Finding, list[dict
             cum_share += gmv
             pareto_rows.append(
                 {
-                    "note_id": _label(r, has_id, has_title),
+                    "note_title": _label(r, has_id, has_title),
                     "note_gmv": gmv,
                     "gmv_share": gmv / total_gmv,
                     "cum_share": cum_share / total_gmv,
@@ -225,7 +225,7 @@ def _conversion_finding(con, limitations: list[str]) -> tuple[Finding | None, li
         conv = bounded_rate(paid / reads) if reads > 0 else None
         records.append(
             {
-                "note_id": _label(r, has_id, has_title),
+                "note_title": _label(r, has_id, has_title),
                 "reads": reads,
                 "paid": paid,
                 "conversion": conv,
@@ -271,9 +271,9 @@ def _conversion_finding(con, limitations: list[str]) -> tuple[Finding | None, li
     seen_ids = set()
     for r in high_traffic_low_conv:
         outlier_rows.append({**r, "outlier_type": "high_traffic_low_conv"})
-        seen_ids.add(r["note_id"])
+        seen_ids.add(r["note_title"])
     for r in top_converters:
-        if r["note_id"] in seen_ids:
+        if r["note_title"] in seen_ids:
             continue
         outlier_rows.append({**r, "outlier_type": "top_converter"})
 
@@ -353,7 +353,7 @@ def _refund_finding(con, limitations: list[str]) -> tuple[Finding | None, list[d
             )
             high_refund_rows.append(
                 {
-                    "note_id": _label(r, has_id, has_title),
+                    "note_title": _label(r, has_id, has_title),
                     "note_paid_orders": paid_orders,
                     "note_refund_orders_pay": refund_orders,
                     "note_refund_rate_pay": rate,
@@ -465,7 +465,7 @@ def _referral_finding(con, limitations: list[str]) -> tuple[Finding | None, list
     count_col = (shop or (active[0] if active else channel_totals[0]))["count_col"]
     referral_rows = [
         {
-            "note_id": _label(r, has_id, has_title),
+            "note_title": _label(r, has_id, has_title),
             "referral_orders": _num(r.get(count_col)),
             "referral_gmv": _num(r.get(rank_col)),
             "note_gmv": _num(r.get("note_gmv")) if has_gmv else None,
@@ -524,10 +524,12 @@ def _referral_finding(con, limitations: list[str]) -> tuple[Finding | None, list
 # Shared helpers
 # --------------------------------------------------------------------------- #
 def _label(r: dict, has_id: bool, has_title: bool):
-    if has_id and r.get("note_id") is not None:
-        return r.get("note_id")
+    # Prefer the human-readable note title everywhere it is shown; only fall back
+    # to the internal note_id when no title is available (graceful degradation).
     if has_title and r.get("title") is not None:
         return r.get("title")
+    if has_id and r.get("note_id") is not None:
+        return r.get("note_id")
     return None
 
 
