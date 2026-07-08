@@ -28,7 +28,11 @@ from xhs_ceramics_analytics.reporting.report_telemetry import (
     append_run_record,
     build_run_record,
 )
-from xhs_ceramics_analytics.reporting.view_spec import CHART_TEMPLATES, TABLE_TEMPLATES
+from xhs_ceramics_analytics.reporting.view_spec import (
+    CHART_TEMPLATES,
+    TABLE_TEMPLATES,
+    _template_of,
+)
 
 MAX_FAN_AGENTS = 6
 MAX_GATE_ROUNDS = 5
@@ -804,7 +808,7 @@ def _write_review_briefs(run_dir: Path, bundle: dict) -> None:
             payload_views.append(
                 {
                     "view_id": _view_key(section_id, view, idx),
-                    "template": v.get("template", ""),
+                    "template": _template_of(v) or "",  # normalize aliases so kind is legible
                     "title": v.get("title", ""),
                     "columns": list(v.get("columns") or []),
                     "how_to_read": v.get("how_to_read", ""),
@@ -853,7 +857,7 @@ def _write_review_patch_brief(
             {
                 "view_id": key,
                 "section_id": section_id,
-                "template": v.get("template", ""),
+                "template": _template_of(v) or "",  # normalize aliases so kind is legible
                 "title": v.get("title", ""),
                 "columns": list(v.get("columns") or []),
                 "supports_claim": v.get("supports_claim", ""),
@@ -990,7 +994,7 @@ def _trim_views_to_cap(views: list) -> list:
     tables = charts = 0
     kept: list = []
     for view in views:
-        template = view.get("template") if isinstance(view, dict) else None
+        template = _template_of(view)  # normalize aliases like the gate's cap counter does
         if template in TABLE_TEMPLATES:
             if tables >= _MAX_TABLES_PER_SECTION:
                 continue

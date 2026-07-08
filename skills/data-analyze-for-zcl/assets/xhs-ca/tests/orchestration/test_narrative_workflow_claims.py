@@ -312,6 +312,21 @@ def test_drop_gate_failed_views_trims_overcap_section():
     assert kept == ["t1", "t2", "c1"]  # first two tables + the one chart; surplus table dropped
 
 
+def test_trim_views_to_cap_counts_alias_only_views():
+    # Alias-only views (view_type/type/chart_type, no "template" key) must be
+    # normalized via _template_of so the overcap trim actually counts + trims them.
+    # Reading the raw "template" key left them uncounted → the section never shrank,
+    # re-failed VIEW_OVERCAP every round, and routed the narrative to the skeleton.
+    views = [
+        {"view_id": "t1", "view_type": "table"},
+        {"view_id": "t2", "type": "comparison_table"},
+        {"view_id": "t3", "view_type": "table"},        # 3rd table -> over the ≤2 cap
+        {"view_id": "c1", "chart_type": "trend_line"},   # 1 chart is within cap
+    ]
+    kept = [v["view_id"] for v in nw._trim_views_to_cap(views)]
+    assert kept == ["t1", "t2", "c1"]  # surplus alias-only table dropped, chart kept
+
+
 def test_drop_gate_failed_views_noop_on_claim_level_failures():
     # Claim-level failures (INVENTED_ENTITY / MISSING_FACT …) are NOT view failures —
     # nothing drops, so they legitimately keep the exhaust→skeleton path.

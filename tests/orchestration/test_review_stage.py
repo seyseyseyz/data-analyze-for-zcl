@@ -306,6 +306,42 @@ def test_review_no_majority_routes_to_patch(tmp_path, monkeypatch):
     assert any("review_patch.md" in b for b in status["briefs"])
 
 
+# --- brief writers normalize alias-only templates --------------------------
+# An alias-only curated view (view_type/type/chart_type, no "template" key) is a
+# valid table/chart that passed the gate. The reviewer + patch briefs must show its
+# NORMALIZED template, not template="" — a blank misrepresents the view kind to the
+# reviewer/patch agents and, with the reject-bias calibration, can misfire a drop.
+
+
+def _alias_only_view():
+    return {
+        "view_id": "v1", "section_id": "生意大盘", "view_type": "table",
+        "title": "增长拆解 🍵", "columns": ["component"], "supports_claim": "c1",
+    }
+
+
+def _alias_only_bundle():
+    return {"sections": [{"section_id": "生意大盘", "title": "生意大盘",
+                          "curated_views": [_alias_only_view()]}]}
+
+
+def test_review_briefs_show_normalized_template_for_alias_only_view(tmp_path):
+    nw._write_review_briefs(tmp_path, _alias_only_bundle())
+    texts = [b.read_text(encoding="utf-8") for b in (tmp_path / "briefs").glob("review_*.md")]
+    assert texts  # a brief per lens was written
+    assert any('"template": "comparison_table"' in t for t in texts)
+    assert all('"template": ""' not in t for t in texts)  # never the blank misrepresentation
+
+
+def test_review_patch_brief_shows_normalized_template_for_alias_only_view(tmp_path):
+    view = _alias_only_view()
+    key = nw._view_key("生意大盘", view, 0)
+    nw._write_review_patch_brief(tmp_path, _alias_only_bundle(), {key}, {key: ["理由"]})
+    brief = (tmp_path / "briefs" / "review_patch.md").read_text(encoding="utf-8")
+    assert '"template": "comparison_table"' in brief
+    assert '"template": ""' not in brief
+
+
 def test_review_patch_eventually_drops_when_never_converges(tmp_path, monkeypatch):
     """A view that keeps failing to reach a majority is dropped after the patch
     budget is spent — it never blocks the report from finalizing."""
