@@ -8,6 +8,7 @@ facts.json 里的 ``domain_slices`` 是缓存键用的 dict 且恒空,不能当 
 
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.evidence import EvidenceStrength
+from xhs_ceramics_analytics.reporting.facts_export import build_factbook
 from xhs_ceramics_analytics.reporting.narrative_results import build_narrative_results
 
 
@@ -76,6 +77,41 @@ def test_facts_are_grounded_in_finding_key_numbers():
     )
     metrics = {f["metric"]: f["value"] for f in doc["domain_slices"][0]["facts"]}
     assert metrics == {"a": 1, "b": 2}
+
+
+def test_numeric_slice_facts_carry_factbook_fact_id():
+    # Option A(claims 模型)的地基:每条 NUMERIC 切片 fact 必须带一个与 FactBook
+    # 逐字节相同的 fact_id/metric_key/rendered。fan agent 的 claim 用 {tN}->fact_id
+    # 绑定数字,gate 拿这个 fact_id 去 facts.json 里核对;若两侧 fact_id 不一致,
+    # 每条 claim 都会 MISSING_FACT 硬失败。这里用「同一批 results 同时喂给
+    # build_narrative_results 与 build_factbook」证明二者的 fact_id 完全一致。
+    results = [
+        _result("core_business_diagnosis", title="GMV", conclusion="c", key_numbers={"gmv": 12345})
+    ]
+    slice_fact = build_narrative_results(results)["domain_slices"][0]["facts"][0]
+    assert slice_fact["fact_id"] == "core_business_diagnosis.gmv"
+    assert slice_fact["metric_key"] == "gmv"
+    assert slice_fact["rendered"], "rendered 由 Python 生成,不能为空"
+
+    book = build_factbook(results)
+    assert slice_fact["fact_id"] in book.facts, "切片 fact_id 必须在 FactBook 中可解析"
+    canonical = book.facts[slice_fact["fact_id"]]
+    assert slice_fact["metric_key"] == canonical.metric_key
+    assert slice_fact["rendered"] == canonical.rendered  # 同一渲染,零漂移
+
+
+def test_non_numeric_slice_fact_has_no_fact_id():
+    # 非数值 key_number(如 SKU 名称)不是 facts.json 里的 fact,绝不能带 fact_id,
+    # 否则 claim 绑上去会指向一个 FactBook 中不存在的键 -> MISSING_FACT。
+    results = [
+        _result("core_business_diagnosis", title="t", conclusion="c",
+                 key_numbers={"最贵SKU": "兴安岭之夜"})
+    ]
+    slice_fact = build_narrative_results(results)["domain_slices"][0]["facts"][0]
+    assert slice_fact["metric"] == "最贵SKU"
+    assert "fact_id" not in slice_fact
+    # 且它也确实不在 FactBook 里(数值过滤两侧一致)。
+    assert build_factbook(results).facts == {}
 
 
 def test_multiple_domains_are_separate_slices_in_registry_order():
