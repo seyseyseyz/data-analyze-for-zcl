@@ -1,0 +1,36 @@
+tests/reporting/test_narrative_mechanism.py
+  s_6bd2349b4ebd4d::t_d107ba262dd987 1-85,91-113
+  s_6bd2349b4ebd4d::t_fd6c62c2713a8c 86-90
+xhs_ceramics_analytics/orchestration/narrative_workflow.py
+  s_6bd2349b4ebd4d::t_db648c5058bb3e 347,350,356-359
+  s_6bd2349b4ebd4d::t_fd2dd771f74672 555
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/reporting/test_narrative_mechanism.py
+  ai_agent 1-113
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/orchestration/narrative_workflow.py
+  ai_agent 347,350,356-360,555
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/orchestration/test_narrative_workflow_claims.py
+  ai_agent 147,156-157
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/reporting/narrative_render.py
+  ai_agent 158-214,239-242
+tests/orchestration/test_narrative_workflow_claims.py
+  s_6bd2349b4ebd4d::t_dd5a947b7ccd68 147,156-157
+xhs_ceramics_analytics/reporting/narrative_render.py
+  s_6bd2349b4ebd4d::t_c77c1792a8512c 158-214
+  s_6bd2349b4ebd4d::t_b1142f0144754c 239-242
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.33-trip",
+  "base_commit_sha": "359d61eb2ef184d886b90689880aace758fd3d32",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
