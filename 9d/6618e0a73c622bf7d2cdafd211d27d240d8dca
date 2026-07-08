@@ -1,0 +1,24 @@
+tests/orchestration/test_narrative_workflow_claims.py
+  s_6bd2349b4ebd4d::t_214ccf0c025f3e 216-283,289-377
+  s_6bd2349b4ebd4d::t_455b64716bb305 284-288
+xhs_ceramics_analytics/orchestration/narrative_workflow.py
+  s_6bd2349b4ebd4d::t_c04d263eaafa90 892-952,956,958-978,987-990
+  s_6bd2349b4ebd4d::t_818834d5eea7b9 953-955,957
+  s_6bd2349b4ebd4d::t_57a94a15b820af 13-20,31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.32-trip",
+  "base_commit_sha": "9d6618e0a73c622bf7d2cdafd211d27d240d8dca",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
