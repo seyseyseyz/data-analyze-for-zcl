@@ -24,7 +24,7 @@ def test_run_emits_facts_json_into_state_dir(tmp_path, fixture_dir):
                                  "--name", "诊断"])
     assert result.exit_code == 0, result.output
     state = tmp_path / ".xhs-ceramics-analytics"
-    outputs = state / "outputs"
+    outputs = state / "outputs" / "20260101-000000-诊断"
     assert (outputs / "诊断.md").exists()
     # facts.json is the cache-key sidecar in the state dir, NOT a deliverable in outputs/.
     facts = state / "facts.json"
@@ -47,7 +47,7 @@ def test_run_survives_facts_json_failure(tmp_path, fixture_dir, monkeypatch):
     result = runner.invoke(app, ["run", "core_business_diagnosis", "--project-root", str(tmp_path),
                                  "--name", "诊断"])
     assert result.exit_code == 0, result.output
-    outputs = tmp_path / ".xhs-ceramics-analytics" / "outputs"
+    outputs = tmp_path / ".xhs-ceramics-analytics" / "outputs" / "20260101-000000-诊断"
     assert (outputs / "诊断.md").exists()
     assert (outputs / "诊断.html").exists()
     assert not (tmp_path / ".xhs-ceramics-analytics" / "facts.json").exists()

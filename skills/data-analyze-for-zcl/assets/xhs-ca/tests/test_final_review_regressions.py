@@ -109,9 +109,10 @@ def test_cli_run_writes_markdown_and_html(tmp_path: Path, fixture_dir: Path, mon
 
     assert build_result.exit_code == 0
     assert run_result.exit_code == 0
-    report_path = tmp_path / ".xhs-ceramics-analytics" / "outputs" / "all.md"
+    run_out = tmp_path / ".xhs-ceramics-analytics" / "outputs" / "20260101-000000-all"
+    report_path = run_out / "all.md"
     assert report_path.exists()
-    assert (tmp_path / ".xhs-ceramics-analytics" / "outputs" / "all.html").exists()
+    assert (run_out / "all.html").exists()
     report = report_path.read_text(encoding="utf-8")
     assert "# 小红书账号分析报告" in report
     assert "## 数据质量检查" in report

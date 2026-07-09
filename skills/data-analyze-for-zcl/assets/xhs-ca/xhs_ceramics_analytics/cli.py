@@ -6,7 +6,11 @@ import typer
 
 from xhs_ceramics_analytics.doctor import has_blocking_failures, next_steps, run_checks
 from xhs_ceramics_analytics.orchestration import narrative_workflow as _nw
-from xhs_ceramics_analytics.paths import outputs_dir, state_dir
+from xhs_ceramics_analytics.paths import (
+    run_output_dir,
+    run_timestamp,
+    state_dir,
+)
 
 app = typer.Typer(
     help=(
@@ -196,7 +200,10 @@ def run(
         basename = name or (requested[0] if len(requested) == 1 else "经营诊断报告")
 
     results = [run_task(task_id, db_path) for task_id in task_ids]
-    output_dir = outputs_dir(project_root)
+    # Each production lands in its own timestamped folder so successive runs never
+    # overwrite one another. The stamp is read here at the CLI boundary, not inside
+    # rendering, so report bytes stay deterministic (it appears in the folder path only).
+    output_dir = run_output_dir(basename, run_timestamp(), project_root)
     markdown_out = output_dir / f"{basename}.md"
     html_out = output_dir / f"{basename}.html"
     errors_out = output_dir / "render_errors.txt"
@@ -403,7 +410,9 @@ def render_frozen_command(
     except ValueError as exc:
         typer.echo(f"render-frozen refused: {exc}", err=True)
         raise typer.Exit(code=1) from exc
-    base = name or (outputs_dir(None) / "经营诊断报告")
+    # An explicit --name is an operator-chosen path base (dev tool), used verbatim; the
+    # default lands in a timestamped production folder like every other deliverable.
+    base = name or (run_output_dir("经营诊断报告", run_timestamp(), None) / "经营诊断报告")
     Path(f"{base}.md").write_text(md, encoding="utf-8")
     Path(f"{base}.html").write_text(html, encoding="utf-8")
     typer.echo(f"Wrote report: {base}.md")
@@ -448,7 +457,7 @@ def skeleton(
     basename = name or "经营诊断报告"
     report_title = basename.replace("_", " ").strip()
     md = skeleton_markdown(results, title=report_title)
-    output_dir = outputs_dir(project_root)
+    output_dir = run_output_dir(basename, run_timestamp(), project_root)
     (output_dir / f"{basename}.md").write_text(md, encoding="utf-8")
     (output_dir / f"{basename}.html").write_text(
         render_markdown_document_html(md, title=report_title), encoding="utf-8"

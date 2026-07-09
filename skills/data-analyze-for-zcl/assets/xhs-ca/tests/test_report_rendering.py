@@ -359,7 +359,12 @@ def test_cli_keeps_markdown_when_html_rendering_fails(tmp_path, monkeypatch):
         raise RuntimeError("chart dependency exploded")
 
     monkeypatch.setattr(html_module, "render_html", fail_html)
-    output_dir = tmp_path / ".xhs-ceramics-analytics" / "outputs"
+    # Each run lands in its own timestamped folder; the pinned stamp (conftest) makes
+    # that folder path deterministic. A stale .html left inside the run folder must be
+    # removed when this run's HTML fails, so a fresh .md never sits beside stale HTML.
+    output_dir = (
+        tmp_path / ".xhs-ceramics-analytics" / "outputs" / "20260101-000000-data_quality_check"
+    )
     output_dir.mkdir(parents=True)
     stale_html = output_dir / "data_quality_check.html"
     stale_html.write_text("stale html", encoding="utf-8")

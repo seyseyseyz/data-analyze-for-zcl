@@ -15,6 +15,7 @@ from xhs_ceramics_analytics.analysis.result import AnalysisResult
 from xhs_ceramics_analytics.analytics.numeric import to_finite_float
 from xhs_ceramics_analytics.evidence import DescriptiveReliability, EvidenceStrength
 from xhs_ceramics_analytics.reporting.formatting import is_money_field, is_percent_field
+from xhs_ceramics_analytics.reporting.labels import format_index
 
 
 @dataclass(frozen=True)
@@ -79,6 +80,18 @@ def render_count(value: object) -> str:
     return _grouped_magnitude(value, currency=False)
 
 
+def render_index(value: object) -> str:
+    """Python-owned concentration-index string (HHI/gini). Dimensionless — no currency
+    sign, no percent scaling. Mirrors the table path (``format_scalar``'s ``_hhi``
+    branch via :func:`format_index`) so a 0.0028 HHI stays ``0.0028`` and a 0.64 gini
+    stays ``0.64`` instead of being flattened to ``¥1``. A value that rounds to zero
+    reads ``0``; a non-finite value degrades to ``—``."""
+    v = to_finite_float(value)
+    if v is None:
+        return "—"
+    return format_index(v)
+
+
 def render_pct(value: object) -> str:
     """Python-owned percent string. Fractions (|v|≤1) are scaled ×100; already-scaled
     percentage-point values pass through so a rate is never double-scaled. A value that
@@ -119,6 +132,13 @@ def _metric_kind(key: str) -> str:
     # Percent before money so ``*_share`` concentrations stay percent, never yuan.
     if is_percent_field(raw):
         return "percent"
+    # Concentration indices (HHI/gini) are dimensionless. They must be caught BEFORE the
+    # money check — both the allow-list (``gmv_gini`` has no unit suffix) and the loose
+    # ``gmv`` substring hint below would otherwise force ``repeat_gmv_hhi``/``gmv_gini``
+    # to money, flattening a 0.64 index to the nonsensical "¥1". Mirrors format_scalar's
+    # dedicated ``_hhi`` branch on the table path.
+    if raw.endswith(("_hhi", "_gini")):
+        return "index"
     if is_money_field(raw):
         return "money"
     # Fallback: trimmed substring hints only for keys the anchored allow-lists don't name.
@@ -130,8 +150,13 @@ def _metric_kind(key: str) -> str:
     return "count"
 
 
-_RENDER = {"money": render_cny, "percent": render_pct, "count": render_count}
-_UNIT = {"money": "cny", "percent": "percent", "count": "count"}
+_RENDER = {
+    "money": render_cny,
+    "percent": render_pct,
+    "count": render_count,
+    "index": render_index,
+}
+_UNIT = {"money": "cny", "percent": "percent", "count": "count", "index": "index"}
 
 
 def numeric_facts_from_finding(task_id: str, finding) -> dict[str, Fact]:

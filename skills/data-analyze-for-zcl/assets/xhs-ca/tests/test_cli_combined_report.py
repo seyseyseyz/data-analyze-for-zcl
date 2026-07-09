@@ -44,7 +44,7 @@ def test_run_multiple_tasks_writes_single_integrated_report(tmp_path, fixture_di
         ],
     )
     assert result.exit_code == 0, result.output
-    outputs = tmp_path / ".xhs-ceramics-analytics" / "outputs"
+    outputs = tmp_path / ".xhs-ceramics-analytics" / "outputs" / "20260101-000000-经营诊断报告"
     # Expressive default basename, and exactly two deliverables.
     assert (outputs / "经营诊断报告.md").exists()
     assert (outputs / "经营诊断报告.html").exists()
@@ -81,7 +81,7 @@ def test_run_combined_report_honors_name_option(tmp_path, fixture_dir):
         ],
     )
     assert result.exit_code == 0, result.output
-    outputs = tmp_path / ".xhs-ceramics-analytics" / "outputs"
+    outputs = tmp_path / ".xhs-ceramics-analytics" / "outputs" / "20260101-000000-qianfan_diagnosis"
     assert (outputs / "qianfan_diagnosis.md").exists()
     assert (outputs / "qianfan_diagnosis.html").exists()
     assert not (outputs / "report.md").exists()
@@ -103,7 +103,9 @@ def test_run_single_task_keeps_slug_named_output(tmp_path, fixture_dir):
         ["run", "core_business_diagnosis", "--project-root", str(tmp_path)],
     )
     assert result.exit_code == 0, result.output
-    outputs = tmp_path / ".xhs-ceramics-analytics" / "outputs"
+    outputs = (
+        tmp_path / ".xhs-ceramics-analytics" / "outputs" / "20260101-000000-core_business_diagnosis"
+    )
     assert (outputs / "core_business_diagnosis.md").exists()
     assert (outputs / "core_business_diagnosis.html").exists()
     assert not (outputs / "report.md").exists()
