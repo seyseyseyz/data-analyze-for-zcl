@@ -1,0 +1,37 @@
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/orchestration/test_narrative_workflow.py
+  ai_agent 250,367,390,407,439,460,479,575
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_report_rendering.py
+  ai_agent 362-367
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/paths.py
+  ai_agent 2,7,32-56
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/conftest.py
+  ai_agent 5-15
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/reporting/facts_export.py
+  ai_agent 18,83-94,135-141,153-159
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_cli_run_facts_telemetry.py
+  ai_agent 27,50
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_final_review_regressions.py
+  ai_agent 112-113,115
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/orchestration/narrative_workflow.py
+  ai_agent 12,1220,1222-1223,1248,1285,1288-1289,1307
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_facts_export_assembly.py
+  ai_agent 69-93
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/orchestration/test_review_stage.py
+  ai_agent 226,237,251,279,293
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_project_foundation.py
+  ai_agent 7-13,31-56
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/orchestration/test_narrative_workflow_claims.py
+  ai_agent 255,442
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/cli.py
+  ai_agent 9-13,203-206,413-415,460
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_cli_combined_report.py
+  ai_agent 47,84,106-108
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/orchestration/test_narrative_cli.py
+  ai_agent 68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.33-trip",
+  "base_commit_sha": "e4f3f2de48dfccf119ce521e616a6496ddec4882",
+  "prompts": {}
+}
