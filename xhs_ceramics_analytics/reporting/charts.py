@@ -345,26 +345,37 @@ def _vbar(
     body = [_title(title)]
     if not plotted:
         return _frame(_title(title) + _empty_state(width, height), width, height)
+    # Shared zero baseline with abs-extent normalisation. For all-positive data
+    # (lo == 0) this reduces byte-for-byte to the historical bottom-anchored bars;
+    # a negative value drops below the baseline instead of drawing a negative-height
+    # rect that escapes the canvas (the old max-only scaling bug).
     vmax = max(v for _, v, _ in plotted) or 1.0
+    vmin = min(v for _, v, _ in plotted)
+    hi = max(0.0, vmax)
+    lo = min(0.0, vmin)
+    span = (hi - lo) or 1.0
+    zero_y = pad_t + (hi / span) * plot_h  # == baseline_y when lo == 0
     slot = (width - 2 * pad_x) / len(plotted)
     bw = min(slot * 0.6, 64)
     fill = "url(#ca-hatch)" if de_emphasize else "var(--ink-strong)"
     opacity = "0.55" if de_emphasize else "1"
     body.append(
-        f'<line x1="{pad_x}" y1="{_num(baseline_y)}" x2="{width - pad_x}" '
-        f'y2="{_num(baseline_y)}" class="ca-axis"/>'
+        f'<line x1="{pad_x}" y1="{_num(zero_y)}" x2="{width - pad_x}" '
+        f'y2="{_num(zero_y)}" class="ca-axis"/>'
     )
     label_idx = _axis_label_indices(len(plotted))  # thin a dense category axis
     for i, (cat, value, text) in enumerate(plotted):
         cx = pad_x + slot * (i + 0.5)
-        bh = (value / vmax) * plot_h
+        bh = abs(value) / span * plot_h
+        y_top = zero_y - bh if value >= 0 else zero_y  # grow up (≥0) or down (<0)
+        num_y = y_top - 8 if value >= 0 else y_top + bh + 16  # label clears the bar
         body.append(
-            f'<rect x="{_num(cx - bw / 2)}" y="{_num(baseline_y - bh)}" '
+            f'<rect x="{_num(cx - bw / 2)}" y="{_num(y_top)}" '
             f'width="{_num(bw)}" height="{_num(bh)}" rx="4" fill="{fill}" '
             f'fill-opacity="{opacity}"><title>{_esc(cat)}：{_esc(text)}</title></rect>'
         )
         body.append(
-            f'<text x="{_num(cx)}" y="{_num(baseline_y - bh - 8)}" text-anchor="middle" '
+            f'<text x="{_num(cx)}" y="{_num(num_y)}" text-anchor="middle" '
             f'class="ca-num">{_esc(text)}</text>'
         )
         if i in label_idx:
@@ -383,12 +394,14 @@ def _waterfall(
     title: str,
     de_emphasize: bool,
 ) -> str:
-    """Floating-bar waterfall: components stack top-down as a descent from the whole.
+    """Cumulative bridge: each bar floats between the running total before and after
+    its value, so signed contributions read as ups/downs from a shared zero baseline.
 
-    Each segment (发货前 / 发货后 …) is placed at its cumulative base so the bars read
-    as slices of one total rather than independent columns. Only computable segments
-    are drawn; ``None`` values are skipped. Never raises — empty input frames an
-    empty state. Reuses the _vbar geometry and hatch/opacity de-emphasis convention.
+    This is a true waterfall — the GMV bridge (流量 +/转化 -/客单价 +) and part-to-whole
+    layers (发货前 + 发货后) both render correctly because the vertical scale spans the
+    full cumulative extent, not the (possibly near-zero) sum of the components. The old
+    sum-normalised version exploded a +17689 contribution to 977px when the net was only
+    +3257. Only computable segments are drawn; ``None`` values are skipped. Never raises.
     """
     width, height = 308, 300
     pad_t, pad_b, pad_x = 56, 64, 20
@@ -399,26 +412,41 @@ def _waterfall(
     ]
     if not plotted:
         return _frame(_title(title) + _empty_state(width, height), width, height)
-    total = sum(v for _, v, _ in plotted) or 1.0
+    # Cumulative running totals: the plot band spans [min(0, …), max(0, …)] of the
+    # path 0 → c₁ → c₁+c₂ → … so every floating bar stays inside the canvas.
+    cumulative = [0.0]
+    for _, v, _ in plotted:
+        cumulative.append(cumulative[-1] + v)
+    hi = max(cumulative)
+    lo = min(cumulative)
+    span = (hi - lo) or 1.0
+
+    def _y_of(val: float) -> float:  # data value → pixel (hi at the top of the band)
+        return top_y + (hi - val) / span * plot_h
+
+    zero_y = _y_of(0.0)
     slot = (width - 2 * pad_x) / len(plotted)
     bw = min(slot * 0.6, 64)
     fill = "url(#ca-hatch)" if de_emphasize else "var(--ink-strong)"
     opacity = "0.55" if de_emphasize else "1"
     body = [_title(title)]
+    body.append(
+        f'<line x1="{pad_x}" y1="{_num(zero_y)}" x2="{width - pad_x}" '
+        f'y2="{_num(zero_y)}" class="ca-axis"/>'
+    )
     label_idx = _axis_label_indices(len(plotted))  # thin a dense category axis
-    running = 0.0
     for i, (cat, value, text) in enumerate(plotted):
         cx = pad_x + slot * (i + 0.5)
-        seg_h = (value / total) * plot_h
-        y = top_y + (running / total) * plot_h  # floats on the cumulative base
-        running += value
+        y_start, y_end = _y_of(cumulative[i]), _y_of(cumulative[i + 1])
+        y_top = min(y_start, y_end)
+        seg_h = abs(y_end - y_start)
         body.append(
-            f'<rect x="{_num(cx - bw / 2)}" y="{_num(y)}" '
+            f'<rect x="{_num(cx - bw / 2)}" y="{_num(y_top)}" '
             f'width="{_num(bw)}" height="{_num(seg_h)}" rx="4" fill="{fill}" '
             f'fill-opacity="{opacity}"><title>{_esc(cat)}：{_esc(text)}</title></rect>'
         )
         body.append(
-            f'<text x="{_num(cx)}" y="{_num(y + seg_h / 2)}" text-anchor="middle" '
+            f'<text x="{_num(cx)}" y="{_num(y_top + seg_h / 2)}" text-anchor="middle" '
             f'class="ca-num">{_esc(text)}</text>'
         )
         if i in label_idx:
