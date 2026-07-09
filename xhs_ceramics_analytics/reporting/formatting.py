@@ -15,6 +15,7 @@ from xhs_ceramics_analytics.reporting.field_labels import FIELD_LABELS
 from xhs_ceramics_analytics.reporting.labels import (
     VALUE_LABELS,
     format_cn_date,
+    format_index,
     format_money,
     format_number,
     format_percent,
@@ -213,6 +214,12 @@ def format_scalar(field_name: str, value: object) -> str:
             if numeric < 0:
                 return f"下降 {format_percent(abs(numeric))}"
             return "持平 0%"
+        # HHI concentration indices over thousands of SKUs are inherently tiny
+        # (~0.002); whole-number/2-decimal rounding flattened them to "0", which
+        # reads as *zero* concentration and contradicts the gini/结论 on the same
+        # card. Render with two significant figures so a small-but-real index shows.
+        if field_name.endswith("_hhi"):
+            return format_index(numeric)
         if is_percent_field(field_name):
             return format_percent(numeric)
         # Money to whole yuan (shared format_money primitive) — checked after percent
