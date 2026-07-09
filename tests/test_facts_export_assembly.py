@@ -66,6 +66,31 @@ def test_conversion_lookalike_count_key_is_not_forced_percent():
     assert fact.rendered == "3,991"        # NOT "3991.0%"
 
 
+def test_concentration_index_is_not_rendered_as_money():
+    # HHI / gini concentration indices merely CONTAIN "gmv" (repeat_gmv_hhi, gmv_gini),
+    # so the last-resort "gmv" substring hint used to force them to money — a 0.64 index
+    # became the nonsensical "¥1" ("集中度指标为 ¥1" in the narrative). They are
+    # dimensionless indices: mirror the table path (format_scalar's _hhi branch) and
+    # render the value with its leading significant digits, never a currency sign.
+    book = build_factbook(
+        [
+            _finding_with(
+                {
+                    "repeat_gmv_hhi": 0.637444,
+                    "gmv_gini": 0.55,
+                    "note_gmv_hhi": 0.018,
+                    "gmv_hhi": 0.0028,
+                }
+            )
+        ]
+    )
+    assert book.facts["mod.repeat_gmv_hhi"].unit == "index"
+    assert book.facts["mod.repeat_gmv_hhi"].rendered == "0.64"  # NOT "¥1"
+    assert book.facts["mod.gmv_gini"].rendered == "0.55"
+    assert book.facts["mod.note_gmv_hhi"].rendered == "0.018"
+    assert book.facts["mod.gmv_hhi"].rendered == "0.0028"
+
+
 def _finding_with(key_numbers: dict) -> AnalysisResult:
     return AnalysisResult(
         task_id="mod",
