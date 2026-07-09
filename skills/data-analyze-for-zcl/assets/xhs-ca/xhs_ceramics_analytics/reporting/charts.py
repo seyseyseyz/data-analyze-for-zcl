@@ -77,6 +77,56 @@ def _axis_label_indices(n: int, max_labels: int = _MAX_AXIS_LABELS) -> set[int]:
     return {round(step * t) for t in range(max_labels)}
 
 
+# --- shared chart furniture: value-reference grid, trend smoothing, area fill ---
+# These turn the bare axis+line/bar into a readable "shape": faint horizontal
+# references, a soft area under a trend, and a smoothed trend over a faded raw
+# series. All deterministic (fixed geometry / colours) so the byte-stable
+# contract holds; colours use var(--token, #literal) so BOTH report roots render
+# identically without adding a new :root token.
+_GRID_LEVELS = 4
+
+
+def _hgrid(x0: float, x1: float, y_top: float, y_base: float, levels: int = _GRID_LEVELS) -> str:
+    """Evenly-spaced solid horizontal hairlines as value references, drawn behind
+    the series. The baseline itself is the ca-axis, so grids fill the interior."""
+    if levels < 1 or y_base <= y_top:
+        return ""
+    step = (y_base - y_top) / levels
+    return "".join(
+        f'<line x1="{_num(x0)}" y1="{_num(y_base - step * k)}" '
+        f'x2="{_num(x1)}" y2="{_num(y_base - step * k)}" class="ca-grid"/>'
+        for k in range(1, levels + 1)
+    )
+
+
+def _moving_avg(values: Sequence[float], k: int) -> list[float]:
+    """Centered moving average, window ``2k+1``, edge-clamped. Pure; ``k<=0`` is
+    identity. Used to lift a bold trend out of a noisy daily series."""
+    if k <= 0:
+        return list(values)
+    n = len(values)
+    out: list[float] = []
+    for i in range(n):
+        a = max(0, i - k)
+        b = min(n, i + k + 1)
+        window = values[a:b]
+        out.append(sum(window) / len(window))
+    return out
+
+
+def _area_fill(
+    xs: Sequence[float], ys: Sequence[float], baseline_y: float, *, opacity: str = "0.6"
+) -> str:
+    """Soft closed area between a line and the baseline so the series reads as a
+    shape, not a wire. Pale green with a literal fallback (keeps both report roots
+    identical without a new token)."""
+    if len(xs) < 2:
+        return ""
+    pts = " ".join(f"L{_num(x)} {_num(y)}" for x, y in zip(xs, ys))
+    d = f"M{_num(xs[0])} {_num(baseline_y)} {pts} L{_num(xs[-1])} {_num(baseline_y)} Z"
+    return f'<path d="{d}" fill="var(--green-bg, #EDF3EC)" fill-opacity="{opacity}"/>'
+
+
 def _title(text: str) -> str:
     return f'<text x="0" y="18" class="ca-title">{_esc(text)}</text>'
 
@@ -161,14 +211,28 @@ def _hbar(
     for i, (label, value, value_text, tone) in enumerate(rows):
         y = 20 + i * 34
         bar_w = max(0.0, (value / vmax) * track) if value is not None else 0.0
-        fill = "url(#ca-hatch)" if de_emphasize else tone
-        opacity = "0.55" if de_emphasize else "1"
+        # Track rail behind the bar so even a tiny value shows its share of the
+        # whole. Drawn as a round-capped <line> (NOT a <rect x=>) so per-row
+        # bar-rect counts in the template tests stay exact.
+        cy = y + 10
+        parts.append(
+            f'<line x1="{_num(pad_l + 10)}" y1="{_num(cy)}" x2="{_num(pad_l + track - 10)}" '
+            f'y2="{_num(cy)}" stroke="var(--track, #F1F0ED)" stroke-width="20" '
+            f'stroke-linecap="round"/>'
+        )
+        if de_emphasize:
+            fill, opacity = "url(#ca-hatch)", "0.55"
+        else:
+            # A slab of #111 reads as "loud". Charcoal plus a gentle per-rank fade
+            # gives the ranking a calm hierarchy while the top bar stays saturated.
+            fill = "var(--ink)" if tone == "var(--ink-strong)" else tone
+            opacity = "1" if i == 0 else _num(max(0.5, 0.92 - 0.1 * i))
         parts.append(
             f'<text x="{pad_l - 10}" y="{y + 15}" text-anchor="end" class="ca-cat">'
             f'{_esc(_truncate(str(label), label_gutter))}<title>{_esc(label)}</title></text>'
         )
         parts.append(
-            f'<rect x="{pad_l}" y="{y}" width="{_num(bar_w)}" height="20" rx="4" '
+            f'<rect x="{pad_l}" y="{y}" width="{_num(bar_w)}" height="20" rx="10" '
             f'fill="{fill}" fill-opacity="{opacity}">'
             f'<title>{_esc(label)}：{_esc(value_text)}</title></rect>'
         )
@@ -460,8 +524,9 @@ def _line(
         return baseline_y - (v / vmax) * plot_h
 
     body: list[str] = [
+        _hgrid(pad_l, width - pad_r, pad_t, baseline_y),
         f'<line x1="{pad_l}" y1="{_num(baseline_y)}" x2="{width - pad_r}" '
-        f'y2="{_num(baseline_y)}" class="ca-axis"/>'
+        f'y2="{_num(baseline_y)}" class="ca-axis"/>',
     ]
     label_idx = _axis_label_indices(n_x)  # thin a dense x-axis to a readable handful
     for i, label in enumerate(x_labels):
@@ -491,15 +556,27 @@ def _line(
                     f'fill-opacity="{opacity}"/>'
                 )
 
+    has_agg = len(series) > 1 and not suppress_aggregate
+    agg: list[float | None] = []
+    if has_agg:  # bold aggregate = mean at each x
+        for i in range(n_x):
+            col = [ys[i] for _, ys in series if ys[i] is not None]
+            agg.append(sum(col) / len(col) if col else None)
+    # A soft area under the primary line (the aggregate, or the sole series) reads
+    # as a shape rather than a wire. Skipped for de-emphasised (thin) data so a
+    # low-reliability chart is never dressed up as a confident filled trend.
+    primary = agg if has_agg else (series[0][1] if len(series) == 1 else None)
+    if primary is not None and not de_emphasize:
+        area_pts = [(xs[i], y_of(v)) for i, v in enumerate(primary) if v is not None]
+        if len(area_pts) >= 2:
+            axp, ayp = zip(*area_pts)
+            body.append(_area_fill(axp, ayp, baseline_y, opacity="0.55"))
+
     line_opacity = "0.35"
     dash = ' stroke-dasharray="4 3"' if de_emphasize else ""
     for name, ys in series:
         draw(ys, color="var(--muted)", opacity=line_opacity, dash=dash)
-    if len(series) > 1 and not suppress_aggregate:  # bold aggregate = mean at each x
-        agg: list[float | None] = []
-        for i in range(n_x):
-            col = [ys[i] for _, ys in series if ys[i] is not None]
-            agg.append(sum(col) / len(col) if col else None)
+    if has_agg:
         draw(agg, color="var(--ink-strong)", opacity="0.55" if de_emphasize else "1", dash=dash)
     return _frame("".join(body), width, height)
 
@@ -720,6 +797,7 @@ def _timeseries_line(
 
     body: list[str] = [
         _title(title),
+        _hgrid(pad_l, width - pad_r, pad_t, baseline_y),
         f'<line x1="{pad_l}" y1="{_num(baseline_y)}" x2="{width - pad_r}" '
         f'y2="{_num(baseline_y)}" class="ca-axis"/>',
     ]
@@ -744,20 +822,43 @@ def _timeseries_line(
     color = "var(--ink-strong)"
     opacity = "0.55" if de_emphasize else "1"
     dash = ' stroke-dasharray="4 3"' if de_emphasize else ""
+    raw_px = [y_of(v) for _, v in pts]
+    # A long daily series drawn point-for-point is a "seismograph". Lift a bold
+    # moving-average trend out of it and fade the raw series to a hairline behind;
+    # short series stay exact (no smoothing). The endpoint dot + value sit on the
+    # bold line so the reader anchors to the trend, not a single noisy last day.
+    smooth = n >= _MAX_LINE_MARKERS
+    k = max(1, round(n / 18)) if smooth else 0
+    trend_px = [y_of(v) for v in _moving_avg([v for _, v in pts], k)] if smooth else raw_px
     if n >= 2:
-        path = "M" + " L".join(f"{_num(x)} {_num(y_of(v))}" for x, (_, v) in zip(xs, pts))
+        if not de_emphasize:  # a soft area only under trustworthy (non-thin) data
+            body.append(_area_fill(xs, trend_px, baseline_y, opacity="0.6"))
+        if smooth:  # faded raw daily series behind the bold trend
+            raw = "M" + " L".join(f"{_num(x)} {_num(y)}" for x, y in zip(xs, raw_px))
+            body.append(
+                f'<path d="{raw}" fill="none" stroke="var(--muted)" stroke-width="1" '
+                f'stroke-opacity="0.45"{dash}/>'
+            )
+        path = "M" + " L".join(f"{_num(x)} {_num(y)}" for x, y in zip(xs, trend_px))
         body.append(
             f'<path d="{path}" fill="none" stroke="{color}" stroke-width="2" '
-            f'stroke-opacity="{opacity}"{dash}/>'
+            f'stroke-linejoin="round" stroke-linecap="round" stroke-opacity="{opacity}"{dash}/>'
+        )
+    if smooth:  # name the smoothing honestly — the bold line is a derived average.
+        # Right-aligned on the title row so it never collides with the "结构转折"
+        # changepoint labels that sit in the band just above the plot.
+        body.append(
+            f'<text x="{width - pad_r}" y="18" text-anchor="end" class="ca-cat">'
+            f'趋势线为 {2 * k + 1} 日移动平均</text>'
         )
     for i in {0, n - 1}:  # anchor first + last observations (single point => one dot)
         body.append(
-            f'<circle cx="{_num(xs[i])}" cy="{_num(y_of(pts[i][1]))}" r="4" '
+            f'<circle cx="{_num(xs[i])}" cy="{_num(trend_px[i])}" r="4" '
             f'fill="{color}" fill-opacity="{opacity}"/>'
         )
     last_x, last_v = xs[n - 1], pts[n - 1][1]
     body.append(
-        f'<text x="{_num(last_x)}" y="{_num(y_of(last_v) - 10)}" text-anchor="end" '
+        f'<text x="{_num(last_x)}" y="{_num(trend_px[n - 1] - 10)}" text-anchor="end" '
         f'class="ca-num">{_esc(value_fmt(last_v))}</text>'
     )
     ticks = min(6, n)
