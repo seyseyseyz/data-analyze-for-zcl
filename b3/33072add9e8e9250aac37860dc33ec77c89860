@@ -1,0 +1,108 @@
+tests/test_charts_confidence.py
+  s_6bd2349b4ebd4d::t_6653e927047f7f 43-46
+  s_6bd2349b4ebd4d::t_1accf6ef33c4ad 66-67
+tests/test_reporting_narrative_render.py
+  s_6bd2349b4ebd4d::t_18561c0a82c1bb 125-158
+tests/test_report_charts.py
+  s_6bd2349b4ebd4d::t_b901eeb778c72f 600-602,604
+xhs_ceramics_analytics/analysis/reshoot.py
+  s_6bd2349b4ebd4d::t_f94a626490d821 21-24
+tests/reporting/test_curated_view.py
+  s_6bd2349b4ebd4d::t_f09f8f77b49b9b 10,17,63,72-73,75-79,142,176,178-189,198,209,250,271,273-281,289-297,305-307,322,324-329,334-340,347-354,363,366-371,387,394-399,416-424,450-456
+  s_6bd2349b4ebd4d::t_8994c1e86f8e0e 70-71,74
+  s_6bd2349b4ebd4d::t_a75ae58119fb8b 163-164
+  s_6bd2349b4ebd4d::t_ddc9c586240ff0 384-386,388-393,400-415,425-429,446-449,457-459
+  s_6bd2349b4ebd4d::t_653421d723e101 304
+  s_6bd2349b4ebd4d::t_7161446c1b2fde 153,155-156,160-162
+  s_6bd2349b4ebd4d::t_505406b9c14c49 108
+  s_6bd2349b4ebd4d::t_85ab0ac0abbe3f 430-445
+xhs_ceramics_analytics/analysis/prose.py
+  s_6bd2349b4ebd4d::t_e2e5356f325890 13-17,21-24
+tests/test_analysis_prose.py
+  s_6bd2349b4ebd4d::t_c64341bf05b3ea 12-14
+tests/reporting/test_narrative_render_views.py
+  s_6bd2349b4ebd4d::t_0fcdb353549b7a 475-500,503-529
+  s_6bd2349b4ebd4d::t_4bfff64d22ca71 138-151,153-159,167-169,172-174,176,182-184,187-188,190,195-197,200,204
+  s_6bd2349b4ebd4d::t_ed15419ffdc0a4 501-502
+  s_6bd2349b4ebd4d::t_44c13c1d63f66d 111-112,114
+  s_6bd2349b4ebd4d::t_883ef4264c30d1 208-211
+  s_6bd2349b4ebd4d::t_a4d248f90b8823 232,333,375
+xhs_ceramics_analytics/reporting/first_screen.py
+  s_6bd2349b4ebd4d::t_cf1d897415ee7a 11-21,24-25,31-32,41-43,47,52
+xhs_ceramics_analytics/reporting/formatting.py
+  s_6bd2349b4ebd4d::t_9874bb2d3682f9 125-168
+  s_6bd2349b4ebd4d::t_c9432522de9569 190-193
+  s_6bd2349b4ebd4d::t_f09f8f77b49b9b 10
+  s_6bd2349b4ebd4d::t_bfbb6c3a0c79c6 278-281
+xhs_ceramics_analytics/reporting/labels.py
+  s_6bd2349b4ebd4d::t_e658d273a22bf2 162-170,172-192
+xhs_ceramics_analytics/reporting/html.py
+  s_6bd2349b4ebd4d::t_f3f6f4e8e98438 872-877,879-883
+  s_6bd2349b4ebd4d::t_413f5c2ec65af7 51-56
+tests/test_reporting_formatting.py
+  s_6bd2349b4ebd4d::t_f09f8f77b49b9b 7,20
+  s_6bd2349b4ebd4d::t_8964b2ff29d376 43-50
+  s_6bd2349b4ebd4d::t_cb70845420238b 176-194
+  s_6bd2349b4ebd4d::t_be6ec706ba6526 285-297
+  s_6bd2349b4ebd4d::t_ef9737b73b958c 144-145,149,154-164
+xhs_ceramics_analytics/reporting/narrative_render.py
+  s_6bd2349b4ebd4d::t_ee3eb50bf9efa2 362-372,375,378-382
+  s_6bd2349b4ebd4d::t_99c14fa9ae9cbe 295,299,303-304,306
+  s_6bd2349b4ebd4d::t_76c78271f6067e 289-292
+  s_6bd2349b4ebd4d::t_c8f7cf503ffcc1 217,227-229
+  s_6bd2349b4ebd4d::t_f8a9c2445906da 262-264
+  s_6bd2349b4ebd4d::t_daadb369bb28b1 272
+  s_6bd2349b4ebd4d::t_8b172788922d8c 281
+  s_6bd2349b4ebd4d::t_f09f8f77b49b9b 12,40,313,343,440,491-493,496-506,509-524,527-542,545-560,572,617
+  s_6bd2349b4ebd4d::t_ce7b8b10b696f7 392,395,398,408-410,412
+  s_6bd2349b4ebd4d::t_ea4e05b8d6caba 137-148,153-160,162,167-169
+  s_6bd2349b4ebd4d::t_f30f7912c07eea 596-598,605-609,612-613,624
+  s_6bd2349b4ebd4d::t_95c2506523941c 26-29
+tests/test_task11_regressions.py
+  s_6bd2349b4ebd4d::t_64b864e8f60b75 125-130
+tests/test_html_empty_columns.py
+  s_6bd2349b4ebd4d::t_1f5a48d0b3fe84 47
+  s_6bd2349b4ebd4d::t_3430b4ab594848 37-46,48-51
+tests/reporting/test_charts_templates.py
+  s_6bd2349b4ebd4d::t_1a0f691fb3987f 107-108
+  s_6bd2349b4ebd4d::t_595463c379776d 179
+  s_6bd2349b4ebd4d::t_62dcd2c251a199 75-76
+  s_6bd2349b4ebd4d::t_6b3936d2453f8e 54
+  s_6bd2349b4ebd4d::t_e93ef431ad11ea 300
+  s_6bd2349b4ebd4d::t_a614186ec21d73 121-124
+  s_6bd2349b4ebd4d::t_45ab3bc78b1fda 143
+  s_6bd2349b4ebd4d::t_d5b9d1e419db9f 55,80
+xhs_ceramics_analytics/reporting/curated_view.py
+  s_6bd2349b4ebd4d::t_a8d00b2f055a7b 123-137,160-163
+  s_6bd2349b4ebd4d::t_344be0eca919c0 49-54
+  s_6bd2349b4ebd4d::t_513c6aa8fd0aea 138,143,149-157,159
+  s_6bd2349b4ebd4d::t_ca828fde3ee2aa 139-142,144-148,158
+  s_6bd2349b4ebd4d::t_f09f8f77b49b9b 17,77,190,197-201,253,276
+xhs_ceramics_analytics/reporting/field_labels.py
+  s_6bd2349b4ebd4d::t_871c694b943060 185
+  s_6bd2349b4ebd4d::t_baa530868510c3 208
+  s_6bd2349b4ebd4d::t_398019aa6db5b5 183
+  s_6bd2349b4ebd4d::t_bb021e7de7534d 105
+  s_6bd2349b4ebd4d::t_a7e571c6b3973c 434
+xhs_ceramics_analytics/reporting/facts_export.py
+  s_6bd2349b4ebd4d::t_73f578b8e22e7a 51,53-57,62
+  s_6bd2349b4ebd4d::t_8b9fb85e926c7a 18
+xhs_ceramics_analytics/reporting/charts.py
+  s_6bd2349b4ebd4d::t_0e91f37dd3dfd0 563-565,568
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.33-trip",
+  "base_commit_sha": "b333072add9e8e9250aac37860dc33ec77c89860",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
