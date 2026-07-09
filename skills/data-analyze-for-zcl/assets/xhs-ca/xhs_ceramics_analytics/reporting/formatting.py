@@ -15,6 +15,7 @@ from xhs_ceramics_analytics.reporting.field_labels import FIELD_LABELS
 from xhs_ceramics_analytics.reporting.labels import (
     VALUE_LABELS,
     format_cn_date,
+    format_index,
     format_money,
     format_number,
     format_percent,
@@ -59,6 +60,7 @@ PERCENT_FIELDS = {
     "effectiveness",
     "effectiveness_high",
     "effectiveness_low",
+    "net_margin",  # 加购转化率 − 退款率 (percentage-point diff), NOT money
     "new_customer_dependence",
     "note_conversion",
     "overall_cart_to_pay",
@@ -73,6 +75,7 @@ PERCENT_FIELDS = {
     "repeat_conversion_premium",
     "second_conversion",
     "share",
+    "sweet_net_margin",  # 甜点带 net_margin (same ratio caliber)
     "top_conversion",
     "wishlist_to_cart_ratio",
     "wilson_high",
@@ -111,10 +114,12 @@ MONEY_FIELDS = {
     "contrib_conversion",
 }
 # ``_gmv`` (note/card/net/total/... gmv), ``_amount`` (refund/paid amounts), ``_spend``
-# (total/avg/break-even spend), ``_aov`` (note/card/median/contrib aov), ``_margin``
-# (net/sweet margin). None of these suffixes reach a ratio/index — ``gmv_gini`` ends
+# (total/avg/break-even spend), ``_aov`` (note/card/median/contrib aov). ``_margin`` is
+# deliberately NOT here: the only ``*_margin`` fields (net_margin / sweet_net_margin) are
+# 加购转化率−退款率 ratios and live in PERCENT_FIELDS — treating them as money rounded a
+# real 0.45 to "0". None of these suffixes reach a ratio/index — ``gmv_gini`` ends
 # ``_gini``, ``marginal_roas`` ends ``_roas``, ``gmv_universe`` ends ``_universe``.
-MONEY_SUFFIXES = ("_gmv", "_amount", "_spend", "_aov", "_margin")
+MONEY_SUFFIXES = ("_gmv", "_amount", "_spend", "_aov")
 
 # Fields whose values denote a calendar day. Real exports carry these as integer
 # YYYYMMDD, ISO strings, or datetime — the date branch normalizes all to ISO.
@@ -209,6 +214,12 @@ def format_scalar(field_name: str, value: object) -> str:
             if numeric < 0:
                 return f"下降 {format_percent(abs(numeric))}"
             return "持平 0%"
+        # HHI concentration indices over thousands of SKUs are inherently tiny
+        # (~0.002); whole-number/2-decimal rounding flattened them to "0", which
+        # reads as *zero* concentration and contradicts the gini/结论 on the same
+        # card. Render with two significant figures so a small-but-real index shows.
+        if field_name.endswith("_hhi"):
+            return format_index(numeric)
         if is_percent_field(field_name):
             return format_percent(numeric)
         # Money to whole yuan (shared format_money primitive) — checked after percent

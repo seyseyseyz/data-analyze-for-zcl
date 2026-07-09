@@ -282,6 +282,33 @@ def _conversion_finding(con, limitations: list[str]) -> tuple[Finding, list[dict
 # --------------------------------------------------------------------------- #
 # Finding 2 — 首购周期漏斗 (degrade-gated)
 # --------------------------------------------------------------------------- #
+def _collapse_identical_cycles(rows: list[dict]) -> list[dict]:
+    """Merge cumulative first-purchase windows that carry identical counts.
+
+    The windows are cumulative (180天 ⊂ 365天), so when every first purchase already
+    falls inside the narrower window the wider one repeats its visitor/payer counts
+    verbatim. Rendering both reads as a duplicated row; collapse adjacent rows with
+    identical (visitors, payers) into one whose label joins the window names, so the
+    table states the fact once without dropping either caliber. Pure; input order is
+    preserved (callers sort first, which keeps equal-count rows adjacent)."""
+    merged: list[dict] = []
+    for r in rows:
+        if merged and (
+            merged[-1]["visitors"] == r["visitors"]
+            and merged[-1]["payers"] == r["payers"]
+        ):
+            last = merged[-1]
+            merged[-1] = {
+                **last,
+                "first_purchase_cycle": (
+                    f'{last["first_purchase_cycle"]}/{r["first_purchase_cycle"]}'
+                ),
+            }
+        else:
+            merged.append(dict(r))
+    return merged
+
+
 def _cycle_finding(con, limitations: list[str]) -> tuple[Finding | None, list[dict]]:
     cols = _table_columns(con, "shop_page_funnel")
     if not {"first_purchase_cycle", "shop_visitors", "shop_payers"} <= cols:
@@ -317,6 +344,11 @@ def _cycle_finding(con, limitations: list[str]) -> tuple[Finding | None, list[di
             }
         )
     cycle_rows.sort(key=lambda r: r["visitors"], reverse=True)
+    # Collapse cumulative windows that repeat identical counts (180天 == 365天 when all
+    # first purchases fall inside 180 days) so the table shows the fact once.
+    collapsed = _collapse_identical_cycles(cycle_rows)
+    windows_merged = len(collapsed) < len(cycle_rows)
+    cycle_rows = collapsed
 
     convs = [r["conversion"] for r in cycle_rows if r["conversion"] is not None]
     gap = (max(convs) - min(convs)) if len(convs) >= 2 else None
@@ -340,6 +372,8 @@ def _cycle_finding(con, limitations: list[str]) -> tuple[Finding | None, list[di
     ]
     if weakest_cycle:
         cycle_note = f"最弱周期为 {weakest_cycle}（转化明显偏低）。"
+    elif windows_merged:
+        cycle_note = "各累计窗口的访客/支付人数完全重叠（首购集中在最短窗口内），已合并为一档。"
     elif gap is not None and not windows_differ:
         cycle_note = "各累计窗口转化无有效差异（差异低于阈值，视为同一窗口）。"
     else:

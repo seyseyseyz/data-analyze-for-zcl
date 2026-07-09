@@ -863,6 +863,14 @@ def _table_view(table_name: str, rows: list[dict[str, object]]) -> dict[str, obj
     if not user_columns:
         user_columns = all_columns[:6]
 
+    # Drop a user column that is entirely 暂无数据 across every shown row — a
+    # blank column only widens the grid and tells the reader nothing. Guard the
+    # edge where that would empty the table: an all-blank grid keeps its columns,
+    # since a column-less table reads worse than a sparse one.
+    shown = rows[:_MAX_TABLE_ROWS]
+    non_empty = [c for c in user_columns if any(r.get(c) is not None for r in shown)]
+    user_columns = non_empty or user_columns
+
     showing_count = min(len(rows), _MAX_TABLE_ROWS)
     display_text = f"共 {len(rows)} 行，当前展示 {showing_count} 行"
     if len(rows) > _MAX_TABLE_ROWS:

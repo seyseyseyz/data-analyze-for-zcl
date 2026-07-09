@@ -140,6 +140,25 @@ def format_number(value: float) -> str:
     return f"{value:,.2f}".rstrip("0").rstrip(".")
 
 
+def format_index(value: float) -> str:
+    """Render a concentration index (HHI) preserving its leading significant digits.
+
+    HHI over thousands of SKUs is inherently tiny (~0.002); the whole-number/2-decimal
+    money & number formatters flatten it to ``0``, which reads as *zero* concentration
+    and contradicts the gini/结论 on the same card. Two significant figures keep a
+    small-but-real index visible (``0.0024`` stays ``0.0024``) while an exact ``0.0``
+    still reads ``0``. ``:.2g`` can emit sci-notation for sub-0.001 magnitudes
+    (``1e-05``); HHI floors at ``1/n`` so it never gets that small in practice, but
+    guard anyway by falling back to a fixed 4-decimal render.
+    """
+    if value == 0:
+        return "0"
+    text = f"{value:.2g}"
+    if "e" in text or "E" in text:
+        text = f"{value:.4f}".rstrip("0").rstrip(".")
+    return text
+
+
 def format_money(value: float) -> str:
     """Grouped whole-yuan amount: ``1302239.01`` -> ``1,302,239``.
 

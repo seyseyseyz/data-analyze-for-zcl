@@ -201,6 +201,9 @@ def test_caps_rows_and_degrades_empty():
         for i in range(20)
     ]
     assert len(build_priority_table(many, max_rows=8)) == 8
+    # Default converges to a focused shortlist (top 5), not a long diffuse list —
+    # a "先做什么" table the reader can hold in their head.
+    assert len(build_priority_table(many)) == 5
 
 
 def test_never_raises_on_missing_reliability():
