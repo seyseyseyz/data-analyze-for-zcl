@@ -9,7 +9,7 @@ import json
 import re
 from pathlib import Path
 
-from xhs_ceramics_analytics.paths import outputs_dir, state_dir
+from xhs_ceramics_analytics.paths import run_output_dir, run_timestamp, state_dir
 from xhs_ceramics_analytics.reporting.factcheck_gate import run_gate
 from xhs_ceramics_analytics.reporting.factcheck_gate import (
     _view_label as _gate_view_label,
@@ -1217,9 +1217,10 @@ def _visual_coverage_reason(markdown: str, result_tables: object) -> str | None:
         return None
 
 
-def finalize_narrative(run_dir, *, project_root=None) -> dict:
+def finalize_narrative(run_dir, *, project_root=None, timestamp=None) -> dict:
     """Success delivery boundary — render the gate-passed narrative bundle to the two
-    artifacts (<report_name>.md + <report_name>.html) under outputs_dir(project_root).
+    artifacts (<report_name>.md + <report_name>.html) under a timestamped production
+    folder ``outputs/<timestamp>-<report_name>/`` so successive runs never overwrite.
 
     The .md is written unconditionally from ``state["_bundle"]`` via bundle_to_markdown
     (the narrative renderer, NOT the skeleton one — no 确定性骨架版 banner). HTML render/write
@@ -1244,7 +1245,7 @@ def finalize_narrative(run_dir, *, project_root=None) -> dict:
     markdown = bundle_to_markdown(
         bundle, facts_json, title=report_name, result_tables=result_tables
     )
-    out_dir = outputs_dir(project_root)
+    out_dir = run_output_dir(report_name, timestamp or run_timestamp(), project_root)
     (out_dir / f"{report_name}.md").write_text(markdown, encoding="utf-8")
 
     # Non-blocking visual audit of the delivered markdown: if the fact layer had
@@ -1281,10 +1282,11 @@ def finalize_narrative(run_dir, *, project_root=None) -> dict:
     return state
 
 
-def finalize_deterministic(run_dir, *, project_root=None, reason) -> dict:
+def finalize_deterministic(run_dir, *, project_root=None, reason, timestamp=None) -> dict:
     """Deterministic skeleton fallback — the delivery boundary that never fails open.
 
-    Writes <report_name>.md unconditionally under outputs_dir(project_root), then
+    Writes <report_name>.md unconditionally under a timestamped production folder
+    ``outputs/<timestamp>-<report_name>/`` (matching finalize_narrative), then
     best-effort renders <report_name>.html and appends skeleton-mode telemetry to
     state_dir(project_root)/"report_runs.jsonl" (the canonical telemetry file cli.py
     also writes to, read by summarize_runs). HTML render/write and telemetry are
@@ -1302,7 +1304,7 @@ def finalize_deterministic(run_dir, *, project_root=None, reason) -> dict:
     report_name = state["report_name"]
 
     markdown = _deterministic_markdown(run_dir, facts_json, report_name)
-    out_dir = outputs_dir(project_root)
+    out_dir = run_output_dir(report_name, timestamp or run_timestamp(), project_root)
     (out_dir / f"{report_name}.md").write_text(markdown, encoding="utf-8")
 
     try:

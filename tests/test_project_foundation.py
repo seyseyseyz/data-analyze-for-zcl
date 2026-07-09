@@ -4,7 +4,13 @@ from pathlib import Path
 import pytest
 
 from xhs_ceramics_analytics import __version__
-from xhs_ceramics_analytics.paths import outputs_dir, project_root, state_dir
+from xhs_ceramics_analytics.paths import (
+    outputs_dir,
+    project_root,
+    run_output_dir,
+    run_timestamp,
+    state_dir,
+)
 
 
 def test_package_version_is_defined():
@@ -20,6 +26,34 @@ def test_state_and_outputs_dirs_are_created(tmp_path: Path):
     assert outputs == state / "outputs"
     assert state.is_dir()
     assert outputs.is_dir()
+
+
+def test_run_output_dir_is_a_timestamped_subfolder_of_outputs(tmp_path: Path):
+    root = tmp_path / "project"
+    root.mkdir()
+    run_dir = run_output_dir("PiGoo事实层评估", "20260709-134500", root)
+    assert run_dir == outputs_dir(root) / "20260709-134500-PiGoo事实层评估"
+    assert run_dir.is_dir()
+
+
+def test_run_output_dir_isolates_successive_productions(tmp_path: Path):
+    root = tmp_path / "project"
+    root.mkdir()
+    first = run_output_dir("报告", "20260709-134500", root)
+    second = run_output_dir("报告", "20260709-140212", root)
+    assert first != second  # each production is uniquely addressable
+    assert first.is_dir() and second.is_dir()
+
+
+def test_run_timestamp_format_and_env_override(monkeypatch):
+    # Wall-clock stamp is YYYYMMDD-HHMMSS; an env override makes a production folder
+    # reproducible (used by tests and for a deterministic re-render).
+    monkeypatch.setenv("XHS_CA_RUN_TIMESTAMP", "20260709-134500")
+    assert run_timestamp() == "20260709-134500"
+    monkeypatch.delenv("XHS_CA_RUN_TIMESTAMP", raising=False)
+    stamp = run_timestamp()
+    assert len(stamp) == len("20260709-134500")
+    assert stamp[8] == "-" and stamp.replace("-", "").isdigit()
 
 
 def test_project_root_falls_back_to_current_tree(tmp_path: Path, monkeypatch):

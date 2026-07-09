@@ -223,7 +223,7 @@ def test_finalize_narrative_carries_retained_curated_views(tmp_path):
     finalized = nw.finalize_narrative(tmp_path, project_root=tmp_path)
     assert finalized["stage"] == "finalized"
 
-    md = (outputs_dir(tmp_path) / "叙事报告.md").read_text(encoding="utf-8")
+    md = (outputs_dir(tmp_path) / "20260101-000000-叙事报告" / "叙事报告.md").read_text(encoding="utf-8")
     # deterministic engine filled the REAL cells from result_tables
     assert "转化" in md and "123" in md
     assert "拉新" in md and "45" in md
@@ -234,7 +234,7 @@ def test_finalize_narrative_carries_retained_curated_views(tmp_path):
     assert "来源:growth bridge" in md
     assert "core_business_diagnosis" not in md
     # both artifacts land
-    assert (outputs_dir(tmp_path) / "叙事报告.html").exists()
+    assert (outputs_dir(tmp_path) / "20260101-000000-叙事报告" / "叙事报告.html").exists()
 
 
 # --- empty views section finalizes fine (no review, prose-only) ------------
@@ -248,7 +248,7 @@ def test_empty_curated_views_skips_review_and_finalizes(tmp_path, monkeypatch):
     assert state["stage"] == "continuity"
     state = nw.advance_run(tmp_path)  # continuity PASS -> finalized
     assert state["stage"] == "finalized"
-    assert (outputs_dir(tmp_path) / "叙事报告.md").exists()
+    assert (outputs_dir(tmp_path) / "20260101-000000-叙事报告" / "叙事报告.md").exists()
 
 
 # --- review stage: keep / drop / patch routing -----------------------------
@@ -276,7 +276,7 @@ def test_review_keep_retains_and_renders_view(tmp_path, monkeypatch):
     assert state["_bundle"]["sections"][0]["curated_views"]  # retained
     state = nw.advance_run(tmp_path)  # -> finalized
     assert state["stage"] == "finalized"
-    md = (outputs_dir(tmp_path) / "叙事报告.md").read_text(encoding="utf-8")
+    md = (outputs_dir(tmp_path) / "20260101-000000-叙事报告" / "叙事报告.md").read_text(encoding="utf-8")
     assert "转化" in md and "123" in md
 
 
@@ -290,7 +290,7 @@ def test_review_two_drops_removes_view(tmp_path, monkeypatch):
     assert state["stage"] == "continuity"
     assert state["_bundle"]["sections"][0]["curated_views"] == []
     state = nw.advance_run(tmp_path)  # -> finalized
-    md = (outputs_dir(tmp_path) / "叙事报告.md").read_text(encoding="utf-8")
+    md = (outputs_dir(tmp_path) / "20260101-000000-叙事报告" / "叙事报告.md").read_text(encoding="utf-8")
     assert "123" not in md  # dropped view's numbers never rendered
 
 

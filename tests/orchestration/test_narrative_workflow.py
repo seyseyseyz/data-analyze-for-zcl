@@ -247,7 +247,7 @@ def test_advance_success_path_writes_both_narrative_artifacts(tmp_path, monkeypa
     state = nw.advance_run(tmp_path)  # continuity PASS -> finalized + writes artifacts
 
     assert state["stage"] == "finalized"
-    out = outputs_dir(tmp_path)
+    out = outputs_dir(tmp_path) / "20260101-000000-叙事报告"
     md_path = out / "叙事报告.md"
     html_path = out / "叙事报告.html"
     assert md_path.exists(), "success path must write <name>.md"
@@ -364,7 +364,7 @@ def test_finalize_deterministic_writes_two_artifacts(tmp_path):
     assert state["stage"] == "blocked"
     assert state["degradation_reason"] == "denied"
 
-    out = project_root / ".xhs-ceramics-analytics" / "outputs"
+    out = project_root / ".xhs-ceramics-analytics" / "outputs" / "20260101-000000-确定性报告"
     md = out / "确定性报告.md"
     html = out / "确定性报告.html"
     assert md.exists() and html.exists()
@@ -387,7 +387,7 @@ def test_deterministic_lists_unanswerable_questions(tmp_path):
     nw.prepare_run(run_dir, results=results, facts_json=facts_json,
                    report_name="r", project_root=project_root)
     nw.finalize_deterministic(run_dir, project_root=project_root, reason="unsupported")
-    body = (project_root / ".xhs-ceramics-analytics" / "outputs" / "r.md").read_text(encoding="utf-8")
+    body = (project_root / ".xhs-ceramics-analytics" / "outputs" / "20260101-000000-r" / "r.md").read_text(encoding="utf-8")
     assert "暂时答不了的问题" in body
     assert "缺少搜索词表" in body
 
@@ -404,7 +404,7 @@ def test_deterministic_lists_string_blocked_modules(tmp_path):
     nw.prepare_run(run_dir, results=results, facts_json=facts_json,
                    report_name="r", project_root=project_root)
     nw.finalize_deterministic(run_dir, project_root=project_root, reason="unsupported")
-    body = (project_root / ".xhs-ceramics-analytics" / "outputs" / "r.md").read_text(encoding="utf-8")
+    body = (project_root / ".xhs-ceramics-analytics" / "outputs" / "20260101-000000-r" / "r.md").read_text(encoding="utf-8")
     assert "暂时答不了的问题" in body
     assert "note_funnel" in body
 
@@ -436,7 +436,7 @@ def test_producer_output_feeds_finalize_deterministic_without_crash(tmp_path):
     run_dir = tmp_path / "run"
     nw.prepare_run(run_dir, results=results, facts_json=facts_json, report_name="r", project_root=project_root)
     nw.finalize_deterministic(run_dir, project_root=project_root, reason="unsupported")
-    body = (project_root / ".xhs-ceramics-analytics" / "outputs" / "r.md").read_text(encoding="utf-8")
+    body = (project_root / ".xhs-ceramics-analytics" / "outputs" / "20260101-000000-r" / "r.md").read_text(encoding="utf-8")
     assert "note_funnel" in body and "paid_traffic_efficiency" in body
     # the coverage reason must reach the skeleton, not just the bare slug.
     assert "笔记表缺少 impressions 字段" in body
@@ -457,7 +457,7 @@ def test_finalize_deterministic_handles_slice_with_no_reading_key(tmp_path):
     state = nw.finalize_deterministic(run_dir, project_root=project_root, reason="denied")
     assert state["stage"] == "blocked"
 
-    out = project_root / ".xhs-ceramics-analytics" / "outputs"
+    out = project_root / ".xhs-ceramics-analytics" / "outputs" / "20260101-000000-r"
     assert (out / "r.md").exists()
     assert (out / "r.html").exists()
 
@@ -476,7 +476,7 @@ def test_finalize_deterministic_preserves_emoji_verbatim(tmp_path):
                    report_name="r", project_root=project_root)
 
     nw.finalize_deterministic(run_dir, project_root=project_root, reason="denied")
-    body = (project_root / ".xhs-ceramics-analytics" / "outputs" / "r.md").read_text(encoding="utf-8")
+    body = (project_root / ".xhs-ceramics-analytics" / "outputs" / "20260101-000000-r" / "r.md").read_text(encoding="utf-8")
     assert "大盘冲刺 🚀 表现亮眼" in body
     assert "数据来源：门店后台 📊" in body
 
@@ -572,7 +572,7 @@ def test_finalize_no_degradation_when_fallback_injects_chart(tmp_path):
     state = _finalize_with(tmp_path, bundle=bundle, result_tables=tables)
     assert state["stage"] == "finalized"
     assert state.get("degradation_reason") is None
-    md = (outputs_dir(tmp_path) / "r.md").read_text(encoding="utf-8")
+    md = (outputs_dir(tmp_path) / "20260101-000000-r" / "r.md").read_text(encoding="utf-8")
     assert "<svg" in md    # the fallback chart landed in the delivered artifact
 
 

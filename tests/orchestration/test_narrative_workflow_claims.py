@@ -252,7 +252,7 @@ def test_real_gate_passes_assembled_claims_bundle_and_renders_prose(tmp_path):
     state = nw.advance_run(run_dir, project_root=proj)  # continuity -> finalized
 
     assert state["stage"] == "finalized", "the real gate must PASS the assembled claims bundle"
-    md = (outputs_dir(proj) / "叙事报告.md").read_text(encoding="utf-8")
+    md = (outputs_dir(proj) / "20260101-000000-叙事报告" / "叙事报告.md").read_text(encoding="utf-8")
     # the number is filled by Python from the FactBook (never invented by the agent)
     assert "¥12.0万" in md
     # the claim sentence renders as real merchant prose — NOT empty (the body-model drop)
@@ -439,7 +439,7 @@ def test_gate_failed_view_drops_and_report_finalizes_not_skeleton(tmp_path):
             break
 
     assert state["stage"] == "finalized", "never-block: the bad view drops, the report finalizes"
-    md = (outputs_dir(proj) / "叙事报告.md").read_text(encoding="utf-8")
+    md = (outputs_dir(proj) / "20260101-000000-叙事报告" / "叙事报告.md").read_text(encoding="utf-8")
     assert "确定性骨架版" not in md          # narrative path, NOT the exhaustion skeleton
     assert "GMV 为 ¥12.0万" in md            # the healthy claim still renders as prose
     assert "幽灵视图" not in md              # the dropped view left no trace in the output

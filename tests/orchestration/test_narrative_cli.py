@@ -65,7 +65,7 @@ def test_finalize_deterministic_cli(tmp_path):
         "--run-dir", str(run_dir), "--reason", "denied",
     ])
     assert res.exit_code == 0, res.output
-    md = tmp_path / ".xhs-ceramics-analytics" / "outputs" / "报告.md"
+    md = tmp_path / ".xhs-ceramics-analytics" / "outputs" / "20260101-000000-报告" / "报告.md"
     assert md.exists()
     assert "确定性骨架版" in md.read_text(encoding="utf-8")
 
