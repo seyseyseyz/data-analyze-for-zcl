@@ -1,0 +1,26 @@
+xhs_ceramics_analytics/analysis/audience_structure.py
+  s_6bd2349b4ebd4d::t_bce38a863c2094 347-348
+  s_6bd2349b4ebd4d::t_1b3a0b9e6d6939 349-351
+  s_6bd2349b4ebd4d::t_4ad50d646feeb9 285-311
+  s_6bd2349b4ebd4d::t_d735b40b15441e 375-376
+tests/test_cycle_collapse.py
+  s_6bd2349b4ebd4d::t_870117d5b314e5 1-45
+tests/test_audience_structure.py
+  s_6bd2349b4ebd4d::t_652821bc671c52 233-236,239
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.33-trip",
+  "base_commit_sha": "7c9e1b8a47fe19959d40d17e19c9abee8d032a3d",
+  "prompts": {},
+  "sessions": {
+    "s_6bd2349b4ebd4d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "332ffc1a-b1ad-4810-975f-a2fa3c1b6745",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
