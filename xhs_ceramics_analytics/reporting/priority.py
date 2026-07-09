@@ -82,7 +82,11 @@ _RELIABILITY_WEIGHT = 0.4
 
 _HIGH_BAND = 0.75
 _MID_BAND = 0.5
-_MAX_ROWS = 8
+# A "先动顺序" table earns its keep by being short enough to hold in the head. Past
+# ~5 rows the reader stops triaging and starts skimming, so the cross-module shortlist
+# converges to the top 5 levers; the full per-module detail still lives in each domain
+# section below. (Callers can widen via ``max_rows`` — the appendix/tests do.)
+_MAX_ROWS = 5
 
 # Reader-facing causal-evidence label, emitted once here so both the markdown and
 # HTML compositors render the identical word. Kept as 强/中/弱 (distinct from the
