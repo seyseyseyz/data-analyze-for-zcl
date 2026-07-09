@@ -230,9 +230,13 @@ def test_cycle_finding_identical_nested_windows_no_spurious_weakest(tmp_path):
     con.close()
     result = run_task(TASK, db_path)
     finding = next(f for f in result.findings if f.title == "首购周期漏斗")
+    rows = result.tables["first_purchase_cycle_funnel"]
+    # Identical cumulative windows collapse into a single labelled row — no duplicate.
+    assert len(rows) == 1
+    assert rows[0]["first_purchase_cycle"] == "180天/365天"
     # No spurious weakest declared when windows do not differ meaningfully.
     assert finding.key_numbers["weakest_cycle"] is None
-    assert "无有效差异" in finding.conclusion
+    assert "合并为一档" in finding.conclusion
     assert "最弱周期为" not in finding.conclusion
 
 
