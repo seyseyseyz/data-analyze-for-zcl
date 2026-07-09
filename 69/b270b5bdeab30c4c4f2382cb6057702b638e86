@@ -1,0 +1,37 @@
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_charts_mixed_sign.py
+  ai_agent 1-94
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_net_margin_percent.py
+  ai_agent 1-37
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_html_empty_columns.py
+  ai_agent 1-36
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_relative_metric_labels.py
+  ai_agent 1-29
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/reporting/formatting.py
+  ai_agent 18,63,78,117-120,122,217-222
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/reporting/html.py
+  ai_agent 866-873
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_reporting_priority.py
+  ai_agent 204-206
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/reporting/labels.py
+  ai_agent 143-161
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_hhi_format.py
+  ai_agent 1-29
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_audience_structure.py
+  ai_agent 233-236,239
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/reporting/priority.py
+  ai_agent 85-89
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/reporting/charts.py
+  ai_agent 348-351,353-357,363-364,369-371,373,378,397-404,415-427,433-436,440-442,444,449
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_cycle_collapse.py
+  ai_agent 1-45
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/analysis/audience_structure.py
+  ai_agent 285-311,347-351,375-376
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/reporting/field_labels.py
+  ai_agent 315-318
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.33-trip",
+  "base_commit_sha": "69b270b5bdeab30c4c4f2382cb6057702b638e86",
+  "prompts": {}
+}
