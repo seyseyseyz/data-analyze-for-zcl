@@ -560,9 +560,12 @@ def _line(
     for i, label in enumerate(x_labels):
         if i not in label_idx:
             continue
+        # Trim ISO dates to MM-DD (mirrors _timeseries_line): a full 'YYYY-MM-DD'
+        # tick is ~70px and collides at the ~50px spacing of a dense axis, while
+        # MM-DD does not. Non-date labels pass through _short_date untouched.
         body.append(
             f'<text x="{_num(xs[i])}" y="{_num(baseline_y + 20)}" text-anchor="middle" '
-            f'class="ca-cat">{_esc(label)}</text>'
+            f'class="ca-cat">{_esc(_short_date(label))}</text>'
         )
     # A long series is a shape, not a scatter of dots: keep the connecting path but
     # drop the per-point circles (600 dots is noise + a huge SVG). A short series

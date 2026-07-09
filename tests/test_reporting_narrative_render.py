@@ -122,3 +122,37 @@ def test_skeleton_markdown_has_banner():
     md = nr.skeleton_markdown([result], title="骨架报告")
     assert "确定性骨架版" in md
     assert "人均产出走低。" in md
+
+
+# ---- #8: the headline must not be echoed verbatim across the report --------
+
+def _headline_echo_bundle():
+    H = "核心结论：人均产出走低。"
+    claim = lambda cid, s: {  # noqa: E731 - compact test fixture
+        "claim_id": cid, "section_id": "core", "claim_kind": "measurement",
+        "sentence": s, "rendered_sentence": s, "number_tokens": [],
+        "entity_refs": [], "confidence": "强", "causal_link": None,
+    }
+    return H, {
+        "facts_hash": "h",
+        "headline": H,
+        # the same hook the agent also dropped into the 首屏 teaser
+        "first_screen": {"spine": [claim("s0", H)], "panel": [], "actions": []},
+        # ...and selected as the opening step of the 跨模块主线 thesis
+        "mechanism": [{"claim_id": "c1"}],
+        "sections": [
+            {"section_id": "core", "title": "生意大盘",
+             "claims": [claim("c1", H), claim("c2", "退款率上升。")]},
+        ],
+        "cannot_say": [],
+    }
+
+
+def test_headline_is_not_repeated_verbatim():
+    headline, bundle = _headline_echo_bundle()
+    md = nr.bundle_to_markdown(nr.render_draft(bundle, _facts()), _facts(), title="报告")
+    # The headline shows exactly once (as the 首屏 bold hook); its verbatim echoes in the
+    # spine teaser, the 跨模块主线 step and the section claim are all suppressed.
+    assert md.count(headline) == 1
+    # distinct content is untouched
+    assert "退款率上升。" in md

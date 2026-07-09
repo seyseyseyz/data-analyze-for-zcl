@@ -7,12 +7,13 @@ re-rounded. Contract: every rendered cell equals the source value, chart SVG is
 byte-stable, sort/TopN/highlight are honored, and any malformed spec / missing
 table / missing column degrades to a no-html result WITHOUT raising.
 """
+
 from xhs_ceramics_analytics.analysis.result import Finding
 from xhs_ceramics_analytics.evidence import EvidenceStrength
 from xhs_ceramics_analytics.reporting.curated_view import CuratedView, render_view
 
-
 # ---- fixtures -------------------------------------------------------------
+
 
 def _tables():
     # Numbers live only here; the engine must surface them verbatim.
@@ -59,16 +60,23 @@ def _finding(strength=EvidenceStrength.MEDIUM):
 
 # ---- every rendered cell is FORMATTED from the source value ---------------
 
+
 def test_table_cells_are_formatted_from_source():
     view = render_view(_table_spec(), _tables(), finding=_finding())
     assert not view.degraded
     assert view.chart_svg is None  # a table template renders no chart
     html = view.table_html
     # each cell is filled from the source but presented via the shared fact-layer
-    # formatter: the _gmv money column gets thousands separators; text passes through.
-    for cell in ("<td>转化</td>", "<td>12,000</td>",
-                 "<td>流量</td>", "<td>8,000</td>",
-                 "<td>客单价</td>", "<td>-3,000</td>"):
+    # formatter: the _gmv money column follows the 过万用万 rule (12000 → 1.2万; the
+    # sub-1万 amounts stay precise grouped); text passes through.
+    for cell in (
+        "<td>转化</td>",
+        "<td>1.2万</td>",
+        "<td>流量</td>",
+        "<td>8,000</td>",
+        "<td>客单价</td>",
+        "<td>-3,000</td>",
+    ):
         assert cell in html
     # a raw, unformatted money dump must never appear.
     assert "<td>12000</td>" not in html
@@ -97,7 +105,7 @@ def test_table_reuses_deterministic_table_wrap_markup():
 
 
 def test_emoji_in_source_cell_is_preserved():
-    tables = {"t": [{"name": "手作瓷 🍵", "v": 5}]}
+    tables = {"t": [{"name": "手作瓷 🍵", "v": 5}, {"name": "素坯", "v": 2}]}
     spec = _table_spec(
         source={"task_id": "x", "table": "t"},
         columns=["name", "v"],
@@ -109,6 +117,7 @@ def test_emoji_in_source_cell_is_preserved():
 
 
 # ---- sort / order / TopN honored ------------------------------------------
+
 
 def test_sort_desc_and_top_n_honored():
     spec = _table_spec(rows={"sort_by": "delta_gmv", "order": "desc", "top_n": 2})
@@ -130,6 +139,7 @@ def test_sort_asc_orders_smallest_first():
 
 # ---- highlight marks an existing category (no numeric threshold) ----------
 
+
 def test_highlight_marks_only_the_matching_row():
     spec = _table_spec(rows={"highlight": {"component": "转化"}})
     view = render_view(spec, _tables(), finding=_finding())
@@ -140,16 +150,18 @@ def test_highlight_marks_only_the_matching_row():
     assert '<tr class="ca-row-highlight"><td>流量</td>' not in html
 
 
-# ---- chart templates render inline SVG + a companion table ----------------
+# ---- chart templates render ONLY the chart, no redundant companion table ---
 
-def test_chart_template_produces_svg_and_a_table():
+
+def test_chart_template_produces_svg_without_a_redundant_table():
     view = render_view(_chart_spec(), _tables(), finding=_finding())
     assert not view.degraded
     assert view.chart_svg is not None and "<svg" in view.chart_svg
-    # a chart view still carries the underlying data table (aria: "详见下方表格").
-    assert view.table_html is not None and "<td>12,000</td>" in view.table_html
-    # displayed numbers in the SVG are filled from the source, grouped by labels.
-    assert "12,000" in view.chart_svg
+    # #6: a chart view shows ONLY the chart — the numbers ARE the chart, so a
+    # companion data table of the same rows is pure redundancy in the 叙事版.
+    assert view.table_html is None
+    # displayed numbers in the SVG are filled from the source via the 过万用万 rule.
+    assert "1.2万" in view.chart_svg
 
 
 def test_svg_is_byte_stable_across_two_calls():
@@ -161,13 +173,20 @@ def test_svg_is_byte_stable_across_two_calls():
 
 # ---- confidence derived deterministically from the finding ----------------
 
+
 def test_confidence_derived_from_finding_strength():
-    assert render_view(_table_spec(), _tables(),
-                       finding=_finding(EvidenceStrength.STRONG)).confidence == "强"
-    assert render_view(_table_spec(), _tables(),
-                       finding=_finding(EvidenceStrength.MEDIUM)).confidence == "中"
-    assert render_view(_table_spec(), _tables(),
-                       finding=_finding(EvidenceStrength.WEAK)).confidence == "弱"
+    assert (
+        render_view(_table_spec(), _tables(), finding=_finding(EvidenceStrength.STRONG)).confidence
+        == "强"
+    )
+    assert (
+        render_view(_table_spec(), _tables(), finding=_finding(EvidenceStrength.MEDIUM)).confidence
+        == "中"
+    )
+    assert (
+        render_view(_table_spec(), _tables(), finding=_finding(EvidenceStrength.WEAK)).confidence
+        == "弱"
+    )
 
 
 def test_confidence_degrades_to_weak_without_a_finding():
@@ -175,6 +194,7 @@ def test_confidence_degrades_to_weak_without_a_finding():
 
 
 # ---- provenance stamp format ----------------------------------------------
+
 
 def test_provenance_stamp_drops_task_id_and_names_table_by_label():
     view = render_view(_table_spec(), _tables(), finding=_finding(EvidenceStrength.MEDIUM))
@@ -185,6 +205,7 @@ def test_provenance_stamp_drops_task_id_and_names_table_by_label():
 
 
 # ---- degradation: malformed spec / missing table / missing column ---------
+
 
 def test_malformed_non_dict_spec_degrades_without_raising():
     view = render_view(None, _tables())
@@ -226,6 +247,7 @@ def test_garbage_inputs_never_raise():
 
 # ---- prose captions pass through verbatim ---------------------------------
 
+
 def test_titles_and_captions_pass_through():
     spec = _table_spec(title="标题 🚀", how_to_read="怎么读", why_it_matters="为什么重要")
     view = render_view(spec, _tables(), finding=_finding())
@@ -246,11 +268,17 @@ def test_why_it_matters_with_fabricated_number_degrades():
 
 # ---- cells formatted via the shared fact-layer formatter (bool/percent/None) --
 
+
 def test_boolean_cell_renders_yes_no_not_raw_bool():
-    tables = {"t": [{"name": "促销周", "is_anomaly": True},
-                    {"name": "常规周", "is_anomaly": False}]}
-    spec = _table_spec(source={"task_id": "x", "table": "t"},
-                       columns=["name", "is_anomaly"], column_labels={}, rows={})
+    tables = {
+        "t": [{"name": "促销周", "is_anomaly": True}, {"name": "常规周", "is_anomaly": False}]
+    }  # 2 rows (min-row rule)
+    spec = _table_spec(
+        source={"task_id": "x", "table": "t"},
+        columns=["name", "is_anomaly"],
+        column_labels={},
+        rows={},
+    )
     html = render_view(spec, tables, finding=_finding()).table_html
     assert "<td>是</td>" in html and "<td>否</td>" in html
     # the raw Python booleans must never leak into the merchant view.
@@ -258,18 +286,25 @@ def test_boolean_cell_renders_yes_no_not_raw_bool():
 
 
 def test_percent_column_renders_as_percentage():
-    tables = {"t": [{"term": "手作杯", "click_rate": 0.046}]}
-    spec = _table_spec(source={"task_id": "x", "table": "t"},
-                       columns=["term", "click_rate"], column_labels={}, rows={})
+    tables = {
+        "t": [{"term": "手作杯", "click_rate": 0.046}, {"term": "手作盘", "click_rate": 0.03}]
+    }
+    spec = _table_spec(
+        source={"task_id": "x", "table": "t"},
+        columns=["term", "click_rate"],
+        column_labels={},
+        rows={},
+    )
     html = render_view(spec, tables, finding=_finding()).table_html
     assert "4.6%" in html
     assert "0.046" not in html  # never the raw ratio
 
 
 def test_none_cell_renders_placeholder_not_empty():
-    tables = {"t": [{"name": "缺口", "gmv": None}]}
-    spec = _table_spec(source={"task_id": "x", "table": "t"},
-                       columns=["name", "gmv"], column_labels={}, rows={})
+    tables = {"t": [{"name": "缺口", "gmv": None}, {"name": "其他", "gmv": 100}]}
+    spec = _table_spec(
+        source={"task_id": "x", "table": "t"}, columns=["name", "gmv"], column_labels={}, rows={}
+    )
     html = render_view(spec, tables, finding=_finding()).table_html
     assert "暂无数据" in html
 
@@ -284,27 +319,39 @@ def test_missing_column_label_falls_back_to_human_field_label():
 
 # ---- timeseries form guard: a per-period series is chart-only, never a grid ---
 
+
 def _ts_tables():
-    return {"business_trend": [
-        {"date": f"2026-04-{d:02d}", "gmv": 1000 + d * 10, "is_anomaly": d % 3 == 0}
-        for d in range(1, 13)
-    ]}
+    return {
+        "business_trend": [
+            {"date": f"2026-04-{d:02d}", "gmv": 1000 + d * 10, "is_anomaly": d % 3 == 0}
+            for d in range(1, 13)
+        ]
+    }
 
 
 def test_timeseries_table_template_is_suppressed_entirely():
     # a table-template over a per-period source must degrade — never a wall-of-dates.
-    spec = _table_spec(source={"task_id": "core", "table": "business_trend"},
-                       columns=["date", "gmv", "is_anomaly"], column_labels={},
-                       rows={}, template="ranking_table")
+    spec = _table_spec(
+        source={"task_id": "core", "table": "business_trend"},
+        columns=["date", "gmv", "is_anomaly"],
+        column_labels={},
+        rows={},
+        template="ranking_table",
+    )
     view = render_view(spec, _ts_tables(), finding=_finding())
     assert view.degraded
     assert view.table_html is None and view.chart_svg is None
 
 
 def test_timeseries_chart_keeps_chart_and_drops_companion_table():
-    spec = _table_spec(source={"task_id": "core", "table": "business_trend"},
-                       columns=["date", "gmv"], column_labels={}, rows={},
-                       template="trend_line", chart={"x": "date", "y": "gmv"})
+    spec = _table_spec(
+        source={"task_id": "core", "table": "business_trend"},
+        columns=["date", "gmv"],
+        column_labels={},
+        rows={},
+        template="trend_line",
+        chart={"x": "date", "y": "gmv"},
+    )
     view = render_view(spec, _ts_tables(), finding=_finding())
     assert not view.degraded
     assert view.chart_svg is not None and "<svg" in view.chart_svg
@@ -313,11 +360,15 @@ def test_timeseries_chart_keeps_chart_and_drops_companion_table():
 
 # ---- default row cap: only the most-valuable rows, foldable -----------------
 
+
 def test_long_table_capped_to_default_max_with_fold_and_caption():
     rows = [{"cat": f"cat{i:02d}", "val": 100 - i} for i in range(20)]
-    spec = _table_spec(source={"task_id": "x", "table": "t"},
-                       columns=["cat", "val"], column_labels={},
-                       rows={"sort_by": "val", "order": "desc"})
+    spec = _table_spec(
+        source={"task_id": "x", "table": "t"},
+        columns=["cat", "val"],
+        column_labels={},
+        rows={"sort_by": "val", "order": "desc"},
+    )
     html = render_view(spec, {"t": rows}, finding=_finding()).table_html
     # only the top 8 rows survive (sorted desc by val): cat00..cat07 kept, cat08 gone.
     assert "cat07" in html and "cat08" not in html
@@ -330,3 +381,79 @@ def test_short_table_is_not_capped_or_folded():
     html = render_view(_table_spec(), _tables(), finding=_finding()).table_html  # 3 rows
     assert "<details" not in html
     assert "共 " not in html
+
+
+# ---- single-row suppression: a one-row grid is a scalar, not a table (#9) ------
+
+
+def test_single_row_table_view_is_suppressed_as_low_value():
+    # #9: a comparison/ranking table needs ≥2 rows to be worth a grid — a lone row is a
+    # scalar (or a single rank) that belongs in the prose, not a one-row table. Such a
+    # table-template view degrades; the section keeps its prose (and any charts).
+    tables = {"t": [{"component": "转化", "delta_gmv": 12000}]}
+    spec = _table_spec(
+        source={"task_id": "x", "table": "t"},
+        columns=["component", "delta_gmv"],
+        column_labels={},
+        rows={},
+    )
+    view = render_view(spec, tables, finding=_finding())
+    assert view.degraded
+    assert view.table_html is None and view.chart_svg is None
+    assert view.reason  # a human-readable reason, not silence
+
+
+def test_table_view_truncated_to_a_single_row_is_suppressed():
+    # top_n=1 selects a lone row — the grid still has nothing to compare, so it degrades.
+    spec = _table_spec(rows={"sort_by": "delta_gmv", "order": "desc", "top_n": 1})
+    view = render_view(spec, _tables(), finding=_finding())
+    assert view.degraded
+    assert view.table_html is None
+
+
+def test_two_row_table_view_is_kept():
+    # the boundary: exactly two rows is a real comparison — never suppressed.
+    tables = {
+        "t": [{"component": "转化", "delta_gmv": 12000}, {"component": "流量", "delta_gmv": 8000}]
+    }
+    spec = _table_spec(
+        source={"task_id": "x", "table": "t"},
+        columns=["component", "delta_gmv"],
+        column_labels={},
+        rows={},
+    )
+    view = render_view(spec, tables, finding=_finding())
+    assert not view.degraded
+    assert view.table_html is not None
+
+
+def test_empty_table_view_degrades_with_a_distinct_reason():
+    # a 0-row table also falls under the min-row rule, but its reason must say "no data",
+    # not "single-row" — the wording distinguishes an empty source from a lone-scalar grid.
+    spec = _table_spec(
+        source={"task_id": "x", "table": "t"},
+        columns=["component", "delta_gmv"],
+        column_labels={},
+        rows={},
+    )
+    view = render_view(spec, {"t": []}, finding=_finding())
+    assert view.degraded
+    assert view.table_html is None and view.chart_svg is None
+    assert "单行" not in view.reason  # not the single-row message
+    assert "数据" in view.reason
+
+
+def test_single_row_chart_view_is_not_suppressed():
+    # a chart is exempt from the min-row rule — a one-point chart is handled by the chart
+    # primitives, not this grid path, so the min-row suppression must not touch it.
+    tables = {"t": [{"component": "转化", "delta_gmv": 12000}]}
+    spec = _chart_spec(
+        source={"task_id": "x", "table": "t"},
+        columns=["component", "delta_gmv"],
+        column_labels={},
+        chart={"x": "component", "y": "delta_gmv"},
+        rows={},
+    )
+    view = render_view(spec, tables, finding=_finding())
+    assert not view.degraded
+    assert view.chart_svg is not None and "<svg" in view.chart_svg

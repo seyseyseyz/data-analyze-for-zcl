@@ -14,6 +14,7 @@ reason) rather than an exception, so a single bad view drops without blocking th
 report. The agent decides *what it looks like*; this engine decides *what the
 numbers are*.
 """
+
 from __future__ import annotations
 
 import logging
@@ -45,6 +46,12 @@ _HIGHLIGHT_CLASS = "ca-row-highlight"
 # table is truncated to its top rows with a caption + native <details> fold.
 DEFAULT_MAX_ROWS = 8
 
+# A comparison/ranking grid needs at least this many rows to carry its own weight: both
+# table templates are inherently multi-row (nothing to compare/rank with one row), so a
+# view that resolves to fewer is a lone scalar that reads better inline than as a one-row
+# table — it degrades (#9). Charts are exempt (a one-point series is the chart path's).
+MIN_TABLE_ROWS = 2
+
 
 @dataclass(frozen=True)
 class CuratedView:
@@ -67,9 +74,7 @@ class CuratedView:
     reason: str | None = None
 
 
-def render_view(
-    spec: object, result_tables: object, *, finding: object = None
-) -> CuratedView:
+def render_view(spec: object, result_tables: object, *, finding: object = None) -> CuratedView:
     """Render one curated view-spec to a :class:`CuratedView`. Never raises.
 
     Validates ``spec`` against the real ``result_tables`` (the numeric-trust
@@ -115,26 +120,47 @@ def _render(spec: object, result_tables: object, finding: object) -> CuratedView
     is_chart = view.template in CHART_TEMPLATES
 
     # Form guard: a per-period (timeseries) source is never a table. A table-template
-    # over it degrades (the trend belongs in a chart, not a wall-of-dates grid); a
-    # chart-template keeps its chart but drops the per-day companion table.
-    if is_timeseries_table(table_name, _source_columns(source_rows)):
-        if not is_chart:
-            return CuratedView(
-                table_html=None,
-                chart_svg=None,
-                title=view.title,
-                how_to_read=view.how_to_read,
-                why_it_matters=view.why_it_matters,
-                confidence=confidence,
-                provenance=provenance,
-                degraded=True,
-                reason="逐期时间序列不作为表格呈现,请改用趋势图",
-            )
-        display_rows, _ = _select_rows(source_rows, view.rows)
-        table_html = None
-    else:
-        display_rows, highlight_flags = _select_rows(source_rows, view.rows)
-        table_html = _build_table_html(view, display_rows, highlight_flags)
+    # over it degrades (the trend belongs in a chart, not a wall-of-dates grid).
+    if is_timeseries_table(table_name, _source_columns(source_rows)) and not is_chart:
+        return CuratedView(
+            table_html=None,
+            chart_svg=None,
+            title=view.title,
+            how_to_read=view.how_to_read,
+            why_it_matters=view.why_it_matters,
+            confidence=confidence,
+            provenance=provenance,
+            degraded=True,
+            reason="逐期时间序列不作为表格呈现,请改用趋势图",
+        )
+
+    display_rows, highlight_flags = _select_rows(source_rows, view.rows)
+
+    # #9: a table template that resolves to fewer than two rows is a scalar, not a grid —
+    # a comparison/ranking needs ≥2 rows to compare/rank. Degrade in the 精炼 叙事版 so a
+    # low-value one-row (or empty) grid is dropped; the full deterministic fact-layer table
+    # still carries every row, so no number is lost from the delivery. Charts are exempt.
+    if not is_chart and len(display_rows) < MIN_TABLE_ROWS:
+        reason = (
+            "单行表格价值有限,已省略(完整表见事实版)"
+            if display_rows
+            else "该视图无可用数据行,已省略"
+        )
+        return CuratedView(
+            table_html=None,
+            chart_svg=None,
+            title=view.title,
+            how_to_read=view.how_to_read,
+            why_it_matters=view.why_it_matters,
+            confidence=confidence,
+            provenance=provenance,
+            degraded=True,
+            reason=reason,
+        )
+    # #6: a chart view shows ONLY the chart — the numbers ARE the chart (value labels
+    # fill from the same rows), so a companion data table is pure redundancy in the
+    # 精炼 叙事版. Tables render solely for non-chart templates.
+    table_html = None if is_chart else _build_table_html(view, display_rows, highlight_flags)
 
     chart_svg: str | None = None
     if is_chart:
@@ -161,18 +187,18 @@ def _render(spec: object, result_tables: object, finding: object) -> CuratedView
 # ---- row selection (select / sort / TopN / highlight — NO aggregation) ----
 
 
-def _select_rows(
-    source_rows: object, rows_spec: object
-) -> tuple[list[dict], list[bool]]:
+def _select_rows(source_rows: object, rows_spec: object) -> tuple[list[dict], list[bool]]:
     """Apply the spec's ``rows`` operations to the REAL source rows.
 
     Only select / sort / TopN / highlight — never a sum, average, or numeric
     filter. Returns the ordered rows to display and a parallel list of highlight
     flags. Deterministic (stable sort) and never raises on garbage rows.
     """
-    rows = [r for r in source_rows if isinstance(r, dict)] if isinstance(
-        source_rows, (list, tuple)
-    ) else []
+    rows = (
+        [r for r in source_rows if isinstance(r, dict)]
+        if isinstance(source_rows, (list, tuple))
+        else []
+    )
     if not isinstance(rows_spec, dict):
         rows_spec = {}
 
@@ -224,9 +250,7 @@ def _is_highlighted(row: dict, highlight: dict) -> bool:
 # ---- table HTML (reuses the deterministic renderer's .table-wrap markup) --
 
 
-def _build_table_html(
-    view: ViewSpec, rows: list[dict], highlight_flags: list[bool]
-) -> str | None:
+def _build_table_html(view: ViewSpec, rows: list[dict], highlight_flags: list[bool]) -> str | None:
     """Build the curated table HTML — capped to the most-valuable rows, foldable.
 
     Mirrors the deterministic renderer's ``.table-wrap`` markup and stdlib HTML
@@ -249,8 +273,7 @@ def _build_table_html(
     shown_flags = highlight_flags[:DEFAULT_MAX_ROWS]
 
     header = "".join(
-        f"<th>{escape(str(labels.get(col) or field_label(col)))}</th>"
-        for col in columns
+        f"<th>{escape(str(labels.get(col) or field_label(col)))}</th>" for col in columns
     )
     body_rows: list[str] = []
     for row, highlighted in zip(shown_rows, shown_flags):

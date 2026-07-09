@@ -108,9 +108,10 @@ def test_bundle_to_markdown_renders_curated_view_tables_and_charts():
     assert "GMV 回落。" in md
     assert "生意大盘" in md
     # table cells filled from the source table, formatted via the shared fact-layer
-    # formatter (money columns get thousands separators; never a raw dump/fabrication)
+    # formatter (money follows 过万用万: 12000 → 1.2万; sub-1万 stays precise grouped;
+    # never a raw dump/fabrication)
     assert "<td>转化</td>" in md
-    assert "<td>12,000</td>" in md
+    assert "<td>1.2万</td>" in md
     assert "<td>8,000</td>" in md
     # the unselected `note` column never leaks
     assert "<td>a</td>" not in md
@@ -134,11 +135,28 @@ def test_bundle_to_markdown_renders_curated_view_tables_and_charts():
 # the per-sentence suffixes are gone. Per-view provenance stamps keep their granular
 # 证据:{tier}, so the section pill summarizes without contradicting the audit trail.
 
+def _anchor(fact_id):
+    return [{"token_id": "t0", "fact_id": fact_id}]
+
+
+def _facts_with(**fact_map):
+    # fact_map: {fact_id: (evidence_strength, descriptive_reliability)}
+    f = _facts()
+    f["facts"] = {
+        fid: {"evidence_strength": es, "descriptive_reliability": dr}
+        for fid, (es, dr) in fact_map.items()
+    }
+    return f
+
+
 def test_section_confidence_pill_replaces_per_sentence_tags():
-    md = nr.bundle_to_markdown(
-        _bundle([_table_view()]), _facts(), result_tables=_tables()
-    )
-    # the claim (confidence 强) no longer trails its sentence with （强）
+    # The pill derives from the claim's FactBook anchor (dr=high → 强) — the SAME
+    # source the per-view badges use — so the headline can never contradict its views.
+    facts = _facts_with(**{"m.gmv": ("strong", "high")})
+    b = _bundle([_table_view()])
+    b["sections"][0]["claims"] = [{**_claim(), "number_tokens": _anchor("m.gmv")}]
+    md = nr.bundle_to_markdown(b, facts, result_tables=_tables())
+    # the claim no longer trails its sentence with （强）
     assert "GMV 回落。（强）" not in md
     assert "（强）" not in md
     # instead the section carries ONE confidence pill in the fact-layer .tag markup
@@ -146,44 +164,51 @@ def test_section_confidence_pill_replaces_per_sentence_tags():
 
 
 def test_section_pill_uses_conservative_modal_tier():
-    # two 弱 + one 强 → modal is 弱 (2 vs 1); the pill reads 弱, never the outlier 强.
+    # two weak-anchored + one strong-anchored claim → modal is 弱 (2 vs 1); the pill
+    # reads 弱, never the outlier 强. Derived from fact anchors, not agent tags.
+    facts = _facts_with(**{"m.weak": ("weak", "low"), "m.strong": ("strong", "high")})
     b = _bundle([])
     b["sections"][0]["claims"] = [
-        {**_claim(), "claim_id": "a", "confidence": "弱", "rendered_sentence": "一。"},
-        {**_claim(), "claim_id": "b", "confidence": "弱", "rendered_sentence": "二。"},
-        {**_claim(), "claim_id": "c", "confidence": "强", "rendered_sentence": "三。"},
+        {**_claim(), "claim_id": "a", "number_tokens": _anchor("m.weak"), "rendered_sentence": "一。"},
+        {**_claim(), "claim_id": "b", "number_tokens": _anchor("m.weak"), "rendered_sentence": "二。"},
+        {**_claim(), "claim_id": "c", "number_tokens": _anchor("m.strong"), "rendered_sentence": "三。"},
     ]
-    md = nr.bundle_to_markdown(b, _facts(), result_tables={})
+    md = nr.bundle_to_markdown(b, facts, result_tables={})
     assert '<span class="tag weak">证据 弱</span>' in md
     assert "证据 强" not in md
 
 
 def test_section_pill_tie_breaks_to_the_weaker_tier():
-    # one 强 + one 中 → tie on count; the conservative tie-break picks 中 (weaker).
+    # one strong-anchored + one medium-anchored → tie on count; the conservative
+    # tie-break picks 中 (weaker).
+    facts = _facts_with(**{"m.strong": ("strong", "high"), "m.medium": ("medium", "medium")})
     b = _bundle([])
     b["sections"][0]["claims"] = [
-        {**_claim(), "claim_id": "a", "confidence": "强", "rendered_sentence": "一。"},
-        {**_claim(), "claim_id": "b", "confidence": "中", "rendered_sentence": "二。"},
+        {**_claim(), "claim_id": "a", "number_tokens": _anchor("m.strong"), "rendered_sentence": "一。"},
+        {**_claim(), "claim_id": "b", "number_tokens": _anchor("m.medium"), "rendered_sentence": "二。"},
     ]
-    md = nr.bundle_to_markdown(b, _facts(), result_tables={})
+    md = nr.bundle_to_markdown(b, facts, result_tables={})
     assert '<span class="tag medium">证据 中</span>' in md
     assert "证据 强" not in md
 
 
-def test_section_without_confident_claims_emits_no_pill():
+def test_section_without_anchored_claims_emits_no_pill():
+    # A pure-prose claim (no resolvable fact anchor) neither contributes to nor forces
+    # a pill — the section stays pill-free rather than showing a misleading 弱.
     b = _bundle([])
     b["sections"][0]["claims"] = [
-        {**_claim(), "confidence": None, "rendered_sentence": "无标签结论。"},
+        {**_claim(), "number_tokens": [], "rendered_sentence": "无锚点结论。"},
     ]
     md = nr.bundle_to_markdown(b, _facts(), result_tables={})
     assert '<span class="tag' not in md
-    assert "无标签结论。" in md
+    assert "无锚点结论。" in md
 
 
 def test_section_pill_survives_md_to_html_unescaped_and_css_injected():
-    md = nr.bundle_to_markdown(
-        _bundle([_table_view()]), _facts(), result_tables=_tables()
-    )
+    facts = _facts_with(**{"m.gmv": ("strong", "high")})
+    b = _bundle([_table_view()])
+    b["sections"][0]["claims"] = [{**_claim(), "number_tokens": _anchor("m.gmv")}]
+    md = nr.bundle_to_markdown(b, facts, result_tables=_tables())
     html = render_markdown_document_html(md)
     # the pill CSS shipped, so the chip is actually styled in the single-file HTML
     assert ".tag.strong" in html
@@ -204,7 +229,7 @@ def test_html_conversion_preserves_raw_table_and_svg_not_escaped():
     assert "&lt;table" not in html
     assert "&lt;svg" not in html
     # the source-derived cell value survived into the HTML document
-    assert "12,000" in html
+    assert "1.2万" in html
 
 
 def test_empty_result_tables_degrades_to_prose_only():
@@ -305,7 +330,7 @@ def test_forged_marker_in_how_to_read_cannot_open_passthrough():
     assert "&lt;script&gt;xss" in html
     # the fix did not over-strip: the legit deterministic table still passed through
     assert "<table>" in html
-    assert "12,000" in html
+    assert "1.2万" in html
 
 
 def test_forged_marker_in_claim_sentence_cannot_open_passthrough():
@@ -347,7 +372,7 @@ def test_agent_markers_stripped_from_every_field_only_engine_block_remains():
     # and that lone block still round-trips through the converter as a real table
     html = render_markdown_document_html(md)
     assert "<table>" in html
-    assert "12,000" in html
+    assert "1.2万" in html
 
 
 # ---- deterministic per-domain chart fallback -------------------------------
@@ -445,6 +470,61 @@ def test_fallback_never_raises_on_garbage_tables():
             _prose_only_bundle("生意大盘"), _facts(), result_tables=tables
         )
         assert "GMV 回落。" in md   # prose always survives; fallback degrades silently
+
+
+# ---- #7: a fallback must never DUPLICATE a chart already shown -------------
+
+def test_fallback_skips_a_table_already_charted_elsewhere():
+    # A table charted by an earlier section's curated view must NOT be re-charted by a
+    # later chartless section's fallback — that produced a duplicate chart at the tail.
+    tables = _core_tables()  # only channel_scale is usable for 流量与内容 here
+    parts = nr._fallback_chart_parts("流量与内容", tables, {"channel_scale"})
+    assert parts == []  # its only usable candidate is already charted → no duplicate
+
+
+def test_fallback_marks_the_table_it_charts_so_a_later_one_wont_repeat():
+    already: set[str] = set()
+    parts = nr._fallback_chart_parts("生意大盘", _core_tables(), already)
+    assert parts and any("<svg" in p for p in parts)
+    assert "business_trend" in already  # recorded → a later fallback skips it
+
+
+def _two_section_bundle():
+    # An agent charts channel data under one section; a later chartless core section
+    # (流量与内容) whose fallback candidate is the SAME table must not chart it again.
+    channel_chart = _chart_view(
+        view_id="x.channel_chart",
+        section_id="s1",
+        template="share_bar",
+        source={"task_id": "t", "table": "channel_scale"},
+        columns=["carrier_zh", "gmv_share"],
+        column_labels={"carrier_zh": "渠道", "gmv_share": "占比"},
+        rows={"sort_by": "gmv_share", "order": "desc"},
+        chart={"x": "carrier_zh", "y": "gmv_share"},
+        title="渠道结构（正文）",
+    )
+    return {
+        "facts_hash": "h",
+        "headline": "标题。",
+        "first_screen": {"spine": [], "panel": [], "actions": []},
+        "sections": [
+            {"section_id": "s1", "title": "商品结构", "claims": [_claim()],
+             "curated_views": [channel_chart]},
+            {"section_id": "s2", "title": "流量与内容", "claims": [_claim()],
+             "curated_views": []},
+        ],
+        "cannot_say": [],
+    }
+
+
+def test_fallback_does_not_duplicate_a_chart_shown_in_another_section():
+    md = nr.bundle_to_markdown(
+        _two_section_bundle(), _facts(), result_tables=_core_tables()
+    )
+    # channel_scale is charted once (the curated 渠道结构（正文）); 流量与内容's fallback
+    # must NOT re-chart channel_scale, and its other candidate table is absent.
+    assert md.count("<svg") == 1
+    assert "渠道结构（正文）" in md
 
 
 def test_has_chartable_tables_detects_mapped_nonempty_tables():

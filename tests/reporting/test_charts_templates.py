@@ -51,8 +51,8 @@ def test_share_bar_renders_one_bar_per_row_from_binding():
     # `<rect x=` targets the bar rects; the shared _HATCH pattern emits a
     # `<rect width=` that must NOT be counted.
     assert svg.count("<rect x=") == 3
-    # every displayed number is filled from the rows (grouped, whole-yuan).
-    assert "800,357" in svg and "414,126" in svg and "120,000" in svg
+    # every displayed number is filled from the rows via the 过万用万 rule (≥1万 → 万).
+    assert "80.0万" in svg and "41.4万" in svg and "12.0万" in svg
     # known enum keys are localized deterministically via labels.value_label.
     assert "笔记" in svg and "商品卡" in svg
 
@@ -72,12 +72,12 @@ def test_value_labels_are_type_aware_percent_column():
 
 
 def test_value_labels_are_type_aware_money_column_unchanged():
-    # A money y column keeps reading as grouped whole-yuan — the type-aware
-    # switch must not regress the money path (format_scalar == format_number here).
+    # A money y column reads via the shared 过万用万 rule (≥1万 → 万-notation) — the
+    # type-aware switch must not regress the money path (format_scalar == format_money).
     svg = str(
         render_chart_template("share_bar", _share_rows(), {"x": "channel", "y": "gmv"})
     )
-    assert "800,357" in svg and "414,126" in svg and "120,000" in svg
+    assert "80.0万" in svg and "41.4万" in svg and "12.0万" in svg
 
 
 def test_boolean_category_label_renders_yes_no_not_raw_bool():
@@ -104,7 +104,8 @@ def test_breakdown_waterfall_stacks_one_rect_per_component():
         )
     )
     assert svg.count("<rect x=") == 3
-    assert "12,000" in svg and "8,000" in svg and "3,000" in svg
+    # 过万用万: 12000 → 1.2万; the two sub-1万 deltas stay precise grouped.
+    assert "1.2万" in svg and "8,000" in svg and "3,000" in svg
     assert "转化" in svg  # merchant category value passes through verbatim
 
 
@@ -117,7 +118,10 @@ def test_trend_line_draws_path_markers_and_x_labels():
     assert "<svg" in svg
     assert "<path" in svg  # a polyline connecting the observations
     assert svg.count("<circle") == 3  # one marker per observation
-    assert "2026-04-01" in svg and "2026-06-01" in svg  # x labels from the bound column
+    # x labels are trimmed to MM-DD (no 4-digit year) so a dense date axis never
+    # overlaps — full ISO dates (~70px) collide at the tick spacing; MM-DD does not.
+    assert ">04-01<" in svg and ">06-01<" in svg
+    assert "2026-04-01" not in svg
 
 
 # ---- horizontal_bar (reuses _hbar — readable for long CJK category labels) --
@@ -136,7 +140,7 @@ def test_horizontal_bar_renders_one_bar_per_row_with_labels():
     )
     assert "<svg" in svg
     assert svg.count("<rect x=") == 3          # one horizontal bar per row
-    assert "42,000" in svg and "15,000" in svg  # value labels filled from rows
+    assert "4.2万" in svg and "1.5万" in svg  # value labels (≥1万 → 万) filled from rows
     # long category labels survive as full text in each bar's <title> (hbar truncates
     # the visible label but keeps the whole string reachable — the readability win).
     assert "青瓷茶具套装礼盒" in svg
@@ -172,6 +176,7 @@ def test_trend_line_thins_x_labels_and_drops_markers_for_long_series():
     assert "<path" in svg                       # the line shape is preserved (all points)
     assert svg.count('class="ca-cat"') <= 12    # x-axis thinned to a readable handful
     assert svg.count("<circle") == 0            # per-point markers dropped for a long series
+    assert "2026-" not in svg                   # every date tick trimmed to MM-DD (no overlap)
 
 
 def test_trend_line_keeps_all_labels_and_markers_for_short_series():
@@ -292,4 +297,4 @@ def test_for_result_still_renders_a_representative_chart():
     )
     svg = str(charts.for_result(result))
     assert svg  # the task-keyed builder path still produces a chart
-    assert "800,357" in svg and "414,126" in svg
+    assert "80.0万" in svg and "41.4万" in svg

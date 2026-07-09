@@ -18,7 +18,10 @@ def run(db_path: Path) -> AnalysisResult:
         con.close()
 
     rows = _rank_candidates(metrics)
-    top_candidate = rows[0]["note_id"] if rows else None
+    # Surface the human-readable note TITLE (never the opaque 24-hex note_id, which
+    # would render as a meaningless <strong>{id}</strong> stat card). Falls back to the
+    # id only if a note has no title.
+    top_candidate = (rows[0].get("title") or rows[0]["note_id"]) if rows else None
 
     return AnalysisResult(
         task_id="reshoot_repost_candidates",

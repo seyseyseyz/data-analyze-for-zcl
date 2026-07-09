@@ -122,6 +122,12 @@ def test_reshoot_downranks_tiny_samples(tmp_path: Path):
     assert tiny_row["rank"] > 1
     assert tiny_row["needs_more_data"] is True
 
+    # #1 note-id leak: the "首选候选" stat card must carry the human-readable TITLE,
+    # never the opaque note_id (which rendered as a meaningless <strong>{id}</strong>).
+    top = result.findings[0].key_numbers["top_candidate"]
+    assert top == "Strong sample"
+    assert top != "strong"
+
 
 def test_hypothesis_without_comment_signal_stays_unknown(tmp_path: Path):
     db_path = _build_db(

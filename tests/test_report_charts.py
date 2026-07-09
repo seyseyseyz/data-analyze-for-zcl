@@ -597,10 +597,11 @@ def test_hbar_value_label_stays_within_bounds_for_large_numbers():
         ]},
     )
     html = charts.for_result(result)
-    # GMV renders as whole yuan (shared format_money) — the wide 千分位 label is
-    # 839,336, and the layout must still keep its right edge within the viewBox.
-    assert "839,336" in html
+    # GMV ≥1万 renders in 万-notation (shared format_money): 839,335.64 → 83.9万, and
+    # the layout must still keep even a full-length bar's label within the viewBox.
+    assert "83.9万" in html
     assert "839,335.64" not in html
+    assert "839,336" not in html
     assert _num_label_right_edges(html), "expected value labels to be present"
     assert max(_num_label_right_edges(html)) <= 640 + 1   # within the 640-wide viewBox
 

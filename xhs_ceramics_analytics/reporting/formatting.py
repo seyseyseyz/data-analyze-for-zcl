@@ -7,6 +7,7 @@ integer ``YYYYMMDD`` dates real exports carry (a money formatter turned
 ``20260401`` into ``"20,260,401"``). This module is the single source of truth:
 one scalar formatter, one field vocabulary, one empty-table gate.
 """
+
 from __future__ import annotations
 
 from numbers import Number
@@ -121,6 +122,50 @@ MONEY_FIELDS = {
 # ``_gini``, ``marginal_roas`` ends ``_roas``, ``gmv_universe`` ends ``_universe``.
 MONEY_SUFFIXES = ("_gmv", "_amount", "_spend", "_aov")
 
+# Whole-number counts and count-averages. A read/note/order is discrete, and a
+# count-*average* (``avg_reads`` = 1,603.25) carries spurious decimals that read as
+# noise — a quarter of a read means nothing to a merchant, so these round to a whole
+# number like money does. Kept an explicit allow-list (not a fuzzy "avg_" match) for
+# the same reason MONEY_FIELDS is: a false positive would flatten a genuine ratio.
+# The ratio-scale look-alikes that share the ``avg_`` prefix — ``avg_roas`` (4.4),
+# ``avg_engagement`` (0.12) — are deliberately absent so they keep their decimals.
+# Percent/money detection runs FIRST, so rate/gmv/spend count-names never reach here.
+COUNT_FIELDS = {
+    "reads",
+    "collects",
+    "likes",
+    "comments",
+    "notes",
+    "posts",
+    "orders",
+    "buyers",
+    "units",
+    "visitors",
+    "count",
+    "avg_reads",
+    "avg_collects",
+    "avg_likes",
+    "avg_comments",
+}
+# ``_count`` (note/sku/segment/... counts), ``_reads``/``_collects``/``_likes``/
+# ``_comments`` (engagement counts + their avg_), ``_orders``/``_buyers``/``_units``
+# (paid counts), ``_notes``/``_posts``/``_visitors`` (note/post/visitor tallies). None
+# of these suffixes reach a ratio/index — ``avg_roas`` ends ``_roas``, ``gmv_gini``
+# ends ``_gini``, every ``*_rate`` was already claimed by the percent check.
+COUNT_SUFFIXES = (
+    "_count",
+    "_reads",
+    "_collects",
+    "_likes",
+    "_comments",
+    "_orders",
+    "_buyers",
+    "_units",
+    "_notes",
+    "_posts",
+    "_visitors",
+)
+
 # Fields whose values denote a calendar day. Real exports carry these as integer
 # YYYYMMDD, ISO strings, or datetime — the date branch normalizes all to ISO.
 DATE_FIELDS = {
@@ -140,6 +185,10 @@ def is_percent_field(field_name: str) -> bool:
 
 def is_money_field(field_name: str) -> bool:
     return field_name in MONEY_FIELDS or field_name.endswith(MONEY_SUFFIXES)
+
+
+def is_count_field(field_name: str) -> bool:
+    return field_name in COUNT_FIELDS or field_name.endswith(COUNT_SUFFIXES)
 
 
 def is_date_field(field_name: str) -> bool:
@@ -226,6 +275,10 @@ def format_scalar(field_name: str, value: object) -> str:
         # so *_share/*_amount_share concentrations stay percents.
         if is_money_field(field_name):
             return format_money(numeric)
+        # Counts / count-averages read as whole numbers (a quarter of a read is
+        # noise); checked after percent+money so rate/gmv count-names never reach it.
+        if is_count_field(field_name):
+            return format_number(float(round(numeric)))
         return format_number(numeric)
     return str(value)
 

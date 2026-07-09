@@ -159,15 +159,37 @@ def format_index(value: float) -> str:
     return text
 
 
-def format_money(value: float) -> str:
-    """Grouped whole-yuan amount: ``1302239.01`` -> ``1,302,239``.
+def format_magnitude(value: float, *, currency: bool = False) -> str:
+    """The single reader-facing magnitude rule: ``过万用万、没过用精确``.
 
-    The single reader-facing money rule, shared by the chart path (charts.py) and,
-    via reporting.formatting.format_scalar, the table/key-number path — mirroring
-    analysis.prose.money for prose. Summed GMV/spend carry spurious cents from
-    ``paid_amount``; they are export noise, not signal, so every surface drops them.
+    ``≥1万`` renders in 万-notation to one decimal (``1302239.01`` -> ``130.2万``);
+    below 1万 stays precise grouped whole units (``8000`` -> ``8,000``). The sign is
+    derived from the *rounded* magnitude so a tiny negative that rounds to zero reads
+    ``0`` / ``¥0`` — never a stray ``-0``. ``currency`` prepends ``¥`` after the sign
+    (``-¥2.9万``). This is the one rule shared by the prose, table, chart and
+    facts-appendix money paths, so the same amount never reads two ways.
     """
-    return format_number(float(round(value)))
+    v = float(value)
+    mag = abs(v)
+    if mag >= 10000:
+        body = f"{mag / 10000:.1f}万"
+        is_zero = round(mag / 10000, 1) == 0
+    else:
+        body = f"{mag:,.0f}"
+        is_zero = round(mag) == 0
+    sign = "-" if (v < 0 and not is_zero) else ""
+    prefix = "¥" if currency else ""
+    return f"{sign}{prefix}{body}"
+
+
+def format_money(value: float) -> str:
+    """Reader-facing money amount via the shared :func:`format_magnitude` rule
+    (``过万用万``): ``1302239.01`` -> ``130.2万``, ``8000`` -> ``8,000``. No currency
+    sign — the inline table/chart/prose surfaces carry the amount bare; only the
+    facts appendix (:func:`facts_export.render_cny`) prepends ``¥``. Summed GMV/spend
+    carry spurious cents from ``paid_amount``; they are export noise, so every surface
+    drops them."""
+    return format_magnitude(value, currency=False)
 
 
 def format_cn_date(value: object) -> str | None:

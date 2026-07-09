@@ -15,7 +15,7 @@ from xhs_ceramics_analytics.analysis.result import AnalysisResult
 from xhs_ceramics_analytics.analytics.numeric import to_finite_float
 from xhs_ceramics_analytics.evidence import DescriptiveReliability, EvidenceStrength
 from xhs_ceramics_analytics.reporting.formatting import is_money_field, is_percent_field
-from xhs_ceramics_analytics.reporting.labels import format_index
+from xhs_ceramics_analytics.reporting.labels import format_index, format_magnitude
 
 
 @dataclass(frozen=True)
@@ -48,26 +48,18 @@ class FactBook:
 
 
 def _grouped_magnitude(value: object, *, currency: bool) -> str:
-    """Grouped magnitude string with a sign that respects the DISPLAY precision.
+    """Grouped magnitude string for the facts appendix, guarding non-finite values.
 
-    ≥1万 → 万-notation (1dp); else grouped whole units. The sign is derived from the
-    *rounded* magnitude, so a tiny negative that rounds to zero (e.g. ``-0.3``) reads
-    ``0`` / ``¥0`` — never a stray ``-0`` / ``-¥0``. Currency prepends ``¥`` after the
-    sign (``-¥2.9万``). Shared by :func:`render_cny` / :func:`render_count`.
+    Non-finite / missing values degrade to ``—``; every finite value delegates to the
+    shared :func:`labels.format_magnitude` rule (≥1万 → 万-notation 1dp, else grouped
+    whole units, ``¥`` when ``currency``), so a facts number reads identically to the
+    same amount in prose / tables / charts. Shared by :func:`render_cny` /
+    :func:`render_count`.
     """
     v = to_finite_float(value)
     if v is None:
         return "—"
-    mag = abs(v)
-    if mag >= 10000:
-        body = f"{mag / 10000:.1f}万"
-        is_zero = round(mag / 10000, 1) == 0
-    else:
-        body = f"{mag:,.0f}"
-        is_zero = round(mag) == 0
-    sign = "-" if (v < 0 and not is_zero) else ""
-    prefix = "¥" if currency else ""
-    return f"{sign}{prefix}{body}"
+    return format_magnitude(v, currency=currency)
 
 
 def render_cny(value: object) -> str:

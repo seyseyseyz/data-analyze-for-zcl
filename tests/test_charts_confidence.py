@@ -40,10 +40,10 @@ def test_low_reliability_chart_still_de_emphasized():
 
 
 def test_gmv_chart_labels_round_money_to_whole_yuan():
-    # The chart path is a THIRD money renderer (besides table/prose); a GMV bar
-    # label/tooltip must read 414,126 元, not 414,126.02 — spurious cents are noise.
-    # Uses the channel rank-bar chart, which labels every bar (unlike the trend line,
-    # which labels only the last point).
+    # The chart path shares the 过万用万 money rule (like table/prose); a GMV bar ≥1万
+    # reads 80.0万 / 41.4万, never 800,357.48 with spurious cents (noise). Uses the
+    # channel rank-bar chart, which labels every bar (unlike the trend line, which
+    # labels only the last point).
     rows = [
         {"carrier_zh": "笔记", "gmv": 800357.48},
         {"carrier_zh": "商城", "gmv": 414126.02},
@@ -63,5 +63,5 @@ def test_gmv_chart_labels_round_money_to_whole_yuan():
     svg = str(charts.for_result(result))
     assert "414,126.02" not in svg
     assert "800,357.48" not in svg
-    assert "414,126" in svg
-    assert "800,357" in svg
+    assert "41.4万" in svg
+    assert "80.0万" in svg

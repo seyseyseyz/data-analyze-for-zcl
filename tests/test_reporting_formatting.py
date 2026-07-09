@@ -4,6 +4,7 @@ The two renderers used to format independently — HTML had a rich cell formatte
 while markdown dumped raw ``str(value)``. This locks the single source of truth
 so a date, percent or money value reads identically in both deliverables.
 """
+
 from xhs_ceramics_analytics.reporting.formatting import (
     field_help,
     field_label,
@@ -16,7 +17,7 @@ from xhs_ceramics_analytics.reporting.labels import format_percent
 
 def test_format_percent_never_emits_negative_zero():
     # A value that rounds to 0% at the chosen precision must drop the minus sign.
-    assert format_percent(-0.00001) == "0%"   # -0.001% rounds to 0 → never "-0%"
+    assert format_percent(-0.00001) == "0%"  # -0.001% rounds to 0 → never "-0%"
     assert format_percent(-0.0) == "0%"
     # a genuine small negative keeps its sign
     assert format_percent(-0.02) == "-2%"
@@ -37,6 +38,14 @@ def test_is_timeseries_table_false_for_plain_table():
     assert is_timeseries_table("carrier_structure", ["carrier", "gmv"]) is False
     # 无列时不误判。
     assert is_timeseries_table("carrier_structure", []) is False
+
+
+def test_directional_lift_labels_are_sign_neutral():
+    # #11: a field that renders "提升/下降" must NOT carry a label hardcoding "提升" —
+    # a negative value would otherwise read "渠道相对提升：下降 21.4%" (self-contradiction).
+    for field in ("relative_lift", "channel_rel_lift", "audience_rel_lift"):
+        assert format_scalar(field, -0.214) == "下降 21.4%"
+        assert "提升" not in field_label(field)
 
 
 def test_format_scalar_percent_field():
@@ -132,20 +141,27 @@ def test_format_scalar_money_fields_never_become_percent():
 def test_format_scalar_money_rounds_to_whole_yuan():
     # Summed GMV/spend/refund carry spurious cents from paid_amount; the prose
     # path (analysis.prose.money) already drops them, so tables/key-numbers must
-    # match — a merchant reads 1,302,239 元, not 1,302,239.01.
-    assert format_scalar("total_gmv", 1302239.01) == "1,302,239"
+    # match — a merchant reads whole yuan, never 1,302,239.01. Amounts under 1万
+    # stay precise grouped yuan (the 过万用万 rule below only kicks in at ≥1万).
     assert format_scalar("refund_amount", 88.49) == "88"
     assert format_scalar("avg_spend", 200.6) == "201"
     assert format_scalar("note_aov", 217.34) == "217"
-    # LMDI GMV-bridge contributions are yuan (prose already rounds them); the
-    # long-format bridge table's `contribution` column and the key-number
-    # `contrib_traffic`/`contrib_conversion` must match.
-    assert format_scalar("contribution", 34925.49) == "34,925"
-    assert format_scalar("contrib_traffic", 34925.49) == "34,925"
-    assert format_scalar("contrib_conversion", -25522.21) == "-25,522"
-    # AOV price-band boundaries are yuan too.
+    # AOV price-band boundaries are yuan too (both under 1万 → precise).
     assert format_scalar("aov_high", 1721.7) == "1,722"
     assert format_scalar("aov_low", 88.0) == "88"
+
+
+def test_format_scalar_money_over_wan_uses_wan_notation():
+    # #4 (用户拍板「过万的用万，没过的用精确」): money ≥1万 renders in 万-notation (1dp)
+    # on EVERY surface (prose/table/chart), matching the facts-appendix render_cny, so
+    # the same amount never reads two ways (was 表格出裸 1,302,239 而事实层出 ¥130.2万).
+    assert format_scalar("total_gmv", 1302239.01) == "130.2万"
+    assert format_scalar("total_gmv", 10000) == "1.0万"  # boundary: ≥1万 → 万
+    assert format_scalar("total_gmv", 9999.4) == "9,999"  # <1万 → precise grouped
+    # LMDI GMV-bridge contributions are yuan; ≥1万 ones now read in 万 (sign kept).
+    assert format_scalar("contribution", 34925.49) == "3.5万"
+    assert format_scalar("contrib_traffic", 34925.49) == "3.5万"
+    assert format_scalar("contrib_conversion", -25522.21) == "-2.6万"
 
 
 def test_format_scalar_money_lookalikes_keep_precision():
@@ -155,6 +171,25 @@ def test_format_scalar_money_lookalikes_keep_precision():
     assert format_scalar("gmv_gini", 0.42) == "0.42"
     assert format_scalar("marginal_roas", 4.4) == "4.4"
     assert format_scalar("gmv_share", 0.505) == "50.5%"
+
+
+def test_format_scalar_count_and_average_fields_round_to_whole():
+    # #4: count/average fields must read as whole numbers — "平均阅读 1,603.25" is
+    # meaningless (a quarter of a read). Explicit allow-list + count suffixes.
+    assert format_scalar("avg_reads", 1603.25) == "1,603"
+    assert format_scalar("avg_collects", 88.7) == "89"
+    assert format_scalar("reads", 12345.0) == "12,345"
+    assert format_scalar("paid_orders", 1234.0) == "1,234"
+    assert format_scalar("note_count", 42.0) == "42"
+    assert format_scalar("daily_posts", 3.4) == "3"
+    assert format_scalar("shop_visitors", 9876.6) == "9,877"
+
+
+def test_format_scalar_ratio_lookalike_counts_keep_precision():
+    # ratio-scale fields that share the avg_ prefix are NOT counts — a ROAS 4.4 or
+    # an engagement ratio 0.12 must keep its decimals, never round to "4" / "0".
+    assert format_scalar("avg_roas", 4.4) == "4.4"
+    assert format_scalar("avg_engagement", 0.12) == "0.12"
 
 
 def test_format_scalar_relative_lift_signed():
@@ -245,6 +280,19 @@ def test_field_label_covers_previously_unlabeled_fields():
     assert field_label("overall_refund_rate") == "整体退款率"
     # the generic追溯 fallback must no longer fire for these
     assert "追溯" not in field_help("total_gmv")
+
+
+def test_refund_baselines_are_not_labeled_the_same_as_the_overall_rate():
+    # #3: the genuine store-wide rate (overall_refund_rate) and the anomaly-detection
+    # baselines (baseline_rate / baseline_refund_rate — the weighted average each SKU /
+    # note / product is compared against) used to ALL render "整体退款率", so a merchant
+    # could not tell a real store rate from a comparison basis. The baselines now read as
+    # 基线 and no longer collide with the genuine 整体退款率.
+    assert field_label("overall_refund_rate") == "整体退款率"
+    assert field_label("baseline_rate") != "整体退款率"
+    assert field_label("baseline_refund_rate") != "整体退款率"
+    assert "基线" in field_label("baseline_rate")
+    assert "基线" in field_label("baseline_refund_rate")
 
 
 def test_field_label_covers_audience_value_window_sweet_keys():

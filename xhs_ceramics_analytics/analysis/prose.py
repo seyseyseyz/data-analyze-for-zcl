@@ -10,12 +10,18 @@ identically wherever it appears.
 """
 from __future__ import annotations
 
-from xhs_ceramics_analytics.reporting.labels import format_cn_date, format_number
+from xhs_ceramics_analytics.reporting.labels import (
+    format_cn_date,
+    format_money,
+    format_number,
+)
 
 
 def money(value: float | None) -> str:
-    """Grouped yuan amount, rounded to whole yuan: ``1302239.01`` -> ``1,302,239``."""
-    return format_number(float(round(value or 0)))
+    """Reader-facing yuan amount via the shared 过万用万 rule (:func:`format_money`):
+    ``1302239.01`` -> ``130.2万``; ``8000`` -> ``8,000``. Same rule as the table/chart
+    path so a headline number reads identically to the table."""
+    return format_money(float(value or 0))
 
 
 def qty(value: float | None) -> str:

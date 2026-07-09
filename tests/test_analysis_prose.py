@@ -9,8 +9,9 @@ from xhs_ceramics_analytics.analysis.prose import cn_date, money, pp, qty
 
 
 def test_money_groups_and_rounds_to_whole_yuan():
-    # the headline GMV used to render as a bare ``1302239``; group it like the table
-    assert money(1302239.01) == "1,302,239"
+    # the headline GMV shares the table's 过万用万 rule: ≥1万 → 万-notation (1dp),
+    # <1万 → precise grouped whole yuan (never a bare ``1302239`` or stray cents).
+    assert money(1302239.01) == "130.2万"
     assert money(200.07) == "200"
     assert money(0) == "0"
     assert money(None) == "0"

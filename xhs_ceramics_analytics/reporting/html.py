@@ -48,6 +48,12 @@ RAW_HTML_CLOSE = "<!--/raw-html-->"
 
 _MAX_TABLE_ROWS = 20
 
+# Rendered cell values that carry no information — a column whose every shown cell is
+# one of these is dropped from the user view (see _table_view). "暂无数据" is the None
+# render (formatting.format_scalar); "—" is the non-finite/missing placeholder; "" is
+# an empty string cell.
+_BLANK_CELLS = frozenset({"", "暂无数据", "—", "-"})
+
 # Tables with fewer than this many rows open by default — short enough to read at
 # a glance, so the collapsed shell just adds a needless click. Distinct from
 # _MAX_TABLE_ROWS (the row-truncation cap): a table can be fully shown yet still
@@ -863,12 +869,18 @@ def _table_view(table_name: str, rows: list[dict[str, object]]) -> dict[str, obj
     if not user_columns:
         user_columns = all_columns[:6]
 
-    # Drop a user column that is entirely 暂无数据 across every shown row — a
-    # blank column only widens the grid and tells the reader nothing. Guard the
-    # edge where that would empty the table: an all-blank grid keeps its columns,
-    # since a column-less table reads worse than a sparse one.
+    # Drop a user column that is entirely blank across every shown row — a blank
+    # column only widens the grid and tells the reader nothing. The test is on the
+    # RENDERED cell, not the raw value: a column of empty strings or "—" placeholders
+    # is just as blank as an all-None one, yet ``is not None`` used to keep it. Guard
+    # the edge where dropping would empty the table: an all-blank grid keeps its
+    # columns, since a column-less table reads worse than a sparse one.
     shown = rows[:_MAX_TABLE_ROWS]
-    non_empty = [c for c in user_columns if any(r.get(c) is not None for r in shown)]
+    non_empty = [
+        c
+        for c in user_columns
+        if any(_display_cell(c, r.get(c)) not in _BLANK_CELLS for r in shown)
+    ]
     user_columns = non_empty or user_columns
 
     showing_count = min(len(rows), _MAX_TABLE_ROWS)
