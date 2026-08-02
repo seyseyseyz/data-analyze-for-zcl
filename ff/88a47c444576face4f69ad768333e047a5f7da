@@ -1,0 +1,35 @@
+xhs_ceramics_analytics/reporting/field_tooltips.py
+  s_9cc2e8f37bb234::t_acc8028e435b00 55
+xhs_ceramics_analytics/reporting/html.py
+  s_9cc2e8f37bb234::t_acc8028e435b00 141
+  s_9cc2e8f37bb234::t_8e23f7a1a05b04 143
+tests/test_report_charts.py
+  s_9cc2e8f37bb234::t_4d037a2bf0db07 164-165
+tests/reporting/test_chart_style.py
+  s_9cc2e8f37bb234::t_fa401fd635fb96 68
+  s_9cc2e8f37bb234::t_4d037a2bf0db07 67
+xhs_ceramics_analytics/reporting/templates/report.html.j2
+  s_9cc2e8f37bb234::t_3d9e13d1175243 842
+xhs_ceramics_analytics/reporting/charts.py
+  s_9cc2e8f37bb234::t_acc8028e435b00 40
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/reporting/html.py
+  s_9cc2e8f37bb234::t_cdb37ce4a93736 141,143
+tests/test_html_field_tooltips.py
+  s_9cc2e8f37bb234::t_4d037a2bf0db07 57-58,170
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.39-trip",
+  "base_commit_sha": "ff88a47c444576face4f69ad768333e047a5f7da",
+  "prompts": {},
+  "sessions": {
+    "s_9cc2e8f37bb234": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc3b6-1e71-7653-afb5-17d9c9d1fbe8",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
