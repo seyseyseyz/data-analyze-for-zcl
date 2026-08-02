@@ -56,6 +56,79 @@ def test_skill_requests_multi_agent_authorization_before_work_starts():
     assert authorization < text.index("**Build**")
 
 
+def test_skill_reuses_authorization_for_the_same_report():
+    text = SKILL.read_text(encoding="utf-8").lower()
+    authorization = text[text.index("2. **authorize"):text.index("3. **bootstrap")]
+
+    assert "same report" in authorization
+    assert "do not ask again" in authorization
+    assert "concurrency limits" in authorization
+
+
+def test_skill_capacity_pressure_closes_finished_agents_before_retrying():
+    text = " ".join(SKILL.read_text(encoding="utf-8").lower().split())
+    capacity = text[
+        text.index("if agent dispatch hits a concurrency limit"):
+        text.index("3. if step 2 was declined")
+    ]
+
+    actions = (
+        "inspect the already-dispatched agents",
+        "ingest their finished results",
+        "close completed agents",
+        "retry pending tasks",
+    )
+    positions = [capacity.index(action) for action in actions]
+    assert positions == sorted(positions)
+    assert "must not trigger `unsupported`" in capacity
+    assert "deterministic fallback" in capacity
+    assert "another user authorization prompt" in capacity
+
+
+def test_skill_manual_mapping_question_includes_decision_evidence():
+    text = SKILL.read_text(encoding="utf-8").lower()
+    packet = text[
+        text.index("that question must provide a complete decision packet"):
+        text.index("never ask a bare")
+    ]
+
+    for phrase in (
+        "source file and sheet",
+        "source header",
+        "sample values",
+        "candidate canonical fields",
+        "official definitions",
+        "unit",
+        "grain",
+        "aggregation",
+        "pv/uv",
+        "payment/refund-time",
+        "mapping method/score/conflict reason",
+        "affected tasks",
+        "conclusions",
+        "recommended option",
+        "leave unmapped",
+    ):
+        assert phrase in packet
+
+
+def test_skill_does_not_ask_for_optional_shop_name_or_every_mapping_gap():
+    text = " ".join(SKILL.read_text(encoding="utf-8").lower().split())
+    exports = text[text.index("4. **ask for exports**"):text.index("5. **build**")]
+    build = text[text.index("5. **build**"):text.index("6. **task selection")]
+    naming = text[text.index("name the report"):text.index("2. drive the quality-first")]
+    risk_gate = text[text.index("3. **risk gate"):text.index("4. **`mapping_overrides.yaml`")]
+
+    assert "only when they cannot be inferred and are required to proceed" in exports
+    assert "use the neutral `店铺` fallback" in exports
+    assert "negotiate unmapped columns with the user" not in build
+    assert "request operator judgment only when that gate says it is genuinely required" in build
+    assert "neutral fallback" in naming
+    assert "without asking" in naming
+    assert "ask the operator only when a mapping decision is genuinely required" in risk_gate
+    assert "would materially change a metric or report conclusion" in risk_gate
+
+
 def test_skill_delivers_one_final_html_and_keeps_facts_internal():
     text = SKILL.read_text(encoding="utf-8")
     lowered = text.lower()
@@ -69,7 +142,8 @@ def test_skill_delivers_one_final_html_and_keeps_facts_internal():
 def test_skill_default_prompt_starts_with_authorization_and_promises_final_only():
     text = OPENAI_METADATA.read_text(encoding="utf-8")
 
-    assert "首先询问并等待多智能体授权" in text
+    assert "若本次报告尚未获得多智能体授权" in text
+    assert "已授权则直接续跑" in text
     assert "只交付最终单文件 HTML" in text
 
 

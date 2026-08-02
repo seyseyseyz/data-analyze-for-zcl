@@ -83,6 +83,63 @@ def test_runbook_authorization_is_a_blocking_wait_gate():
     assert "asking is not spawning" in body
 
 
+def test_runbook_reuses_authorization_until_the_report_changes():
+    body = _text("runbook.md")
+    authorization = body[
+        body.index("## authorization"):body.index("## human decision boundary")
+    ]
+
+    assert "same report" in authorization
+    assert "do not ask again" in authorization
+    assert "concurrency limits" in authorization
+
+
+def test_runbook_treats_agent_capacity_as_retryable_not_degradation():
+    body = " ".join(_text("runbook.md").split())
+    capacity = body[
+        body.index("if dispatch reports a concurrency limit"):
+        body.index("## dispatch map")
+    ]
+
+    actions = (
+        "inspect all already-dispatched agents",
+        "ingest finished results",
+        "close completed agents",
+        "retry pending tasks",
+    )
+    positions = [capacity.index(action) for action in actions]
+    assert positions == sorted(positions)
+    assert "must not trigger `unsupported`" in capacity
+    assert "deterministic fallback" in capacity
+    assert "another user prompt" in capacity
+
+
+def test_runbook_requires_a_complete_manual_mapping_decision_packet():
+    body = _text("runbook.md")
+    packet = body[
+        body.index("when judgment is required"):body.index("## freeze and prepare")
+    ]
+
+    for phrase in (
+        "source file and sheet",
+        "source header",
+        "sample values",
+        "candidate canonical fields",
+        "official definitions",
+        "unit",
+        "grain",
+        "aggregation",
+        "pv/uv",
+        "payment/refund-time",
+        "mapping method/score/conflict reason",
+        "affected tasks",
+        "conclusions",
+        "recommended option",
+        "leave unmapped",
+    ):
+        assert phrase in packet
+
+
 def test_runbook_prepare_wires_results_and_facts_inputs():
     body = _text("runbook.md")
     assert "--results" in body and "--facts" in body

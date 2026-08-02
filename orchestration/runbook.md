@@ -17,8 +17,26 @@ Treat the three states separately:
   with `--reason denied`; do not dispatch any agent.
 - **no answer yet** — keep waiting; this is neither denied nor unsupported.
 
+Once authorized, reuse that decision for the same report through later turns, interruptions, retries
+and concurrency limits; do not ask again. Ask for multi-agent authorization again only for a separate
+report after the current run finishes or when the user explicitly revokes it. A required field-mapping
+decision is a separate semantic question and does not reopen the authorization gate.
+
 If the host genuinely has no sub-agent facility, use `--reason unsupported`. “Permission has not been
 asked yet” is not unsupported. Asking is not spawning, so the question is still mandatory.
+
+## Human decision boundary
+
+Interrupt the user only when an unresolved field or metric meaning genuinely requires operator judgment
+to proceed or would materially change a report conclusion. Missing data, weak evidence, a blocked optional
+task or an available neutral fallback does not require a question; leave the field unmapped and continue
+with Not-judgable plus exact next-data-needed.
+
+When judgment is required, provide one complete decision packet: source file and sheet, source header and
+representative sample values, candidate canonical fields and their official definitions, unit, grain,
+aggregation, PV/UV and payment/refund-time differences, mapping method/score/conflict reason,
+affected tasks and conclusions, and a recommended option with rationale. Always include `leave unmapped`; never ask
+a bare field-mapping question.
 
 ## Freeze and prepare
 
@@ -54,6 +72,11 @@ only for an intentional replacement of an unfinished run.
 6. Re-run `status --json`; never infer the next stage from memory or filenames.
 
 The controller may prepare briefs and reduce state, but it never pretends a missing agent result exists.
+
+If dispatch reports a concurrency limit, first inspect all already-dispatched agents. Ingest finished
+results and close completed agents to release capacity, then retry pending tasks with a smaller batch or
+serially. Concurrency limits are transient scheduling pressure: they must not trigger `unsupported`,
+deterministic fallback, report degradation, or another user prompt.
 
 ## Dispatch map
 

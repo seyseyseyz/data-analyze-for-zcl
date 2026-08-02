@@ -23,6 +23,11 @@ Use this skill when the user provides Xiaohongshu (小红书 / 千帆) exported 
    narrative agents when their briefs are ready; it does not permit changing source
    data or metric mappings. If the user declines, continue later with the deterministic
    final-report fallback rather than producing a separate fact report.
+   Once authorized, that decision remains valid for the same report through later turns,
+   interruptions, retries, and concurrency limits: do not ask again. Ask for multi-agent
+   authorization again only for a separate report after this run finishes or when the
+   user explicitly revokes it. A field-mapping decision is a separate semantic question,
+   not a reason to repeat this authorization gate.
 
 3. **Bootstrap** — after the authorization answer is recorded, run `scripts/bootstrap`.
    If it fails, read `assets/xhs-ca/references/troubleshooting.md`, surface the relevant
@@ -30,13 +35,17 @@ Use this skill when the user provides Xiaohongshu (小红书 / 千帆) exported 
 
 4. **Ask for exports** — request the user's Excel/CSV files (e.g. 笔记数据, 订单数据,
    SKU销售, 投放数据) and an optional cover-image folder. Clarify which date range and
-   which shop account the files cover.
+   which shop account the files cover only when they cannot be inferred and are required
+   to proceed. If file paths are already supplied, use them without asking again. Infer
+   the date range from the exports when possible; if the shop name remains unavailable,
+   use the neutral `店铺` fallback.
 
 5. **Build** — run `scripts/xhs-ca build <files...>`. If header-mapping fails, read
    `assets/xhs-ca/references/xhs_glossary.md` and
-   `assets/xhs-ca/references/data_contract/_index.md`, then negotiate unmapped columns
-   with the user before retrying. After the build, follow the **字段映射自愈** section
-   below to resolve any `mapping_diagnostics` rows before analysis.
+   `assets/xhs-ca/references/data_contract/_index.md`, then inspect the unmapped columns
+   through the **字段映射自愈** risk gate below. Keep optional or safely degradable fields
+   unmapped; request operator judgment only when that gate says it is genuinely required.
+   Resolve the remaining `mapping_diagnostics` rows under that policy before analysis.
 
 6. **Task selection and data quality — coverage-driven, not hand-picked
    (REQUIRED)** — run `scripts/xhs-ca coverage` after the build. Default to every
@@ -44,8 +53,10 @@ Use this skill when the user provides Xiaohongshu (小红书 / 千帆) exported 
    data quality without creating a reader-facing report by running
    `scripts/xhs-ca facts data_quality_check` (plus `ad_data_quality_check` when paid
    traffic data exists) and reading the generated `results.json`. Resolve empty tables,
-   missing columns, and mapping diagnostics before continuing. The final report folds
-   data quality into **附录：数据质量与口径说明**.
+   missing columns, and mapping diagnostics before continuing by either applying an
+   approved mapping or explicitly keeping the field unmapped with Not-judgable and
+   next-data-needed. Ask the operator only under the risk gate below. The final report
+   folds data quality into **附录：数据质量与口径说明**.
 
 7. **Build internal fact sidecars — REQUIRED, not a deliverable** — run
    `scripts/xhs-ca facts auto`; it executes every producible task in one shot and writes
@@ -69,8 +80,8 @@ narrative workflow and is the only default delivery surface:
    step 7's `results.json` and `facts.json`; never hand-build either input. Name the
    report `<店铺名><日期范围>经营诊断报告`. Never lead
    with `千帆`, `小红书`, `XHS`, or `Qianfan` unless it is literally part of the shop
-   name. If the shop name is unavailable, ask once, then use
-   `店铺<日期范围>经营诊断报告` as the neutral fallback.
+   name. If the shop name is unavailable, use
+   `店铺<日期范围>经营诊断报告` as the neutral fallback without asking.
 2. Drive the quality-first workflow instead of composing directly. Follow
    `assets/xhs-ca/orchestration/runbook.md` exactly: two independent spine candidates →
    spine adjudication → per-domain writer/challenger/adjudicator → cross-domain synthesis →
@@ -79,6 +90,11 @@ narrative workflow and is the only default delivery surface:
    `task_id` values returned by `status --json`; ingest every required result with
    `--task-id`, and never advance over a missing sidecar. A cache hit may skip agent work,
    but authorization was still obtained first.
+   If agent dispatch hits a concurrency limit, first inspect the already-dispatched
+   agents, ingest their finished results, close completed agents to release capacity,
+   then retry pending tasks with a smaller batch or serially. Concurrency limits are
+   transient scheduling pressure: they must not trigger `unsupported`, deterministic
+   fallback, report degradation, or another user authorization prompt.
 3. If step 2 was declined, prepare with `--multi-agent-declined`, then run
    `xhs-ca narrative finalize-deterministic --run-dir <dir> --reason denied`. If the
    host truly has no sub-agent facility, use `--multi-agent-unavailable` and reason
@@ -149,7 +165,15 @@ The build never rejects a file for a drifted Chinese header — it degrades and 
      unit, grain, PV/UV basis, and payment/refund time basis, then obtain operator
      confirmation before writing an override.
    - *Missing / caliber-uncertain / multiple candidates* — do not invent a mapping;
-     present the evidence and exact next-data-needed.
+     leave the field unmapped and continue with Not-judgable plus exact next-data-needed
+     whenever that is safe. Ask the operator only when a mapping decision is genuinely
+     required to proceed or would materially change a metric or report conclusion.
+     That question must provide a complete decision packet: source file and sheet,
+     source header and representative sample values, candidate canonical fields and
+     their official definitions, unit, grain, aggregation, PV/UV and payment/refund-time
+     differences, mapping method/score/conflict reason, affected tasks and conclusions,
+     and a recommended option with rationale. Always offer `leave unmapped` as an
+     explicit choice. Never ask a bare “how should this field map?” question.
 4. **`mapping_overrides.yaml` format** (lives in the state dir next to `analytics.duckdb`; overrides only ADD aliases, never remove a shipped one):
    ```yaml
    refund_overview:
