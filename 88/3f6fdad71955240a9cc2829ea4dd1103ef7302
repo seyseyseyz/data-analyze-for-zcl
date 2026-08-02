@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-08-02-truncated-chart-label-tooltip-design.md
+  s_c2de9ccbbd6fbf::t_9ea18eae2546eb 1-43
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.39-trip",
+  "base_commit_sha": "883f6fdad71955240a9cc2829ea4dd1103ef7302",
+  "prompts": {},
+  "sessions": {
+    "s_c2de9ccbbd6fbf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc2b9-9dbf-7831-b820-31310b68b495",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
