@@ -13,6 +13,11 @@
     "claims": {"type": "array", "items": {"$ref": "claim.json"}},
     "action_cards": {"type": "array", "items": {"$ref": "action_card.json"}},
     "curated_views": {"type": "array", "items": {"$ref": "view_spec.json"}},
+    "visual_coverage": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "visual_coverage.json"}
+    },
     "spine_callbacks": {
       "type": "array",
       "uniqueItems": true,

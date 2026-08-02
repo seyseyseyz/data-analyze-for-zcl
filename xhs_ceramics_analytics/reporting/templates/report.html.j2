@@ -36,11 +36,22 @@
 {%- endif -%}
 {%- endmacro %}
 {% macro field_tooltip(field) -%}
+{% if field.help %}
 <button type="button" class="field-tooltip" tabindex="0" aria-describedby="{{ field.tooltip_id }}">
   <strong class="field-tooltip-label">{{ field.label }}</strong>
-  <span class="field-tooltip-trigger" aria-hidden="true">?</span>
-  <span id="{{ field.tooltip_id }}" class="field-tooltip-content" role="tooltip">{{ field.help }}</span>
+  <span id="{{ field.tooltip_id }}" class="field-tooltip-content" role="tooltip">
+    <span class="field-tooltip-summary">{{ field.help }}</span>
+    {% for detail in field.details %}
+    <span class="field-tooltip-detail">
+      <span class="field-tooltip-key">{{ detail.label }}</span>
+      <span>{{ detail.value }}</span>
+    </span>
+    {% endfor %}
+  </span>
 </button>
+{% else %}
+<strong class="field-label">{{ field.label }}</strong>
+{% endif %}
 {%- endmacro %}
 {% macro finding_card(finding) %}
 <article class="finding-card">
@@ -730,8 +741,7 @@
     }
     @media print {
       .ambient { display: none; }
-      .field-tooltip-content,
-      .field-tooltip-trigger { display: none !important; }
+      .field-tooltip-content { display: none !important; }
       .chart, .chart-svg {
         print-color-adjust: exact;
         -webkit-print-color-adjust: exact;
@@ -836,21 +846,13 @@
     .field-tooltip-label {
       color: var(--ink-strong);
       font-size: 13px;
-      border-bottom: 1px dotted #A8A8A3;
+      border-bottom: 1px dashed #8F9697;
     }
 
-    .field-tooltip-trigger {
-      display: inline-grid;
-      place-items: center;
-      width: 15px;
-      height: 15px;
-      border: 1px solid #C8C8C3;
-      border-radius: 50%;
-      color: var(--muted);
+    .field-label {
+      color: var(--ink-strong);
       font-family: var(--font-sans);
-      font-size: 10px;
-      font-weight: 700;
-      line-height: 1;
+      font-size: 13px;
     }
 
     .field-code {
@@ -866,12 +868,12 @@
     }
 
     .field-tooltip-content {
-      position: absolute;
+      position: fixed;
       z-index: 80;
-      left: 0;
-      bottom: calc(100% + 9px);
-      width: max-content;
-      max-width: min(300px, calc(100vw - 32px));
+      left: 50%;
+      bottom: 24px;
+      width: min(360px, calc(100vw - 32px));
+      max-width: calc(100vw - 32px);
       padding: 9px 11px;
       border: 1px solid #D9D9D4;
       border-radius: 8px;
@@ -886,15 +888,34 @@
       visibility: hidden;
       opacity: 0;
       pointer-events: none;
-      transform: translateY(5px);
+      transform: translate(-50%, 5px);
       transition: opacity 120ms ease, transform 120ms ease, visibility 120ms ease;
     }
 
+    .field-tooltip-summary,
+    .field-tooltip-detail {
+      display: block;
+    }
+
+    .field-tooltip-detail {
+      display: grid;
+      grid-template-columns: 64px minmax(0, 1fr);
+      gap: 8px;
+      margin-top: 7px;
+      padding-top: 7px;
+      border-top: 1px solid rgba(255, 255, 255, 0.14);
+    }
+
+    .field-tooltip-key {
+      color: #BFC5C7;
+      white-space: nowrap;
+    }
+
     .field-tooltip:hover .field-tooltip-content,
-    .field-tooltip:focus-within .field-tooltip-content {
+    .field-tooltip:focus-visible .field-tooltip-content {
       visibility: visible;
       opacity: 1;
-      transform: translateY(0);
+      transform: translate(-50%, 0);
     }
 
     .field-tooltip:focus-visible {
@@ -902,19 +923,18 @@
       box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px #7A7A75;
     }
 
-    /* Table cells live in a horizontal scroll container. A viewport-fixed bubble
-       escapes that clipping boundary while the field label itself still scrolls. */
-    .table-wrap .field-tooltip-content {
-      position: fixed;
-      left: 50%;
-      bottom: 24px;
-      width: min(360px, calc(100vw - 32px));
-      transform: translate(-50%, 5px);
-    }
+    @media (min-width: 701px) {
+      .field-tooltip--anchored .field-tooltip-content {
+        width: max-content;
+        max-width: min(320px, calc(100vw - 24px));
+        bottom: auto;
+        transform: translateY(var(--field-tooltip-enter-y, 4px));
+      }
 
-    .table-wrap .field-tooltip:hover .field-tooltip-content,
-    .table-wrap .field-tooltip:focus-within .field-tooltip-content {
-      transform: translate(-50%, 0);
+      .field-tooltip--anchored:hover .field-tooltip-content,
+      .field-tooltip--anchored:focus-visible .field-tooltip-content {
+        transform: translateY(0);
+      }
     }
 
     .note-list {
@@ -1024,6 +1044,18 @@
       background: var(--surface);
     }
 
+    .table-wrap table:has(col[data-col-kind]) {
+      width: max-content;
+      min-width: 100%;
+    }
+    .table-wrap th { white-space: nowrap; }
+    .table-wrap col[data-col-kind="identity"] { width: 240px; }
+    .table-wrap col[data-col-key="product_name"] { width: 220px; }
+    .table-wrap col[data-col-key="note_title"] { width: 280px; }
+    .table-wrap col[data-col-kind="category"] { width: 112px; }
+    .table-wrap col[data-col-kind="number"] { width: 1%; }
+    .table-wrap col[data-col-kind="flag"] { width: 164px; }
+
     th,
     td {
       padding: 12px 14px;
@@ -1098,6 +1130,8 @@
       .action-item { transition: none; }
     }
 
+    {{ title_mascot_css | safe }}
+
     @media (max-width: 860px) {
       section { padding-top: 72px; }
       .topbar { align-items: flex-start; flex-direction: column; }
@@ -1131,7 +1165,7 @@
     <section class="hero reveal" style="--index: 0">
       <div>
         <span class="eyebrow">Operating Report</span>
-        <h1>{{ report_title }}</h1>
+        <h1>{{ report_title }}{{ title_mascot_html | safe }}</h1>
         <p class="hero-copy">
           这份报告以六个核心经营领域组织完整分析，并在有相应数据时增加付费增长等专项领域。每个领域默认展示核心结论，其余模块和明细仍保留在同一份报告中，可展开备查。先看结论和行动，再按领域下钻，数据质量与口径说明放在末尾附录。
         </p>
@@ -1362,5 +1396,6 @@
     </section>
   </main>
   </div>
+  {{ field_tooltip_script | safe }}
 </body>
 </html>

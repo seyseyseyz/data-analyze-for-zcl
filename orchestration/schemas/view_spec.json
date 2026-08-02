@@ -53,6 +53,11 @@
       "uniqueItems": true,
       "items": {"type": "string"}
     },
+    "column_labels": {
+      "type": "object",
+      "description": "Number-free merchant-facing labels for selected source columns.",
+      "additionalProperties": {"type": "string", "minLength": 1}
+    },
     "rows": {
       "type": ["object", "null"],
       "additionalProperties": false,

@@ -135,8 +135,8 @@ TOC_STYLE = """
     html { scroll-behavior: smooth; }
 
     .page-grid {
-      --toc-rail-w: 232px;
-      --toc-gap: 44px;
+      --toc-rail-w: 196px;
+      --toc-gap: 32px;
       /* Mobile-first gutter; the wide breakpoint below bumps it to 40px. Renderers
          override only the --toc-content widths, never --toc-pad, so this responsive
          value is never shadowed by a later unconditional rule. */

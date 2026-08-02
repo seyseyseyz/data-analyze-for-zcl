@@ -174,10 +174,69 @@ def test_runbook_documents_one_html_delivery_and_internal_artifacts():
     assert "inline field glossary" in body
 
 
+def test_runbook_requires_operator_facing_data_gap_contract():
+    body = _text("runbook.md")
+    assert "data gaps and unlocked analyses" in body
+    assert "data package" in body
+    assert "minimum recommended fields" in body
+    assert "internal task slugs" in body
+    assert "cannot_say" in body
+    assert "required current gaps" in body
+    assert "optional capability upgrades" in body
+    assert "field exists with a real zero" in body
+    assert "standalone livestream overview" in body
+
+
 def test_runbook_places_merchant_review_after_candidate_html():
     body = _text("runbook.md")
     assert body.index("candidate html") < body.index("merchant final review")
     assert "cannot edit" in body
+
+
+def test_runbook_documents_recoverable_dispatch_and_pre_ingest_validation():
+    body = _text("runbook.md")
+    for command in (
+        "narrative reserve",
+        "narrative record-dispatch",
+        "narrative record-agent-state",
+        "narrative validate",
+        "narrative release",
+    ):
+        assert command in body
+    for field in (
+        "result_path",
+        "schema_path",
+        "controller_fields",
+        "current_round",
+        "contract_version",
+    ):
+        assert field in body
+    assert "source must match its registered `result_path`" in body
+
+
+def test_runbook_requires_visual_coverage_and_candidate_final_hash_lineage():
+    body = _text("runbook.md")
+    for phrase in (
+        "visual_coverage",
+        "decision-critical claim",
+        "dropped_by_review",
+        "data-view-id",
+        "candidate html hash",
+        "exactly one html",
+        "unresolved `{tn}`",
+    ):
+        assert phrase in body
+
+
+def test_runbook_requires_atomic_view_coverage_updates_and_narrow_recovery():
+    body = _text("runbook.md")
+    for phrase in (
+        "atomically update the view, `visual_coverage` and durable",
+        "preserve the claim",
+        "cancel the generated claim patches",
+        "explicitly dropped by review",
+    ):
+        assert phrase in body
 
 
 def test_runbook_documents_no_per_domain_cap_and_claim_anchor():

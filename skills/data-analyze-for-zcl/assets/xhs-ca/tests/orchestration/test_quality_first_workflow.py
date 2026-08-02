@@ -1,3 +1,4 @@
+import copy
 import json
 from pathlib import Path
 
@@ -197,6 +198,80 @@ def test_quality_prepare_freezes_manifest_and_two_independent_spine_tasks(tmp_pa
         assert '"display_name": "支付金额"' in brief
 
 
+def test_status_exposes_the_executable_contract_for_each_pending_task(tmp_path):
+    results, facts = _inputs()
+    run_dir = tmp_path / "run"
+    nw.prepare_run(
+        run_dir,
+        results=results,
+        facts_json=facts,
+        report_name="店铺经营诊断",
+        project_root=tmp_path,
+        multi_agent_authorized=True,
+    )
+
+    task = nw.status_json(run_dir)["tasks"]["pending"][0]
+
+    assert task["result_path"] == str(
+        run_dir / "results" / f"{Path(task['brief']).stem}.json"
+    )
+    assert task["schema_path"] == str(
+        nw._SCHEMA_DIR / "spine_candidate.json"
+    )
+    assert task["allowed_enums"][
+        "spine_brief.decomposition_backbone[].relation"
+    ] == ["accounting_identity", "weak_causal_overlay"]
+    assert task["controller_fields"] == {
+        "task_id": task["task_id"],
+        "candidate_id": task["candidate_id"],
+    }
+    assert task["current_round"] == 0
+    assert task["contract_version"] == 1
+
+
+def test_validate_injects_controller_fields_without_mutating_run_state(tmp_path):
+    results, facts = _inputs()
+    run_dir = tmp_path / "run"
+    nw.prepare_run(
+        run_dir,
+        results=results,
+        facts_json=facts,
+        report_name="店铺经营诊断",
+        project_root=tmp_path,
+        multi_agent_authorized=True,
+    )
+    task = nw.status_json(run_dir)["tasks"]["pending"][0]
+    result_path = tmp_path / "external-agent-output.json"
+    result_path.write_text(
+        json.dumps(
+            {
+                "spine_brief": {
+                    "decomposition_backbone": [],
+                    "headline_candidate": "经营表现保持稳定",
+                    "section_callbacks": {},
+                    "broadcast_facts": ["core.gmv"],
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    before = (run_dir / "state.json").read_bytes()
+
+    validation = nw.validate_output(
+        run_dir,
+        stage="seed",
+        task_id=task["task_id"],
+        source=result_path,
+    )
+
+    assert validation["valid"] is True
+    assert validation["task_id"] == task["task_id"]
+    assert validation["payload"]["candidate_id"] == task["candidate_id"]
+    assert validation["diagnostics"] == []
+    assert (run_dir / "state.json").read_bytes() == before
+
+
 def test_quality_prepare_rejects_mismatched_platform_semantic_snapshots(tmp_path):
     results, facts = _inputs()
     facts["platform_semantics"] = {
@@ -359,6 +434,399 @@ def test_quality_review_revise_requires_a_blocker_code():
         )
 
 
+def test_visual_curation_merge_persists_structured_coverage():
+    state = {
+        "sections": {
+            "生意大盘": {
+                "section_id": "生意大盘",
+                "title": "生意大盘",
+                "claims": [],
+            }
+        }
+    }
+    coverage = [
+        {
+            "claim_id": "c1",
+            "status": "omitted",
+            "view_ids": [],
+            "reason_code": "not_visualizable",
+            "reason": "只有单点事实",
+        }
+    ]
+
+    nw._merge_section_fields(
+        state,
+        {
+            "section_id": "生意大盘",
+            "curated_views": [],
+            "visual_coverage": coverage,
+        },
+    )
+
+    assert state["sections"]["生意大盘"]["visual_coverage"] == coverage
+
+
+def test_visual_curation_rejects_missing_decision_critical_claim_coverage():
+    state = {
+        "facts_hash": "h",
+        "_section_order": ["生意大盘"],
+        "sections": {
+            "生意大盘": {
+                "section_id": "生意大盘",
+                "title": "生意大盘",
+                "claims": [{"claim_id": "c1"}],
+            }
+        },
+        "_synth": {
+            "action_cards": [{"supporting_claim_ids": ["c1"]}],
+        },
+    }
+    payload = {
+        "sections": [
+            {
+                "section_id": "生意大盘",
+                "curated_views": [],
+                "visual_coverage": [],
+            }
+        ]
+    }
+
+    with pytest.raises(ValueError, match="decision-critical claim.*c1"):
+        nw._validate_visual_curation_coverage(state, payload)
+
+
+def test_visual_curation_rejects_unknown_section_even_when_claim_is_known():
+    state = {
+        "facts_hash": "h",
+        "_section_order": ["生意大盘"],
+        "sections": {
+            "生意大盘": {
+                "section_id": "生意大盘",
+                "title": "生意大盘",
+                "claims": [{"claim_id": "c1"}],
+            }
+        },
+        "_synth": {"action_cards": [{"supporting_claim_ids": ["c1"]}]},
+    }
+    payload = {
+        "sections": [
+            {
+                "section_id": "伪造域",
+                "curated_views": [],
+                "visual_coverage": [
+                    {
+                        "claim_id": "c1",
+                        "status": "omitted",
+                        "view_ids": [],
+                        "reason_code": "not_visualizable",
+                        "reason": "测试",
+                    }
+                ],
+            }
+        ]
+    }
+
+    with pytest.raises(ValueError, match="unknown section.*伪造域"):
+        nw._validate_visual_curation_coverage(state, payload)
+
+
+def test_visual_curation_rejects_duplicate_section_payloads():
+    state = {
+        "facts_hash": "h",
+        "_section_order": ["生意大盘"],
+        "sections": {
+            "生意大盘": {
+                "section_id": "生意大盘",
+                "title": "生意大盘",
+                "claims": [{"claim_id": "c1"}],
+            }
+        },
+        "_synth": {"action_cards": [{"supporting_claim_ids": ["c1"]}]},
+    }
+    payload = {
+        "sections": [
+            {
+                "section_id": "生意大盘",
+                "curated_views": [],
+                "visual_coverage": [],
+            },
+            {
+                "section_id": "生意大盘",
+                "curated_views": [],
+                "visual_coverage": [],
+            },
+        ]
+    }
+
+    with pytest.raises(ValueError, match="duplicate section.*生意大盘"):
+        nw._validate_visual_curation_coverage(state, payload)
+
+
+def test_visual_curation_rejects_claim_coverage_in_another_section():
+    state = {
+        "facts_hash": "h",
+        "_section_order": ["生意大盘", "商品结构"],
+        "sections": {
+            "生意大盘": {
+                "section_id": "生意大盘",
+                "title": "生意大盘",
+                "claims": [{"claim_id": "c1"}],
+            },
+            "商品结构": {
+                "section_id": "商品结构",
+                "title": "商品结构",
+                "claims": [],
+            },
+        },
+        "_synth": {"action_cards": [{"supporting_claim_ids": ["c1"]}]},
+    }
+    payload = {
+        "sections": [
+            {
+                "section_id": "商品结构",
+                "curated_views": [],
+                "visual_coverage": [
+                    {
+                        "claim_id": "c1",
+                        "status": "omitted",
+                        "view_ids": [],
+                        "reason_code": "not_visualizable",
+                        "reason": "测试",
+                    }
+                ],
+            }
+        ]
+    }
+
+    with pytest.raises(ValueError, match="claim c1 belongs to section 生意大盘"):
+        nw._validate_visual_curation_coverage(state, payload)
+
+
+def test_visual_curation_rejects_view_with_mismatched_section_id():
+    state = {
+        "facts_hash": "h",
+        "_section_order": ["生意大盘"],
+        "sections": {
+            "生意大盘": {
+                "section_id": "生意大盘",
+                "title": "生意大盘",
+                "claims": [{"claim_id": "c1"}],
+            }
+        },
+        "_synth": {"action_cards": [{"supporting_claim_ids": ["c1"]}]},
+    }
+    payload = {
+        "sections": [
+            {
+                "section_id": "生意大盘",
+                "curated_views": [
+                    {
+                        "view_id": "v1",
+                        "section_id": "商品结构",
+                        "supports_claim": "c1",
+                    }
+                ],
+                "visual_coverage": [
+                    {
+                        "claim_id": "c1",
+                        "status": "retained",
+                        "view_ids": ["v1"],
+                        "reason_code": None,
+                        "reason": None,
+                    }
+                ],
+            }
+        ]
+    }
+
+    with pytest.raises(ValueError, match="view v1 belongs to section 商品结构"):
+        nw._validate_visual_curation_coverage(state, payload)
+
+
+def test_visual_curation_rejects_view_supporting_claim_from_another_section():
+    state = {
+        "facts_hash": "h",
+        "_section_order": ["生意大盘", "商品结构"],
+        "sections": {
+            "生意大盘": {
+                "section_id": "生意大盘",
+                "title": "生意大盘",
+                "claims": [{"claim_id": "c1"}],
+            },
+            "商品结构": {
+                "section_id": "商品结构",
+                "title": "商品结构",
+                "claims": [{"claim_id": "c2"}],
+            },
+        },
+        "_synth": {"action_cards": [{"supporting_claim_ids": ["c1"]}]},
+    }
+    payload = {
+        "sections": [
+            {
+                "section_id": "生意大盘",
+                "curated_views": [
+                    {
+                        "view_id": "v2",
+                        "section_id": "生意大盘",
+                        "supports_claim": "c2",
+                    }
+                ],
+                "visual_coverage": [
+                    {
+                        "claim_id": "c1",
+                        "status": "omitted",
+                        "view_ids": [],
+                        "reason_code": "not_visualizable",
+                        "reason": "测试",
+                    }
+                ],
+            }
+        ]
+    }
+
+    with pytest.raises(ValueError, match="view v2 supports claim c2 from section 商品结构"):
+        nw._validate_visual_curation_coverage(state, payload)
+
+
+def test_visual_curation_rejects_omitted_claim_with_a_retained_view():
+    state = {
+        "facts_hash": "h",
+        "_section_order": ["生意大盘"],
+        "sections": {
+            "生意大盘": {
+                "section_id": "生意大盘",
+                "title": "生意大盘",
+                "claims": [{"claim_id": "c1"}],
+            }
+        },
+        "_synth": {"action_cards": [{"supporting_claim_ids": ["c1"]}]},
+    }
+    payload = {
+        "sections": [
+            {
+                "section_id": "生意大盘",
+                "curated_views": [
+                    {
+                        "view_id": "v1",
+                        "section_id": "生意大盘",
+                        "supports_claim": "c1",
+                    }
+                ],
+                "visual_coverage": [
+                    {
+                        "claim_id": "c1",
+                        "status": "omitted",
+                        "view_ids": [],
+                        "reason_code": "not_visualizable",
+                        "reason": "测试",
+                    }
+                ],
+            }
+        ]
+    }
+
+    with pytest.raises(ValueError, match="view v1 is not retained by visual coverage"):
+        nw._validate_visual_curation_coverage(state, payload)
+
+
+def test_visual_curation_brief_exposes_critical_claim_ids_and_coverage_contract(
+    tmp_path,
+):
+    results, facts = _inputs()
+    run_dir = tmp_path / "run"
+    nw.prepare_run(
+        run_dir,
+        results=results,
+        facts_json=facts,
+        report_name="店铺经营诊断",
+        project_root=tmp_path,
+        multi_agent_authorized=True,
+    )
+    state = _state(run_dir)
+    state["sections"] = {
+        "生意大盘": {
+            "section_id": "生意大盘",
+            "title": "生意大盘",
+            "claims": [{"claim_id": "c1"}],
+        }
+    }
+    state["_synth"] = {"action_cards": [{"supporting_claim_ids": ["c1"]}]}
+
+    brief_path = nw._write_visual_curation_brief(run_dir, state)
+    brief = brief_path.read_text(encoding="utf-8")
+
+    assert '"decision_critical_claim_ids": [\n    "c1"' in brief
+    assert '"visual_coverage"' in brief
+
+
+def test_quality_review_drop_turns_retained_coverage_into_structured_omission(
+    tmp_path,
+):
+    results, facts = _inputs()
+    run_dir = tmp_path / "run"
+    nw.prepare_run(
+        run_dir,
+        results=results,
+        facts_json=facts,
+        report_name="店铺经营诊断",
+        project_root=tmp_path,
+        multi_agent_authorized=True,
+    )
+    view = {"view_id": "view.core", "supports_claim": "c1"}
+    coverage = {
+        "claim_id": "c1",
+        "status": "retained",
+        "view_ids": ["view.core"],
+        "reason_code": None,
+        "reason": None,
+    }
+    section = {
+        "section_id": "生意大盘",
+        "title": "生意大盘",
+        "claims": [{"claim_id": "c1"}],
+        "curated_views": [view],
+        "visual_coverage": [coverage],
+    }
+    state = _state(run_dir)
+    state.update(
+        {
+            "stage": "review",
+            "sections": {"生意大盘": copy.deepcopy(section)},
+            "_bundle": {"sections": [copy.deepcopy(section)]},
+            "_reviews": {
+                "生意大盘::view.core": {
+                    "evidence_semantics": {"verdict": "drop"},
+                    "merchant_decision": {"verdict": "keep"},
+                    "editorial_visual": {"verdict": "keep"},
+                }
+            },
+            "_review_reasons": {
+                "生意大盘::view.core": {
+                    "evidence_semantics": "视图不能诚实支撑该结论"
+                }
+            },
+        }
+    )
+    nw._write_state(run_dir, state)
+
+    resolved = nw._resolve_review_stage(run_dir, state)
+
+    assert resolved["_bundle"]["sections"][0]["curated_views"] == []
+    assert resolved["_bundle"]["sections"][0]["visual_coverage"] == [
+        {
+            "claim_id": "c1",
+            "status": "omitted",
+            "view_ids": [],
+            "reason_code": "dropped_by_review",
+            "reason": "视图不能诚实支撑该结论",
+        }
+    ]
+    assert resolved["sections"]["生意大盘"]["visual_coverage"] == resolved[
+        "_bundle"
+    ]["sections"][0]["visual_coverage"]
+
+
 def test_quality_workflow_never_folds_domains_for_cost(tmp_path):
     results, facts = _inputs()
     results["domain_slices"] = [
@@ -397,13 +865,15 @@ def test_spine_adjudication_precedes_domain_writers_and_reaches_their_briefs(tmp
         multi_agent_authorized=True,
     )
 
+    candidate_ids = []
     for index, task in enumerate(_pending(run_dir), 1):
         candidate_label = ("甲", "乙")[index - 1]
+        candidate_ids.append(task["candidate_id"])
         _ingest_task(
             run_dir,
             task,
             {
-                "candidate_id": f"candidate-{index}",
+                "candidate_id": task["candidate_id"],
                 "spine_brief": {
                     "decomposition_backbone": [],
                     "headline_candidate": f"候选主线{candidate_label}",
@@ -421,7 +891,7 @@ def test_spine_adjudication_precedes_domain_writers_and_reaches_their_briefs(tmp
         run_dir,
         adjudicator,
         {
-            "selected_candidate_id": "candidate-1",
+            "selected_candidate_id": candidate_ids[0],
             "spine_brief": {
                 "decomposition_backbone": [
                     {
@@ -436,7 +906,7 @@ def test_spine_adjudication_precedes_domain_writers_and_reaches_their_briefs(tmp
                 "section_callbacks": {"生意大盘": {"must_connect_to": "L1", "angle_hint": "先钱后机制"}},
                 "broadcast_facts": ["core.gmv"],
             },
-            "rejected_reasons": [{"candidate_id": "candidate-2", "reason": "主线较弱"}],
+            "rejected_reasons": [{"candidate_id": candidate_ids[1], "reason": "主线较弱"}],
             "unresolved_dissent": [],
         },
     )
@@ -518,6 +988,85 @@ def test_domain_writer_flows_through_challenge_and_domain_adjudication(tmp_path)
     state = nw.advance_run(run_dir, project_root=tmp_path)
     assert state["stage"] == "domain_adjudication"
     assert _pending(run_dir)[0]["role"] == "domain_adjudicator"
+
+
+def test_domain_adjudication_drops_unknown_spine_callbacks_before_gate(tmp_path):
+    results, facts = _inputs()
+    run_dir = tmp_path / "run"
+    nw.prepare_run(
+        run_dir,
+        results=results,
+        facts_json=facts,
+        report_name="店铺经营诊断",
+        project_root=tmp_path,
+        multi_agent_authorized=True,
+    )
+    state = _state(run_dir)
+    state["stage"] = "domain_adjudication"
+    state["_spine"] = {
+        "spine_brief": {
+            "decomposition_backbone": [
+                {
+                    "link_id": "L1",
+                    "from": "支付金额",
+                    "to": "经营结果",
+                    "anchor_fact_ids": ["core.gmv"],
+                    "relation": "accounting_identity",
+                }
+            ],
+            "headline_candidate": "经营结果回到支付金额",
+            "section_callbacks": {},
+            "broadcast_facts": ["core.gmv"],
+        }
+    }
+    brief = run_dir / "briefs" / "domain_adjudication_00_生意大盘.md"
+    brief.write_text("adjudicate", encoding="utf-8")
+    nw._set_stage_tasks(
+        state,
+        "domain_adjudication",
+        [{"brief": brief, "section_id": "生意大盘", "role": "domain_adjudicator"}],
+    )
+    nw._write_state(run_dir, state)
+    task = _pending(run_dir)[0]
+    claim = {
+        "claim_id": "c1",
+        "section_id": "生意大盘",
+        "claim_kind": "measurement",
+        "sentence": "支付金额 {t0}。",
+        "number_tokens": [
+            {
+                "token_id": "t0",
+                "fact_id": "core.gmv",
+                "expected_metric_key": "gmv",
+                "direction": "up",
+            }
+        ],
+        "entity_refs": [],
+        "confidence": "强",
+        "causal_link": None,
+    }
+
+    _ingest_task(
+        run_dir,
+        task,
+        {
+            "section_id": "生意大盘",
+            "title": "生意大盘",
+            "claims": [claim],
+            "spine_callbacks": ["L1", "L5", "这是一整段回调说明"],
+            "adjudication_notes": [],
+        },
+    )
+
+    state = _state(run_dir)
+    assert state["sections"]["生意大盘"]["spine_callbacks"] == ["L1"]
+    assert state["_normalizations"][-1]["removed"] == ["L5", "这是一整段回调说明"]
+    audit = [
+        json.loads(line)
+        for line in (run_dir / "normalizations.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert audit[-1]["task_id"] == task["task_id"]
+    assert audit[-1]["allowed"] == ["L1"]
 
 
 def test_adjudicated_claim_tokens_reach_synth_before_visual_curation(tmp_path):
@@ -774,6 +1323,504 @@ def test_merchant_revision_is_id_scoped_and_cannot_replace_the_bundle(tmp_path):
     assert state["_bundle"]["sections"] == bundle["sections"]
 
 
+def test_targeted_view_drop_marks_its_visual_coverage_dropped_by_review():
+    view = {
+        "view_id": "view.c1",
+        "section_id": "生意大盘",
+        "supports_claim": "c1",
+        "source": {"table": "monthly"},
+    }
+    bundle = {
+        "sections": [
+            {
+                "section_id": "生意大盘",
+                "curated_views": [view],
+                "visual_coverage": [
+                    {
+                        "claim_id": "c1",
+                        "status": "retained",
+                        "view_ids": ["view.c1"],
+                        "reason_code": None,
+                        "reason": None,
+                    }
+                ],
+            }
+        ]
+    }
+
+    changed = nw._apply_one_merchant_revision(
+        bundle,
+        {
+            "target_type": "view",
+            "target_id": "view.c1",
+            "operation": "drop",
+            "replacement": None,
+        },
+    )
+
+    assert changed is True
+    section = bundle["sections"][0]
+    assert section["curated_views"] == []
+    assert section["visual_coverage"] == [
+        {
+            "claim_id": "c1",
+            "status": "omitted",
+            "view_ids": [],
+            "reason_code": "dropped_by_review",
+            "reason": "独立评审未保留可用视图",
+        }
+    ]
+
+
+def test_targeted_claim_drop_removes_its_visual_coverage_record():
+    claim = {
+        "claim_id": "c1",
+        "section_id": "生意大盘",
+        "claim_kind": "measurement",
+        "sentence": "支付金额 {t0}。",
+        "number_tokens": [],
+        "entity_refs": [],
+        "confidence": "弱",
+        "causal_link": None,
+    }
+    bundle = {
+        "first_screen": {"spine": [], "panel": []},
+        "mechanism": [],
+        "action_cards": [],
+        "sections": [
+            {
+                "section_id": "生意大盘",
+                "claims": [claim],
+                "curated_views": [],
+                "visual_coverage": [
+                    {
+                        "claim_id": "c1",
+                        "status": "omitted",
+                        "view_ids": [],
+                        "reason_code": "dropped_by_review",
+                        "reason": "独立评审未保留可用视图",
+                    }
+                ],
+            }
+        ],
+    }
+
+    changed = nw._apply_one_merchant_revision(
+        bundle,
+        {
+            "target_type": "claim",
+            "target_id": "c1",
+            "operation": "drop",
+            "replacement": None,
+        },
+    )
+
+    assert changed is True
+    section = bundle["sections"][0]
+    assert section["claims"] == []
+    assert section["visual_coverage"] == []
+
+
+def test_advance_recovers_pending_coverage_repairs_for_views_already_dropped_by_review(
+    tmp_path, monkeypatch
+):
+    results, facts = _inputs()
+    run_dir = tmp_path / "run"
+    nw.prepare_run(
+        run_dir,
+        results=results,
+        facts_json=facts,
+        report_name="店铺经营诊断",
+        project_root=tmp_path,
+        multi_agent_authorized=True,
+    )
+    claim = {
+        "claim_id": "c1",
+        "section_id": "生意大盘",
+        "claim_kind": "measurement",
+        "sentence": "支付金额 {t0}。",
+        "number_tokens": [
+            {
+                "token_id": "t0",
+                "fact_id": "core.gmv",
+                "expected_metric_key": "gmv",
+                "direction": "up",
+            }
+        ],
+        "entity_refs": [],
+        "confidence": "强",
+        "causal_link": None,
+    }
+    view = {
+        "view_id": "view.c1",
+        "section_id": "生意大盘",
+        "supports_claim": "c1",
+        "source": {"table": "monthly"},
+    }
+    retained = {
+        "claim_id": "c1",
+        "status": "retained",
+        "view_ids": ["view.c1"],
+        "reason_code": None,
+        "reason": None,
+    }
+    state = _state(run_dir)
+    state.update(
+        {
+            "stage": "patch",
+            "sections": {
+                "生意大盘": {
+                    "section_id": "生意大盘",
+                    "claims": [claim],
+                    "curated_views": [view],
+                    "visual_coverage": [retained],
+                }
+            },
+            "_bundle": {
+                "facts_hash": "facts-v2",
+                "headline": "支付金额上升",
+                "first_screen": {"spine": [], "panel": [], "actions": []},
+                "spine_final": {"backbone": []},
+                "sections": [
+                    {
+                        "section_id": "生意大盘",
+                        "claims": [claim],
+                        "curated_views": [],
+                        "visual_coverage": [retained],
+                    }
+                ],
+                "cannot_say": [],
+            },
+            "_gate_failures": [
+                {
+                    "code": "VISUAL_COVERAGE_INVALID",
+                    "claim_id": "c1",
+                    "detail": "retained view 'view.c1' is missing or supports another claim",
+                }
+            ],
+            "_review_patch_pending": ["生意大盘::view.c1"],
+            "_patch_round": 2,
+            "_patch_review": {
+                "issues": [
+                    {
+                        "issue_id": "gate-2-0-visual_coverage_invalid",
+                        "target_type": "claim",
+                        "target_id": "c1",
+                        "reason": "retained view is missing",
+                    }
+                ]
+            },
+        }
+    )
+    patch_brief = run_dir / "briefs" / "patch_gate-2-0-visual_coverage_invalid.md"
+    patch_brief.write_text("patch", encoding="utf-8")
+    nw._set_stage_tasks(
+        state,
+        "patch",
+        [
+            {
+                "brief": patch_brief,
+                "role": "targeted_reviser",
+                "target_type": "claim",
+                "target_id": "c1",
+                "source_blocker_ids": ["gate-2-0-visual_coverage_invalid"],
+            }
+        ],
+    )
+    nw._write_state(run_dir, state)
+    monkeypatch.setattr(
+        nw,
+        "_run_gate",
+        lambda bundle, facts_json, tables: type(
+            "Report",
+            (),
+            {
+                "status": "PASS",
+                "bundle": bundle,
+                "hard_failures": [],
+                "warnings": [],
+                "capped_claims": [],
+            },
+        )(),
+    )
+
+    recovered = nw.advance_run(run_dir, project_root=tmp_path)
+
+    assert recovered["stage"] == "continuity"
+    assert [
+        item["claim_id"]
+        for item in recovered["_bundle"]["sections"][0]["claims"]
+    ] == ["c1"]
+    assert recovered["_bundle"]["sections"][0]["visual_coverage"][0] == {
+        "claim_id": "c1",
+        "status": "omitted",
+        "view_ids": [],
+        "reason_code": "dropped_by_review",
+        "reason": "独立评审未保留可用视图",
+    }
+    assert recovered["sections"]["生意大盘"]["curated_views"] == []
+    assert "recover:orphaned_visual_coverage" in recovered["history"]
+
+
+def test_orphaned_review_recovery_leaves_unrelated_missing_coverage_for_the_gate(
+    tmp_path,
+):
+    brief = tmp_path / "briefs" / "patch_gate-2-0-visual_coverage_invalid.md"
+    brief.parent.mkdir(parents=True)
+    brief.write_text("patch", encoding="utf-8")
+    state = {
+        "workflow_version": nw.QUALITY_WORKFLOW_VERSION,
+        "stage": "patch",
+        "facts_hash": "h",
+        "registry_hash": "r",
+        "sections": {
+            "生意大盘": {
+                "section_id": "生意大盘",
+                "curated_views": [],
+                "visual_coverage": [
+                    {
+                        "claim_id": "c1",
+                        "status": "retained",
+                        "view_ids": ["view.c1"],
+                        "reason_code": None,
+                        "reason": None,
+                    },
+                    {
+                        "claim_id": "c2",
+                        "status": "retained",
+                        "view_ids": ["view.c2"],
+                        "reason_code": None,
+                        "reason": None,
+                    },
+                ],
+            }
+        },
+        "_bundle": {
+            "sections": [
+                {
+                    "section_id": "生意大盘",
+                    "curated_views": [],
+                    "visual_coverage": [
+                        {
+                            "claim_id": "c1",
+                            "status": "retained",
+                            "view_ids": ["view.c1"],
+                            "reason_code": None,
+                            "reason": None,
+                        },
+                        {
+                            "claim_id": "c2",
+                            "status": "retained",
+                            "view_ids": ["view.c2"],
+                            "reason_code": None,
+                            "reason": None,
+                        },
+                    ],
+                }
+            ]
+        },
+        "_gate_failures": [
+            {
+                "code": "VISUAL_COVERAGE_INVALID",
+                "claim_id": "c1",
+                "detail": "retained view 'view.c1' is missing",
+            }
+        ],
+        "_review_patch_pending": ["生意大盘::view.c1"],
+        "_patch_review": {
+            "issues": [
+                {
+                    "issue_id": "gate-2-0-visual_coverage_invalid",
+                    "target_type": "claim",
+                    "target_id": "c1",
+                }
+            ]
+        },
+    }
+    nw._set_stage_tasks(
+        state,
+        "patch",
+        [
+            {
+                "brief": brief,
+                "target_type": "claim",
+                "target_id": "c1",
+                "source_blocker_ids": ["gate-2-0-visual_coverage_invalid"],
+            }
+        ],
+    )
+
+    assert nw._recover_orphaned_review_coverage_patch(state) is True
+
+    coverage = state["_bundle"]["sections"][0]["visual_coverage"]
+    assert coverage[0]["status"] == "omitted"
+    assert coverage[0]["reason_code"] == "dropped_by_review"
+    assert coverage[1]["status"] == "retained"
+    assert coverage[1]["view_ids"] == ["view.c2"]
+
+
+def test_orphaned_review_recovery_keeps_remaining_view_for_same_claim(tmp_path):
+    brief = tmp_path / "briefs" / "patch_gate-2-0-visual_coverage_invalid.md"
+    brief.parent.mkdir(parents=True)
+    brief.write_text("patch", encoding="utf-8")
+    kept_view = {
+        "view_id": "view.kept",
+        "section_id": "生意大盘",
+        "supports_claim": "c1",
+        "source": {"table": "monthly"},
+    }
+    retained = {
+        "claim_id": "c1",
+        "status": "retained",
+        "view_ids": ["view.dropped", "view.kept"],
+        "reason_code": None,
+        "reason": None,
+    }
+    state = {
+        "workflow_version": nw.QUALITY_WORKFLOW_VERSION,
+        "stage": "patch",
+        "facts_hash": "h",
+        "registry_hash": "r",
+        "sections": {
+            "生意大盘": {
+                "section_id": "生意大盘",
+                "curated_views": [kept_view],
+                "visual_coverage": [retained],
+            }
+        },
+        "_bundle": {
+            "sections": [
+                {
+                    "section_id": "生意大盘",
+                    "curated_views": [kept_view],
+                    "visual_coverage": [retained],
+                }
+            ]
+        },
+        "_gate_failures": [
+            {
+                "code": "VISUAL_COVERAGE_INVALID",
+                "claim_id": "c1",
+                "detail": "retained view 'view.dropped' is missing",
+            }
+        ],
+        "_review_patch_pending": ["生意大盘::view.dropped"],
+        "_patch_review": {
+            "issues": [
+                {
+                    "issue_id": "gate-2-0-visual_coverage_invalid",
+                    "target_type": "claim",
+                    "target_id": "c1",
+                }
+            ]
+        },
+    }
+    nw._set_stage_tasks(
+        state,
+        "patch",
+        [
+            {
+                "brief": brief,
+                "target_type": "claim",
+                "target_id": "c1",
+                "source_blocker_ids": ["gate-2-0-visual_coverage_invalid"],
+            }
+        ],
+    )
+
+    assert nw._recover_orphaned_review_coverage_patch(state) is True
+
+    assert state["_bundle"]["sections"][0]["visual_coverage"] == [
+        {
+            "claim_id": "c1",
+            "status": "retained",
+            "view_ids": ["view.kept"],
+            "reason_code": None,
+            "reason": None,
+        }
+    ]
+
+
+def test_orphaned_review_recovery_does_not_hide_existing_view_claim_mismatch(tmp_path):
+    brief = tmp_path / "briefs" / "patch_gate-2-0-visual_coverage_invalid.md"
+    brief.parent.mkdir(parents=True)
+    brief.write_text("patch", encoding="utf-8")
+    mismatched_view = {
+        "view_id": "view.mismatched",
+        "section_id": "生意大盘",
+        "supports_claim": "c2",
+        "source": {"table": "monthly"},
+    }
+    retained = {
+        "claim_id": "c1",
+        "status": "retained",
+        "view_ids": ["view.dropped", "view.mismatched"],
+        "reason_code": None,
+        "reason": None,
+    }
+    state = {
+        "workflow_version": nw.QUALITY_WORKFLOW_VERSION,
+        "stage": "patch",
+        "sections": {
+            "生意大盘": {
+                "section_id": "生意大盘",
+                "curated_views": [mismatched_view],
+                "visual_coverage": [
+                    {
+                        "claim_id": "c1",
+                        "status": "omitted",
+                        "view_ids": [],
+                        "reason_code": "dropped_by_review",
+                        "reason": "独立评审未保留可用视图",
+                    }
+                ],
+            }
+        },
+        "_bundle": {
+            "sections": [
+                {
+                    "section_id": "生意大盘",
+                    "curated_views": [mismatched_view],
+                    "visual_coverage": [retained],
+                }
+            ]
+        },
+        "_gate_failures": [
+            {
+                "code": "VISUAL_COVERAGE_INVALID",
+                "claim_id": "c1",
+                "detail": "retained view supports another claim",
+            }
+        ],
+        "_review_patch_pending": ["生意大盘::view.dropped"],
+        "_patch_review": {
+            "issues": [
+                {
+                    "issue_id": "gate-2-0-visual_coverage_invalid",
+                    "target_type": "claim",
+                    "target_id": "c1",
+                }
+            ]
+        },
+    }
+    nw._set_stage_tasks(
+        state,
+        "patch",
+        [
+            {
+                "brief": brief,
+                "target_type": "claim",
+                "target_id": "c1",
+                "source_blocker_ids": ["gate-2-0-visual_coverage_invalid"],
+            }
+        ],
+    )
+
+    assert nw._recover_orphaned_review_coverage_patch(state) is False
+    assert state["_bundle"]["sections"][0]["visual_coverage"] == [retained]
+    assert len(nw._pending_tasks(state, "patch")) == 1
+
+
 def test_merchant_review_rejects_unknown_target(tmp_path):
     results, facts = _inputs()
     run_dir = tmp_path / "run"
@@ -878,6 +1925,129 @@ def test_merchant_replacement_cannot_change_claim_fact_binding():
             review,
             expected_round=1,
         )
+
+
+def test_targeted_revision_rejects_a_noop_replacement():
+    claim = {
+        "claim_id": "c1",
+        "section_id": "生意大盘",
+        "claim_kind": "measurement",
+        "sentence": "支付金额 {t0}。",
+        "number_tokens": [
+            {
+                "token_id": "t0",
+                "fact_id": "core.gmv",
+                "expected_metric_key": "gmv",
+                "direction": "up",
+            }
+        ],
+        "entity_refs": [],
+        "confidence": "强",
+        "causal_link": None,
+    }
+    bundle = {
+        "sections": [{"section_id": "生意大盘", "claims": [claim]}],
+        "first_screen": {"spine": [], "panel": [], "actions": []},
+    }
+    review = {
+        "issues": [
+            {
+                "issue_id": "gate-claim",
+                "target_type": "claim",
+                "target_id": "c1",
+            }
+        ]
+    }
+
+    with pytest.raises(ValueError, match="did not change"):
+        nw._apply_merchant_revisions(
+            bundle,
+            [
+                {
+                    "revision_id": "revision-claim",
+                    "round": 1,
+                    "target_type": "claim",
+                    "target_id": "c1",
+                    "operation": "replace",
+                    "source_blocker_ids": ["gate-claim"],
+                    "replacement": json.loads(json.dumps(claim)),
+                    "reason": "声称修改但内容不变",
+                }
+            ],
+            review,
+            expected_round=1,
+        )
+
+
+def test_validate_populates_patch_round_target_and_blocker_ids(tmp_path):
+    results, facts = _inputs()
+    run_dir = tmp_path / "run"
+    nw.prepare_run(
+        run_dir,
+        results=results,
+        facts_json=facts,
+        report_name="店铺经营诊断",
+        project_root=tmp_path,
+        multi_agent_authorized=True,
+    )
+    state = _state(run_dir)
+    state.update(
+        {
+            "stage": "patch",
+            "_patch_round": 1,
+            "_bundle": {"action_cards": [_action_card()], "sections": []},
+            "_patch_review": {
+                "issues": [
+                    {
+                        "issue_id": "gate-1-action",
+                        "target_type": "action",
+                        "target_id": "action.core",
+                    }
+                ]
+            },
+        }
+    )
+    brief = run_dir / "briefs" / "patch_gate-1-action.md"
+    brief.write_text("patch", encoding="utf-8")
+    nw._set_stage_tasks(
+        state,
+        "patch",
+        [
+            {
+                "brief": brief,
+                "role": "targeted_reviser",
+                "target_type": "action",
+                "target_id": "action.core",
+                "source_blocker_ids": ["gate-1-action"],
+            }
+        ],
+    )
+    nw._write_state(run_dir, state)
+    task = _pending(run_dir)[0]
+    replacement = {**_action_card(), "title": "复盘支付金额增长的可持续性"}
+
+    validation = nw.validate_output(
+        run_dir,
+        stage="patch",
+        task_id=task["task_id"],
+        text=json.dumps(
+            [
+                {
+                    "revision_id": "revision-action",
+                    "operation": "replace",
+                    "replacement": replacement,
+                    "reason": "聚焦可持续性",
+                }
+            ],
+            ensure_ascii=False,
+        ),
+    )
+
+    revision = validation["payload"][0]
+    assert revision["round"] == 1
+    assert revision["target_type"] == "action"
+    assert revision["target_id"] == "action.core"
+    assert revision["source_blocker_ids"] == ["gate-1-action"]
 
 
 def test_quality_patch_rejects_bundle_overwrite_and_changes_only_named_target(tmp_path):

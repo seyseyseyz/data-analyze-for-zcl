@@ -23,7 +23,10 @@ _PAD_B = 64
 _PLOT_BOTTOM = _HEIGHT - _PAD_B  # 236 — bottom of the plot band
 _EPS = 0.5  # sub-pixel rounding tolerance
 
-_RECT_RE = re.compile(r'<rect\b[^>]*\by="([-\d.]+)"[^>]*\bheight="([-\d.]+)"')
+_RECT_RE = re.compile(
+    r'<rect\b(?![^>]*\bclass="ca-tooltip-trigger")[^>]*'
+    r'\by="([-\d.]+)"[^>]*\bheight="([-\d.]+)"'
+)
 
 
 def _rects(svg: str) -> list[tuple[float, float]]:

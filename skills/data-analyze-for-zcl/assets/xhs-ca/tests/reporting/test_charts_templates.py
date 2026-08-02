@@ -124,6 +124,19 @@ def test_trend_line_draws_path_markers_and_x_labels():
     assert "2026-04-01" not in svg
 
 
+def test_trend_line_compacts_and_sorts_compact_dates_chronologically():
+    rows = [
+        {"date": "20260627", "gmv": 2600.0},
+        {"date": "20260421", "gmv": 1000.0},
+        {"date": "20260506", "gmv": 1800.0},
+    ]
+
+    svg = str(render_chart_template("trend_line", rows, {"x": "date", "y": "gmv"}))
+
+    assert "20260627" not in svg and "20260421" not in svg
+    assert svg.index(">04-21<") < svg.index(">05-06<") < svg.index(">06-27<")
+
+
 # ---- horizontal_bar (reuses _hbar — readable for long CJK category labels) --
 
 def _ranking_rows():
@@ -192,6 +205,40 @@ def test_share_bar_caps_categories_to_top_values():
     svg = str(render_chart_template("share_bar", rows, {"x": "sku", "y": "gmv"}))
     assert svg.count("<rect x=") == 12
     assert ">sku49<" in svg and ">sku0<" not in svg  # kept the highest, dropped the lowest
+
+
+def test_share_bar_switches_to_horizontal_for_long_category_labels():
+    rows = [
+        {"category": "餐饮具", "gmv_share": 0.679},
+        {"category": "陶瓷/紫砂/建盏/茶周边", "gmv_share": 0.318},
+        {"category": "文具电教/文化用品/商务用品", "gmv_share": 0.003},
+    ]
+
+    svg = str(render_chart_template("share_bar", rows, {"x": "category", "y": "gmv_share"}))
+
+    assert 'viewBox="0 0 640 ' in svg
+    assert "max-width:640px" in svg
+    assert "文具电教/文化用品/商务用品" in svg
+
+
+def test_share_bar_switches_to_horizontal_when_categories_are_dense():
+    rows = [{"category": f"品类{i}", "gmv": float(100 - i)} for i in range(6)]
+
+    svg = str(render_chart_template("share_bar", rows, {"x": "category", "y": "gmv"}))
+
+    assert 'viewBox="0 0 640 ' in svg
+
+
+def test_share_bar_keeps_short_two_category_chart_vertical():
+    rows = [
+        {"category": "餐具", "gmv_share": 0.68},
+        {"category": "茶具", "gmv_share": 0.32},
+    ]
+
+    svg = str(render_chart_template("share_bar", rows, {"x": "category", "y": "gmv_share"}))
+
+    assert 'viewBox="0 0 308 300"' in svg
+    assert "max-width:308px" in svg
 
 
 def test_horizontal_bar_caps_categories_to_top_values():

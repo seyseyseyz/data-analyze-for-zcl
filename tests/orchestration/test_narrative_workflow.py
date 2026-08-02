@@ -500,7 +500,7 @@ def test_finalize_deterministic_writes_two_artifacts(tmp_path):
     assert "12,345" in body or "12345" in body  # fact rendered
 
 
-def test_deterministic_lists_unanswerable_questions(tmp_path):
+def test_deterministic_lists_missing_data_and_unlocked_analysis(tmp_path):
     results = {
         "domain_slices": [{"title": "流量", "facts": [], "reading": {"conclusion": "c"}}],
         "blocked_modules": [{"slug": "search_efficiency_diagnosis", "reason": "缺少搜索词表"}],
@@ -513,11 +513,51 @@ def test_deterministic_lists_unanswerable_questions(tmp_path):
                    report_name="r", project_root=project_root)
     nw.finalize_deterministic(run_dir, project_root=project_root, reason="unsupported")
     body = (project_root / ".xhs-ceramics-analytics" / "outputs" / "20260101-000000-r" / "r.md").read_text(encoding="utf-8")
-    assert "暂时答不了的问题" in body
-    assert "缺少搜索词表" in body
+    assert "缺哪些数据，补齐后能分析什么" in body
+    assert "搜索词明细" in body
+    assert "用户在哪一步流失" in body
+    assert "暂时答不了的问题" not in body
 
 
-def test_deterministic_lists_string_blocked_modules(tmp_path):
+def test_deterministic_lists_supported_optional_data_upgrades(tmp_path):
+    results = {
+        "domain_slices": [{"title": "流量", "facts": [], "reading": {"conclusion": "c"}}],
+        "blocked_modules": [],
+        "result_tables": {
+            "note_funnel": [
+                {
+                    "to_live_count_optional": None,
+                    "to_live_gmv_optional": None,
+                }
+            ],
+            "table_row_counts": [{"table": "notes", "rows": 1}],
+        },
+    }
+    facts_json = {"facts_hash": "h2-optional", "numbers": {}}
+    project_root = tmp_path / "proj"
+    project_root.mkdir()
+    run_dir = tmp_path / "run"
+    nw.prepare_run(
+        run_dir,
+        results=results,
+        facts_json=facts_json,
+        report_name="r",
+        project_root=project_root,
+    )
+    nw.finalize_deterministic(run_dir, project_root=project_root, reason="unsupported")
+    body = (
+        project_root
+        / ".xhs-ceramics-analytics"
+        / "outputs"
+        / "20260101-000000-r"
+        / "r.md"
+    ).read_text(encoding="utf-8")
+
+    assert "可选增强数据：补充后可以看得更细" in body
+    assert "笔记引流到直播间的数据" in body
+
+
+def test_deterministic_maps_string_blocked_modules_without_leaking_slug(tmp_path):
     results = {
         "domain_slices": [{"title": "流量", "facts": [], "reading": {"conclusion": "c"}}],
         "blocked_modules": ["note_funnel"],
@@ -530,8 +570,10 @@ def test_deterministic_lists_string_blocked_modules(tmp_path):
                    report_name="r", project_root=project_root)
     nw.finalize_deterministic(run_dir, project_root=project_root, reason="unsupported")
     body = (project_root / ".xhs-ceramics-analytics" / "outputs" / "20260101-000000-r" / "r.md").read_text(encoding="utf-8")
-    assert "暂时答不了的问题" in body
-    assert "note_funnel" in body
+    assert "缺哪些数据，补齐后能分析什么" in body
+    assert "笔记从曝光到成交的数据" in body
+    assert "从看到笔记、阅读、点击商品到成交，每一步表现如何" in body
+    assert "note_funnel" not in body
 
 
 def test_producer_output_feeds_finalize_deterministic_without_crash(tmp_path):
@@ -575,9 +617,13 @@ def test_producer_output_feeds_finalize_deterministic_without_crash(tmp_path):
     )
     nw.finalize_deterministic(run_dir, project_root=project_root, reason="unsupported")
     body = (project_root / ".xhs-ceramics-analytics" / "outputs" / "20260101-000000-r" / "r.md").read_text(encoding="utf-8")
-    assert "note_funnel" in body and "paid_traffic_efficiency" in body
-    # the coverage reason must reach the skeleton, not just the bare slug.
-    assert "笔记表缺少 impressions 字段" in body
+    assert "缺哪些数据，补齐后能分析什么" in body
+    assert "笔记从曝光到成交的数据" in body
+    assert "广告投放明细" in body
+    assert "从看到笔记、阅读、点击商品到成交，每一步表现如何" in body
+    assert "广告从曝光、点击到成交的每一步" in body
+    assert "note_funnel" not in body
+    assert "paid_traffic_efficiency" not in body
 
 
 def test_finalize_deterministic_handles_slice_with_no_reading_key(tmp_path):
@@ -723,3 +769,27 @@ def test_finalize_no_degradation_when_no_chartable_data(tmp_path):
     state = _finalize_with(tmp_path, bundle=bundle, result_tables={"growth_bridge": [{"a": 1}]})
     assert state["stage"] == "finalized"
     assert state.get("degradation_reason") is None
+
+
+def test_visual_coverage_omission_is_not_hidden_by_unrelated_svg():
+    bundle = {
+        "sections": [
+            {
+                "section_id": "s",
+                "visual_coverage": [
+                    {
+                        "claim_id": "c1",
+                        "status": "omitted",
+                        "view_ids": [],
+                        "reason_code": "dropped_by_review",
+                        "reason": "评审未保留",
+                    }
+                ],
+            }
+        ]
+    }
+    tables = {"business_trend": [{"date": "2026-04-01", "gmv": 1}]}
+
+    assert nw._visual_coverage_reason("<svg>无关兜底图</svg>", tables, bundle) == (
+        "visuals_missing"
+    )

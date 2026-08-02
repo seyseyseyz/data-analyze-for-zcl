@@ -93,7 +93,7 @@ def test_run_combined_report_honors_name_option(tmp_path, fixture_dir):
     assert "# 小红书账号分析报告" not in md
     html = (outputs / "qianfan_diagnosis.html").read_text(encoding="utf-8")
     assert "<title>qianfan diagnosis</title>" in html
-    assert "<h1>qianfan diagnosis</h1>" in html
+    assert '<h1>qianfan diagnosis<img class="title-mascot title-mascot--animated"' in html
 
 
 def test_run_single_task_keeps_slug_named_output(tmp_path, fixture_dir):

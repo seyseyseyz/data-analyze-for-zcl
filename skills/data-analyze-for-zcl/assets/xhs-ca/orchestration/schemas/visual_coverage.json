@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "visual_coverage.json",
+  "title": "visual_coverage",
+  "description": "Decision-critical claim to retained deterministic views, or a structured omission.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["claim_id", "status", "view_ids", "reason_code", "reason"],
+  "properties": {
+    "claim_id": {"type": "string", "minLength": 1},
+    "status": {"enum": ["retained", "omitted"]},
+    "view_ids": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "reason_code": {
+      "enum": [
+        null,
+        "not_visualizable",
+        "insufficient_rows",
+        "duplicate_evidence",
+        "no_decision_value",
+        "dropped_by_gate",
+        "dropped_by_review"
+      ]
+    },
+    "reason": {"type": ["string", "null"]}
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "status": {"const": "retained"},
+        "view_ids": {"minItems": 1},
+        "reason_code": {"const": null},
+        "reason": {"const": null}
+      }
+    },
+    {
+      "properties": {
+        "status": {"const": "omitted"},
+        "view_ids": {"maxItems": 0},
+        "reason_code": {"type": "string"},
+        "reason": {"type": "string", "minLength": 1}
+      }
+    }
+  ]
+}

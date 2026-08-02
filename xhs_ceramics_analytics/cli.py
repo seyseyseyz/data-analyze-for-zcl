@@ -1,6 +1,6 @@
 import json as _json
 from pathlib import Path
-from tempfile import NamedTemporaryFile
+from tempfile import NamedTemporaryFile, TemporaryDirectory
 from typing import Annotated
 
 import typer
@@ -23,6 +23,28 @@ app = typer.Typer(
 
 narrative_app = typer.Typer(help="Drive the file-based narrative workflow.")
 app.add_typer(narrative_app, name="narrative")
+
+
+def _write_json_atomic(path: Path, payload) -> None:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path: Path | None = None
+    try:
+        with NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            _json.dump(payload, handle, ensure_ascii=False, indent=2, sort_keys=True)
+            handle.write("\n")
+            temp_path = Path(handle.name)
+        temp_path.replace(path)
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
 
 
 def _write_sidecar_status(project_root, payload: dict) -> None:
@@ -165,8 +187,44 @@ def _write_fact_sidecars(
 
 
 @app.command()
+def inspect(
+    paths: Annotated[
+        list[Path],
+        typer.Argument(help="Files or directories to inspect without changing the sources."),
+    ],
+    out: Annotated[Path | None, typer.Option("--out")] = None,
+    project_root: Annotated[Path | None, typer.Option("--project-root")] = None,
+    as_json: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Build a disposable database and report dates, store, dedupe, mappings and coverage."""
+    from xhs_ceramics_analytics.importing.inspection import inspect_inputs
+
+    try:
+        payload = inspect_inputs(
+            paths,
+            overrides_path=state_dir(project_root) / "mapping_overrides.yaml",
+        )
+    except (FileNotFoundError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    target = out or state_dir(project_root) / "inspection.json"
+    _write_json_atomic(target, payload)
+    if as_json:
+        typer.echo(_json.dumps(payload, ensure_ascii=False))
+    else:
+        period = payload.get("report_period") or {}
+        typer.echo(
+            f"inspection: store={payload['store']['selected']} "
+            f"period={period.get('start', '?')}..{period.get('end', '?')}"
+        )
+        typer.echo(f"Wrote inspection: {target}")
+
+
+@app.command()
 def build(
-    files: Annotated[list[Path], typer.Argument(help="CSV or Excel files to import.")],
+    files: Annotated[
+        list[Path], typer.Argument(help="CSV/Excel files or directories to import.")
+    ],
     db: Annotated[Path | None, typer.Option(help="Override DuckDB file path.")] = None,
     project_root: Annotated[
         Path | None,
@@ -174,10 +232,130 @@ def build(
     ] = None,
 ) -> None:
     from xhs_ceramics_analytics.db.build import build_database
+    from xhs_ceramics_analytics.importing.inspection import (
+        input_fingerprint,
+        optional_file_fingerprint,
+        resolve_inputs,
+        snapshot_inputs,
+        summarize_database,
+    )
 
+    input_files = resolve_inputs(files)
+    if not input_files:
+        typer.echo("no input files found", err=True)
+        raise typer.Exit(code=1)
+    baseline_hash = input_fingerprint(input_files)
+    overrides_path = state_dir(project_root) / "mapping_overrides.yaml"
+    baseline_overrides_hash = optional_file_fingerprint(overrides_path)
+    inspection_path = state_dir(project_root) / "inspection.json"
+    if inspection_path.is_file():
+        try:
+            inspection = _json.loads(inspection_path.read_text(encoding="utf-8"))
+        except (OSError, _json.JSONDecodeError) as exc:
+            typer.echo(f"invalid inspection manifest: {inspection_path}: {exc}", err=True)
+            raise typer.Exit(code=1) from exc
+        expected_hash = inspection.get("input_hash") if isinstance(inspection, dict) else None
+        if inspection.get("provisional") is not True or not expected_hash:
+            typer.echo(f"invalid inspection manifest: {inspection_path}", err=True)
+            raise typer.Exit(code=1)
+        if baseline_hash != expected_hash:
+            typer.echo(
+                "inputs changed since inspection; rerun xhs-ca inspect before build",
+                err=True,
+            )
+            raise typer.Exit(code=1)
+        if inspection.get("mapping_overrides_hash") != baseline_overrides_hash:
+            typer.echo(
+                "mapping overrides changed since inspection; rerun xhs-ca inspect before build",
+                err=True,
+            )
+            raise typer.Exit(code=1)
     db_path = db or state_dir(project_root) / "analytics.duckdb"
-    build_database(db_path, files)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    with TemporaryDirectory(prefix=".xhs-ca-build-", dir=db_path.parent) as temp_dir:
+        temp_root = Path(temp_dir)
+        snapshot_files = snapshot_inputs(input_files, temp_root / "inputs")
+        if input_fingerprint(snapshot_files) != baseline_hash:
+            typer.echo(
+                "inputs changed during snapshot; rerun xhs-ca inspect before build",
+                err=True,
+            )
+            raise typer.Exit(code=1)
+        snapshot_overrides = None
+        if overrides_path.is_file():
+            snapshot_overrides = snapshot_inputs(
+                [overrides_path], temp_root / "configuration"
+            )[0]
+        if optional_file_fingerprint(snapshot_overrides) != baseline_overrides_hash:
+            typer.echo(
+                "mapping overrides changed during snapshot; rerun xhs-ca inspect before build",
+                err=True,
+            )
+            raise typer.Exit(code=1)
+        staged_db = temp_root / db_path.name
+        build_database(
+            staged_db,
+            snapshot_files,
+            overrides_path=snapshot_overrides,
+        )
+        current_files = resolve_inputs(files)
+        if current_files != input_files:
+            typer.echo(
+                "input set changed during build; rerun xhs-ca inspect before build",
+                err=True,
+            )
+            raise typer.Exit(code=1)
+        if input_fingerprint(input_files) != baseline_hash:
+            typer.echo(
+                "inputs changed during build; rerun xhs-ca inspect before build",
+                err=True,
+            )
+            raise typer.Exit(code=1)
+        current_overrides_hash = optional_file_fingerprint(overrides_path)
+        if current_overrides_hash != baseline_overrides_hash:
+            typer.echo(
+                "mapping overrides changed during build; rerun xhs-ca inspect before build",
+                err=True,
+            )
+            raise typer.Exit(code=1)
+        manifest = summarize_database(
+            staged_db,
+            snapshot_files,
+            source_roots=files,
+            overrides_path=snapshot_overrides,
+            display_files=input_files,
+            provisional=False,
+        )
+        if resolve_inputs(files) != input_files:
+            typer.echo(
+                "input set changed during build; rerun xhs-ca inspect before build",
+                err=True,
+            )
+            raise typer.Exit(code=1)
+        if (
+            manifest.get("input_hash") != baseline_hash
+            or input_fingerprint(input_files) != baseline_hash
+        ):
+            typer.echo(
+                "inputs changed during build; rerun xhs-ca inspect before build",
+                err=True,
+            )
+            raise typer.Exit(code=1)
+        final_overrides_hash = optional_file_fingerprint(overrides_path)
+        if (
+            manifest.get("mapping_overrides_hash") != baseline_overrides_hash
+            or final_overrides_hash != baseline_overrides_hash
+        ):
+            typer.echo(
+                "mapping overrides changed during build; rerun xhs-ca inspect before build",
+                err=True,
+            )
+            raise typer.Exit(code=1)
+        staged_db.replace(db_path)
+    manifest_path = state_dir(project_root) / "build_manifest.json"
+    _write_json_atomic(manifest_path, manifest)
     typer.echo(f"Built DuckDB database: {db_path}")
+    typer.echo(f"Wrote build manifest: {manifest_path}")
 
 
 @app.command()
@@ -774,6 +952,109 @@ def narrative_status(
         typer.echo(_json.dumps(payload, ensure_ascii=False))
     else:
         typer.echo(f"stage={payload['stage']}  next={payload['next_action']}")
+
+
+@narrative_app.command("validate")
+def narrative_validate(
+    run_dir: Annotated[Path, typer.Option("--run-dir")],
+    stage: Annotated[str, typer.Option("--stage")],
+    source: Annotated[Path, typer.Option("--source")],
+    section_id: Annotated[str | None, typer.Option("--section-id")] = None,
+    task_id: Annotated[str | None, typer.Option("--task-id")] = None,
+    as_json: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Validate a task result against its static and run-scoped contract."""
+    if not source.exists():
+        raise typer.BadParameter(f"source file not found: {source}")
+    try:
+        payload = _nw.validate_output(
+            run_dir,
+            stage=stage,
+            source=source,
+            section_id=section_id,
+            task_id=task_id,
+        )
+    except (ValueError, FileNotFoundError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    if as_json:
+        typer.echo(_json.dumps(payload, ensure_ascii=False))
+    else:
+        typer.echo(f"valid: task_id={payload.get('task_id')}")
+
+
+@narrative_app.command("reserve")
+def narrative_reserve(
+    run_dir: Annotated[Path, typer.Option("--run-dir")],
+    capacity: Annotated[int, typer.Option("--capacity")],
+    as_json: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Reserve the next tasks that fit within the host's concurrency capacity."""
+    try:
+        tasks = _nw.reserve_tasks(run_dir, capacity=capacity)
+    except (ValueError, FileNotFoundError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    if as_json:
+        typer.echo(_json.dumps(tasks, ensure_ascii=False))
+    else:
+        typer.echo(f"reserved: {len(tasks)} task(s)")
+
+
+@narrative_app.command("record-dispatch")
+def narrative_record_dispatch(
+    run_dir: Annotated[Path, typer.Option("--run-dir")],
+    task_id: Annotated[str, typer.Option("--task-id")],
+    agent_id: Annotated[str, typer.Option("--agent-id")],
+    result_path: Annotated[Path, typer.Option("--result-path")],
+) -> None:
+    """Persist the agent and result path assigned to one reserved task."""
+    try:
+        task = _nw.record_dispatch(
+            run_dir,
+            task_id=task_id,
+            agent_id=agent_id,
+            result_path=result_path,
+        )
+    except (ValueError, FileNotFoundError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(_json.dumps(task, ensure_ascii=False))
+
+
+@narrative_app.command("record-agent-state")
+def narrative_record_agent_state(
+    run_dir: Annotated[Path, typer.Option("--run-dir")],
+    task_id: Annotated[str, typer.Option("--task-id")],
+    status: Annotated[str, typer.Option("--status")],
+    error: Annotated[str | None, typer.Option("--error")] = None,
+) -> None:
+    """Record result-ready, failed, or closed for a dispatched task."""
+    try:
+        task = _nw.record_agent_state(
+            run_dir,
+            task_id=task_id,
+            status=status,
+            error=error,
+        )
+    except (ValueError, FileNotFoundError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(_json.dumps(task, ensure_ascii=False))
+
+
+@narrative_app.command("release")
+def narrative_release(
+    run_dir: Annotated[Path, typer.Option("--run-dir")],
+    task_id: Annotated[str, typer.Option("--task-id")],
+) -> None:
+    """Release an unassigned reservation after a partial dispatch failure."""
+    try:
+        task = _nw.release_task(run_dir, task_id=task_id)
+    except (ValueError, FileNotFoundError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(_json.dumps(task, ensure_ascii=False))
 
 
 @narrative_app.command("ingest")

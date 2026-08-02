@@ -6,6 +6,10 @@
 # Superpowers SDD scratch (plans, progress ledgers, review packages)
 .superpowers/
 
+# Local agent/release caches and browser-test artifacts
+.omc/
+.playwright-cli/
+
 # Python
 __pycache__/
 *.py[cod]

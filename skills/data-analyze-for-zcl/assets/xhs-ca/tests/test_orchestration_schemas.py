@@ -31,6 +31,7 @@ ROSTER = {
     "targeted_revision",
     "view_spec",
     "visual_curation",
+    "visual_coverage",
 }
 AGENT_OUTPUTS = ROSTER - {"fact", "gate_report", "number_token"}
 
@@ -137,7 +138,14 @@ def test_quality_stage_schemas_match_runtime_ingest_envelopes():
     visual = _load("visual_curation")
     assert visual["required"] == ["sections"]
     section_patch = visual["properties"]["sections"]["items"]
-    assert section_patch["required"] == ["section_id", "curated_views"]
+    assert section_patch["required"] == [
+        "section_id",
+        "curated_views",
+        "visual_coverage",
+    ]
+    assert section_patch["properties"]["visual_coverage"]["items"]["$ref"] == (
+        "visual_coverage.json"
+    )
 
     continuity = _load("continuity_edit")
     assert continuity["type"] == "object"
@@ -220,6 +228,7 @@ def test_view_spec_matches_the_deterministic_runtime_contract():
         "template",
         "source",
         "columns",
+        "column_labels",
         "rows",
         "chart",
         "title",
@@ -235,6 +244,24 @@ def test_view_spec_matches_the_deterministic_runtime_contract():
     assert source["additionalProperties"] is False
     assert source["required"] == ["table"]
     assert set(source["properties"]) == {"task_id", "table"}
+
+    labels = props["column_labels"]
+    assert labels["type"] == "object"
+    assert labels["additionalProperties"] == {"type": "string", "minLength": 1}
+
+
+def test_visual_coverage_schema_requires_closed_retained_or_omitted_records():
+    coverage = _load("visual_coverage")
+
+    assert coverage["required"] == [
+        "claim_id",
+        "status",
+        "view_ids",
+        "reason_code",
+        "reason",
+    ]
+    assert coverage["properties"]["status"]["enum"] == ["retained", "omitted"]
+    assert "dropped_by_review" in coverage["properties"]["reason_code"]["enum"]
 
 
 def test_view_schema_emits_a_directly_consumable_runtime_spec():

@@ -36,6 +36,14 @@ _DIGIT_RE = re.compile(r"\d")
 # currency / percent / 万·亿 figure there is an un-anchored data magnitude the writer invented.
 _ACTION_MAGNITUDE_RE = re.compile(r"[¥￥$%]|\d+(?:\.\d+)?\s*[万亿]")
 _ACTION_LICENSES = {"execute", "pilot", "observe", "blocked"}
+_VISUAL_OMISSION_REASONS = {
+    "not_visualizable",
+    "insufficient_rows",
+    "duplicate_evidence",
+    "no_decision_value",
+    "dropped_by_gate",
+    "dropped_by_review",
+}
 _ACTION_OWNER_ROLES = {
     "运营负责人",
     "内容负责人",
@@ -346,6 +354,241 @@ def _check_curated_views(bundle: dict, result_tables: dict, hard: list) -> None:
                 )
 
 
+def _decision_critical_claim_ids(bundle: dict) -> set[str]:
+    """Claims surfaced as decisions: first screen, mechanism, or executable actions."""
+    critical: set[str] = set()
+    first_screen = bundle.get("first_screen") or {}
+    for key in ("spine", "panel"):
+        for claim in first_screen.get(key) or []:
+            if isinstance(claim, dict) and claim.get("claim_id"):
+                critical.add(str(claim["claim_id"]))
+    for item in bundle.get("mechanism") or []:
+        if isinstance(item, dict) and item.get("claim_id"):
+            critical.add(str(item["claim_id"]))
+    for card in _iter_action_cards(bundle):
+        if not isinstance(card, dict):
+            continue
+        critical.update(
+            str(claim_id)
+            for claim_id in card.get("supporting_claim_ids") or []
+            if claim_id not in (None, "")
+        )
+    return critical
+
+
+def _check_visual_coverage(bundle: dict, result_tables: dict, hard: list) -> None:
+    """Bind every decision-critical claim to retained renderable views or an omission.
+
+    The contract is activated by the visual-curation stage adding ``visual_coverage``
+    to sections. Legacy bundles without that field remain readable; schema-version
+    hashing prevents such bundles from being reused as a current quality cache.
+    """
+    sections = [section for section in bundle.get("sections") or [] if isinstance(section, dict)]
+    if not any("visual_coverage" in section for section in sections):
+        return
+
+    claim_sections: dict[str, str] = {}
+    for section in sections:
+        section_id = str(section.get("section_id") or "section")
+        for claim in section.get("claims") or []:
+            if not isinstance(claim, dict) or not claim.get("claim_id"):
+                continue
+            claim_id = str(claim["claim_id"])
+            previous = claim_sections.setdefault(claim_id, section_id)
+            if previous != section_id:
+                hard.append(
+                    _fail(
+                        "VISUAL_COVERAGE_INVALID",
+                        claim_id,
+                        f"claim belongs to multiple sections: {previous}, {section_id}",
+                    )
+                )
+
+    views: dict[str, dict] = {}
+    view_sections: dict[str, str] = {}
+    duplicate_view_ids: set[str] = set()
+    coverage_by_claim: dict[str, list[tuple[str, dict]]] = {}
+    for section in sections:
+        section_id = str(section.get("section_id") or "section")
+        for view in section.get("curated_views") or []:
+            if not isinstance(view, dict) or not view.get("view_id"):
+                continue
+            view_id = str(view["view_id"])
+            if view_id in views:
+                duplicate_view_ids.add(view_id)
+            declared_section = str(view.get("section_id") or "")
+            if declared_section != section_id:
+                hard.append(
+                    _fail(
+                        "VISUAL_COVERAGE_INVALID",
+                        view_id,
+                        f"view belongs to section {declared_section}, not {section_id}",
+                    )
+                )
+            supports_claim = str(view.get("supports_claim") or "")
+            claim_section = claim_sections.get(supports_claim)
+            if claim_section is not None and claim_section != section_id:
+                hard.append(
+                    _fail(
+                        "VISUAL_COVERAGE_INVALID",
+                        view_id,
+                        f"view supports claim {supports_claim} from section "
+                        f"{claim_section}, not {section_id}",
+                    )
+                )
+            views[view_id] = view
+            view_sections[view_id] = section_id
+        coverage = section.get("visual_coverage")
+        if not isinstance(coverage, list):
+            hard.append(
+                _fail(
+                    "VISUAL_COVERAGE_INVALID",
+                    section_id,
+                    "visual_coverage must be a list",
+                )
+            )
+            continue
+        for record in coverage:
+            if not isinstance(record, dict) or not record.get("claim_id"):
+                hard.append(
+                    _fail("VISUAL_COVERAGE_INVALID", None, "coverage record needs claim_id")
+                )
+                continue
+            claim_id = str(record["claim_id"])
+            claim_section = claim_sections.get(claim_id)
+            if claim_section is None:
+                hard.append(
+                    _fail(
+                        "VISUAL_COVERAGE_INVALID",
+                        claim_id,
+                        "visual coverage cites an unknown claim",
+                    )
+                )
+            elif claim_section != section_id:
+                hard.append(
+                    _fail(
+                        "VISUAL_COVERAGE_INVALID",
+                        claim_id,
+                        f"claim belongs to section {claim_section}, not {section_id}",
+                    )
+                )
+            coverage_by_claim.setdefault(claim_id, []).append((section_id, record))
+
+    for view_id in sorted(duplicate_view_ids):
+        hard.append(
+            _fail(
+                "VISUAL_COVERAGE_INVALID",
+                view_id,
+                "retained view_id must be unique across the report",
+            )
+        )
+
+    retained_bindings = {
+        (section_id, claim_id, str(view_id))
+        for claim_id, records in coverage_by_claim.items()
+        for section_id, record in records
+        if record.get("status") == "retained"
+        for view_id in record.get("view_ids") or []
+    }
+    for view_id, view in views.items():
+        binding = (
+            view_sections.get(view_id),
+            str(view.get("supports_claim") or ""),
+            view_id,
+        )
+        if binding not in retained_bindings:
+            hard.append(
+                _fail(
+                    "VISUAL_COVERAGE_INVALID",
+                    view_id,
+                    "retained view is not retained by visual coverage in its section",
+                )
+            )
+
+    for claim_id in sorted(_decision_critical_claim_ids(bundle)):
+        records = coverage_by_claim.get(claim_id, [])
+        if not records:
+            hard.append(
+                _fail(
+                    "VISUAL_COVERAGE_MISSING",
+                    claim_id,
+                    "decision-critical claim has no retained view or structured omission",
+                )
+            )
+            continue
+        if len(records) != 1:
+            hard.append(
+                _fail(
+                    "VISUAL_COVERAGE_INVALID",
+                    claim_id,
+                    "decision-critical claim must have exactly one coverage record",
+                )
+            )
+            continue
+        coverage_section, record = records[0]
+        status = record.get("status")
+        view_ids = record.get("view_ids")
+        if status == "omitted":
+            if (
+                view_ids != []
+                or record.get("reason_code") not in _VISUAL_OMISSION_REASONS
+                or not str(record.get("reason") or "").strip()
+            ):
+                hard.append(
+                    _fail(
+                        "VISUAL_COVERAGE_INVALID",
+                        claim_id,
+                        "omitted coverage needs an allowed reason and no retained view_ids",
+                    )
+                )
+            continue
+        if status != "retained" or not isinstance(view_ids, list) or not view_ids:
+            hard.append(
+                _fail(
+                    "VISUAL_COVERAGE_INVALID",
+                    claim_id,
+                    "retained coverage needs at least one view_id",
+                )
+            )
+            continue
+        for view_id in view_ids:
+            view = views.get(str(view_id))
+            if not isinstance(view, dict) or view.get("supports_claim") != claim_id:
+                hard.append(
+                    _fail(
+                        "VISUAL_COVERAGE_INVALID",
+                        claim_id,
+                        f"retained view {view_id!r} is missing or supports another claim",
+                    )
+                )
+                continue
+            if view_sections.get(str(view_id)) != coverage_section:
+                hard.append(
+                    _fail(
+                        "VISUAL_COVERAGE_INVALID",
+                        claim_id,
+                        f"retained view {view_id!r} belongs to another section",
+                    )
+                )
+                continue
+            rendered = render_view(view, result_tables)
+            if (
+                getattr(rendered, "degraded", True)
+                or not (
+                    str(getattr(rendered, "table_html", "") or "").strip()
+                    or str(getattr(rendered, "chart_svg", "") or "").strip()
+                )
+            ):
+                hard.append(
+                    _fail(
+                        "VISUAL_COVERAGE_UNRENDERABLE",
+                        str(view_id),
+                        getattr(rendered, "reason", None)
+                        or "retained view produced no deterministic output",
+                    )
+                )
+
+
 def _iter_action_cards(bundle: dict):
     for card in bundle.get("action_cards") or []:
         yield card
@@ -577,6 +820,7 @@ def run_gate(bundle: dict, facts_json: dict, result_tables: dict | None = None) 
     # Curated-view policing (spec §Trust & anti-dump rules). Additive — every rule
     # above is preserved; view failures join the same hard-failure list.
     _check_curated_views(bundle, result_tables, hard)
+    _check_visual_coverage(bundle, result_tables, hard)
 
     status = "FAIL" if hard else "PASS"
     return GateReport(

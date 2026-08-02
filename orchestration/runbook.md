@@ -61,15 +61,26 @@ only for an intentional replacement of an unfinished run.
 ## Passive control loop
 
 1. Run `xhs-ca narrative status --run-dir <dir> --json`.
-2. Read only the pending task briefs listed by status. Status provides `task_id`, role, brief hash and
-   frozen facts/registry hashes for each task; the brief names its required runtime envelope.
-3. Dispatch one real agent per task. Give it only its brief and require JSON matching the named schema.
-4. For every result run `xhs-ca narrative ingest --run-dir <dir> --stage <stage> --task-id <task_id>
+2. Read only the pending task briefs listed by status. Each task exposes `result_path`, `schema_path`,
+   allowed enums, immutable `controller_fields`, `current_round`, run-scoped dynamic values and
+   `contract_version`; do not reconstruct these from filenames or memory.
+3. Reserve only available capacity with `xhs-ca narrative reserve --run-dir <dir> --capacity <n> --json`.
+   After dispatch, persist its identity with `xhs-ca narrative record-dispatch --run-dir <dir> --task-id
+   <task_id> --agent-id <agent_id> --result-path <file>`. Return an unassigned reservation with
+   `xhs-ca narrative release`.
+4. Persist completion or failure with `xhs-ca narrative record-agent-state --status
+   result_ready|failed|closed`. The ledger is the scheduling truth after an interruption; never redispatch
+   an already reserved or dispatched task under another identity. Ingest is allowed only after the recorded
+   agent reaches `result_ready`, and its source must match its registered `result_path`.
+5. Before ingest, run `xhs-ca narrative validate --run-dir <dir> --stage <stage> --task-id <task_id>
+   --source <file>`. Validation fills absent controller-owned IDs/rounds, rejects conflicts and does not
+   mutate task state.
+6. For every valid result run `xhs-ca narrative ingest --run-dir <dir> --stage <stage> --task-id <task_id>
    --source <file>`. Ingest rejects stale/wrong-stage tasks, missing required envelope fields and duplicate
    review identities before recording completion.
-5. Run `xhs-ca narrative advance --run-dir <dir>`. Advance refuses while required tasks are pending and
+7. Run `xhs-ca narrative advance --run-dir <dir>`. Advance refuses while required tasks are pending and
    runs deterministic gates at their declared stages.
-6. Re-run `status --json`; never infer the next stage from memory or filenames.
+8. Re-run `status --json`; never infer the next stage from memory or filenames.
 
 The controller may prepare briefs and reduce state, but it never pretends a missing agent result exists.
 
@@ -114,9 +125,35 @@ Dispatch `visual_curation` only after the narrative structure is stable. The cur
 claims plus the deterministic table catalog, not raw authoring control over table cells. Every runtime
 view must bind a real claim through `supports_claim` and a deterministic table ID through `source.table`.
 
+Every `decision-critical claim` listed in the brief must have exactly one `visual_coverage` record:
+either `retained` with matching `view_ids`, or `omitted` with an allowed reason code and a concrete
+reason. If a gate or review removes the last matching view, record `dropped_by_gate` or
+`dropped_by_review`; never silently erase the coverage gap.
+
 There is **no per-domain cap** on tables or charts and no quota. Keep every view that earns its place,
 but prefer prose-only over a low-value or raw-data view. Registry labels and units are filled later; the
 curator must not author them.
+
+The final single HTML also carries a deterministic **经营诊断明细** layer. It preserves available,
+non-empty high-value tables for search terms, notes/content, SKU opportunities, channels, audiences and
+refunds even when an adversarial review drops every agent-curated view. Long tables stay compact and
+numeric columns are sortable in the browser from deterministic sort ranks. This layer is evidence detail,
+not permission to expose raw technical tables, bypass metric semantics or duplicate every intermediate.
+
+The final report ends with deterministic **data gaps and unlocked analyses** derived from the frozen
+`blocked_modules`, not from agent prose. Merge tasks that need the same data package and show exactly
+three reader-facing fields: the data package to provide, its minimum recommended fields/content, and the
+analyses unlocked after it is supplied. Never expose internal task slugs or raw table identifiers. Keep
+the wording understandable to a non-specialist merchant: prefer everyday Chinese and explain unavoidable
+abbreviations on first use. Keep `cannot_say` as an internal safety boundary only; do not render it as a
+vague open-questions section.
+
+Split this module into **required current gaps** and **optional capability upgrades**. Required gaps come
+from blocked tasks. Optional upgrades come only from registered analysis capabilities whose deterministic
+result fields or source-table inventory prove that an optional input is absent. Do not report a field as
+missing when the field exists with a real zero. State capability boundaries explicitly: note-to-livestream
+visits and payment are supported when their note fields exist, but a standalone livestream overview is
+outside the current skill scope and must not be promised as an unlocked analysis.
 
 ## Gate and three independent reviews
 
@@ -154,6 +191,12 @@ Every repair brief names exactly one `claim_id`, `view_id`, or `action_id`. A pa
 that object and cannot overwrite a section or full bundle. After ingest, rerun the affected deterministic
 gate and the relevant independent review.
 
+A targeted view replacement or drop must atomically update the view, `visual_coverage` and durable
+section state. For an interrupted older run, automatic recovery is allowed only when every pending gate
+failure is an orphaned retained view that was explicitly dropped by review. Convert that coverage to
+`omitted + dropped_by_review`, preserve the claim, cancel the generated claim patches, and rerun the gate.
+Any broader or ambiguous mismatch still requires the normal targeted-revision path.
+
 Allow **at most 2 targeted revision rounds** per target. The bound enforces convergence and prevents
 oscillation; it is not a cost optimization. After two failed rounds:
 
@@ -174,7 +217,8 @@ semantics.
 
 The deterministic renderer writes **candidate HTML** as an internal artifact after continuity and a fresh
 gate. Validate that it is non-empty, parseable, numerically identical to the frozen facts, and includes
-all retained claims/actions/views.
+all retained claims/actions/views. Every retained view must emit one escaped `data-view-id`; a missing or
+duplicate marker is a delivery failure. Record the bundle, Markdown and candidate HTML hash before review.
 
 Only then dispatch **merchant final review**. The reviewer reads the actual candidate HTML, evaluates it
 as a merchant, and **cannot edit** the artifact. It returns pass/revise with concrete IDs. A revise
@@ -184,8 +228,10 @@ re-gated and reviewed again. A delivery failure is always fail-closed.
 ## Finalization and delivery
 
 On a merchant pass, run the final deterministic gate against the exact candidate hash and atomically
-promote it. Mark `finalized` only after the final file exists, is non-empty, parses, matches frozen hashes
-and passes chart/number validation.
+promote it. The final bundle hash and HTML bytes must match the merchant-reviewed candidate HTML hash.
+Mark `finalized` only after the final file exists, is non-empty, parses, matches frozen hashes, has the
+exact report `<title>` and unique `<h1>`, contains no unresolved `{tN}` or external dependency, passes
+chart/number validation, and its production directory contains exactly one HTML.
 
 The user receives **one final HTML**. Markdown, facts, tables, prompts, task briefs, gate reports, review
 verdicts, revision logs, candidate HTML and frozen sidecars are **internal only**. Do not deliver a facts

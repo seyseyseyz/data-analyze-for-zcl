@@ -76,6 +76,7 @@ def test_empty_state_carries_message():
     svg = charts._frame(charts._empty_state(640, 200), 640, 200)
     assert "数据不足，无法判断" in svg
     assert svg.startswith("<svg")
+    assert 'class="chart-svg" role="img"' in svg
 
 
 def test_evidence_distribution_title_reads_confidence_not_reliability_term():
@@ -116,6 +117,62 @@ def test_evidence_distribution_escapes_and_has_no_raw_float():
     counts = [{"value": "strong", "label": "强", "count": 1, "help": "h"}]
     svg = charts.evidence_distribution(counts)
     assert "0.333333" not in svg  # widths are formatted, never raw ratios
+
+
+def test_all_chart_tooltips_are_fast_custom_and_keyboard_accessible():
+    samples = {
+        "distribution": str(
+            charts.evidence_distribution(
+                [{"value": "high", "label": "高", "count": 1, "help": "h"}]
+            )
+        ),
+        "horizontal-label-and-bar": charts._hbar(
+            [("短标签", 8.0, "8", "var(--ink-strong)")],
+            value_max=8.0,
+            de_emphasize=False,
+        ),
+        "vertical-bar": charts._vbar(
+            ["笔记"], [8.0], ["8"], title="", de_emphasize=False
+        ),
+        "waterfall": charts._waterfall(
+            ["流量"], [8.0], ["8"], title="", de_emphasize=False
+        ),
+        "scatter": charts._scatter(
+            [
+                {
+                    "x": 1.0,
+                    "y": 2.0,
+                    "label": "机会商品",
+                    "shape": "filled",
+                    "tone": "var(--ink-strong)",
+                }
+            ],
+            x_label="销量",
+            y_label="成交金额",
+            median_lines=False,
+        ),
+    }
+
+    for name, svg in samples.items():
+        assert "<title>" not in svg, name
+        assert 'class="chart-svg" role="group"' in svg, name
+        assert 'class="ca-tooltip-trigger"' in svg, name
+        assert 'tabindex="0"' in svg, name
+        assert 'focusable="true"' in svg, name
+        assert 'role="tooltip"' in svg, name
+        assert "transition-delay:120ms" in svg, name
+
+
+def test_horizontal_bar_uses_custom_tooltips_for_every_label_and_bar():
+    svg = charts._hbar(
+        [("短标签", 8.0, "8", "var(--ink-strong)")],
+        value_max=8.0,
+        de_emphasize=False,
+    )
+
+    assert svg.count('class="ca-tooltip-trigger"') == 2
+    assert 'aria-label="短标签"' in svg
+    assert 'aria-label="短标签：8"' in svg
 
 
 def test_cover_chart_has_two_measure_panels_and_zero_baseline():
@@ -579,10 +636,9 @@ def test_audience_structure_empty_when_absent():
 
 
 def test_short_date_trims_iso_and_passes_through_non_iso():
-    # Dates arrive already normalized to ISO from the analysis modules; _short_date
-    # only strips the year and never re-derives a compact YYYYMMDD form.
+    # Platform exports can carry ISO or compact dates; both become MM-DD on axes.
     assert charts._short_date("2026-06-30") == "06-30"   # ISO → MM-DD
-    assert charts._short_date("20260630") == "20260630"  # non-ISO left untouched
+    assert charts._short_date("20260630") == "06-30"     # compact date → MM-DD
     assert charts._short_date("第 12 周") == "第 12 周"    # anything else untouched
 
 

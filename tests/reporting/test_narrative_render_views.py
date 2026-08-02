@@ -208,6 +208,32 @@ def test_section_pill_tie_breaks_to_the_weaker_tier():
     assert "证据 强" not in md
 
 
+def test_section_pill_counts_unanchored_mechanism_claim_as_weak():
+    facts = _facts_with(**{"m.strong": ("strong", "high")})
+    b = _bundle([])
+    b["sections"][0]["claims"] = [
+        {
+            **_claim(),
+            "claim_id": "measurement",
+            "number_tokens": _anchor("m.strong"),
+            "rendered_sentence": "已验证规模事实。",
+        },
+        {
+            **_claim(),
+            "claim_id": "action-hypothesis",
+            "claim_kind": "mechanism",
+            "number_tokens": [],
+            "confidence": "弱",
+            "rendered_sentence": "门槛冻结前不得扩量。",
+        },
+    ]
+
+    md = nr.bundle_to_markdown(b, facts, result_tables={})
+
+    assert '<span class="tag weak">证据 弱</span>' in md
+    assert "证据 强" not in md
+
+
 def test_section_without_anchored_claims_emits_no_pill():
     # A pure-prose claim (no resolvable fact anchor) neither contributes to nor forces
     # a pill — the section stays pill-free rather than showing a misleading 弱.
@@ -258,6 +284,53 @@ def test_empty_result_tables_degrades_to_prose_only():
     # no curated tables/charts when there are no source tables to trust
     assert "<td>" not in md
     assert "<svg" not in md
+
+
+def test_narrative_keeps_high_value_search_note_and_sku_diagnostic_tables():
+    tables = {
+        "search_term_opportunities": [
+            {"search_term": "咖啡杯", "search_uv": 1200, "pay_rate": 0.03},
+            {"search_term": "陶瓷盘", "search_uv": 900, "pay_rate": 0.05},
+        ],
+        "note_conversion_outliers": [
+            {"note_title": "早餐盘搭配", "reads": 3000, "pay_rate": 0.01},
+        ],
+        "sku_price_sweet_spot": [
+            {"band": "中价带", "sku_count": 18, "cart_to_pay": 0.22},
+        ],
+    }
+
+    md = nr.bundle_to_markdown(_bundle([]), _facts(), result_tables=tables)
+
+    assert "## 经营诊断明细" in md
+    assert "### 搜索、内容与笔记诊断" in md
+    assert "### 商品与 SKU 机会" in md
+    assert 'data-diagnostic-table="search_term_opportunities"' in md
+    assert 'data-diagnostic-table="note_conversion_outliers"' in md
+    assert 'data-diagnostic-table="sku_price_sweet_spot"' in md
+    assert md.count("<table>") == 3
+
+
+def test_timeseries_is_charted_and_never_repeated_as_a_diagnostic_table():
+    tables = {
+        "search_conversion_trend": [
+            {"period": "2026-04-01", "avg_pay_conversion": 0.05},
+            {"period": "2026-04-02", "avg_pay_conversion": 0.04},
+        ],
+        "search_term_opportunities": [
+            {"search_term": "咖啡杯", "impressions": 1200, "pay_rate": 0.03},
+            {"search_term": "陶瓷盘", "impressions": 900, "pay_rate": 0.05},
+        ],
+    }
+
+    md = nr.bundle_to_markdown(
+        _prose_only_bundle("流量与内容"), _facts(), result_tables=tables
+    )
+
+    assert "搜索支付转化走势" in md
+    assert '<data-diagnostic-table="search_conversion_trend"' not in md
+    assert 'data-diagnostic-table="search_conversion_trend"' not in md
+    assert 'data-diagnostic-table="search_term_opportunities"' in md
 
 
 def test_default_signature_skips_curated_views_backward_compatible():
@@ -437,11 +510,12 @@ def test_fallback_injects_chart_when_section_has_no_curated_chart():
     assert nr.RAW_HTML_OPEN in md         # deterministic passthrough block emitted
     assert "<svg" in md                   # a chart was auto-injected
     assert "GMV 走势" in md               # the fallback title
-    # De-leak: the internal "auto-filled"/"fact-layer" wording never reaches the reader;
-    # the fallback provenance names its source table by its human label instead.
+    # The deterministic fallback is only a safety-net chart. It must not add a caption
+    # that merely repeats the title or expose an internal table label as fake provenance.
     assert "（自动补图）" not in md
     assert "事实层" not in md
-    assert "来源:GMV 趋势与结构性变化" in md
+    assert "每日 GMV 走势。" not in md
+    assert "来源:GMV 趋势与结构性变化" not in md
     html = render_markdown_document_html(md)
     assert "<svg" in html and "&lt;svg" not in html   # survives md→HTML unescaped
 
@@ -458,14 +532,52 @@ def test_fallback_numbers_come_from_source_table_cells():
     assert "0.64" not in md
 
 
-def test_fallback_suppressed_when_curated_chart_present_no_double_render():
-    # The section already has an agent chart (waterfall on growth_bridge); a mapped
-    # table (business_trend) is also present — the fallback must NOT add a 2nd chart.
+def test_curated_chart_does_not_suppress_a_distinct_deterministic_chart():
+    # The section already has an agent chart (waterfall on growth_bridge), but the
+    # mapped business_trend answers a different question and must still be shown.
     tables = {**_tables(), **_core_tables()}
     md = nr.bundle_to_markdown(_bundle([_chart_view()]), _facts(), result_tables=tables)
-    assert md.count("<svg") == 1     # exactly the curated chart, no fallback
-    assert "GMV 走势" not in md       # the fallback title never appears
-    assert "GMV 瀑布" in md           # the curated chart is what rendered
+    assert md.count("<svg") == 2
+    assert "GMV 走势" in md
+    assert "GMV 瀑布" in md
+
+
+def test_deterministic_chart_registry_renders_all_distinct_usable_candidates():
+    tables = {
+        "channel_scale": [
+            {"carrier_zh": "商品卡", "gmv_share": 0.64},
+            {"carrier_zh": "笔记", "gmv_share": 0.36},
+        ],
+        "search_conversion_trend": [
+            {"period": "2026-04-01", "avg_pay_conversion": 0.05},
+            {"period": "2026-04-02", "avg_pay_conversion": 0.04},
+        ],
+    }
+
+    parts = nr._fallback_chart_parts("流量与内容", tables, set())
+    rendered = "\n".join(parts)
+
+    assert rendered.count("<svg") == 2
+    assert "渠道结构" in rendered
+    assert "搜索支付转化走势" in rendered
+
+
+def test_category_chart_titles_distinguish_first_and_second_level():
+    tables = {
+        "sku_category_mix": [
+            {"category_l1": "餐厨", "gmv_share": 0.7},
+            {"category_l1": "家居", "gmv_share": 0.3},
+        ],
+        "sku_category_l2_mix": [
+            {"category_l2": "餐具", "gmv_share": 0.6},
+            {"category_l2": "茶具", "gmv_share": 0.4},
+        ],
+    }
+
+    rendered = "\n".join(nr._fallback_chart_parts("商品结构", tables, set()))
+
+    assert "一级品类 GMV 分布" in rendered
+    assert "二级品类 GMV 分布" in rendered
 
 
 def test_fallback_only_for_mapped_core_domains():

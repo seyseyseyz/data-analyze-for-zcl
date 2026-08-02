@@ -90,6 +90,32 @@ def _bundle(views, claims=None, **kw):
     return b
 
 
+def _action_card(claim_id="core.gmv_bridge"):
+    return {
+        "action_id": "a1",
+        "action_family": "复盘",
+        "title": "复盘增长来源",
+        "owner_role": "运营负责人",
+        "steps": ["核对来源结构"],
+        "primary_fact_id": "m.gmv",
+        "guardrail_fact_id": None,
+        "stop_rule": "结论不稳定时停止",
+        "license": "pilot",
+        "supporting_claim_ids": [claim_id],
+        "number_tokens": [],
+    }
+
+
+def _coverage(*, status="retained", view_ids=None, reason_code=None, reason=None):
+    return {
+        "claim_id": "core.gmv_bridge",
+        "status": status,
+        "view_ids": ["core.gmv_bridge_table"] if view_ids is None else view_ids,
+        "reason_code": reason_code,
+        "reason": reason,
+    }
+
+
 def _codes(report):
     return {f["code"] for f in report.hard_failures}
 
@@ -100,6 +126,186 @@ def test_valid_curated_view_passes():
     r = run_gate(_bundle([_view()]), _facts(), _tables())
     assert r.status == "PASS"
     assert r.hard_failures == []
+
+
+def test_decision_critical_claim_requires_visual_coverage_record():
+    bundle = _bundle([_view()], action_cards=[_action_card()])
+    bundle["sections"][0]["visual_coverage"] = []
+
+    r = run_gate(bundle, _facts(), _tables())
+
+    assert "VISUAL_COVERAGE_MISSING" in _codes(r)
+
+
+def test_retained_visual_coverage_must_name_matching_renderable_view():
+    bundle = _bundle([_view()], action_cards=[_action_card()])
+    bundle["sections"][0]["visual_coverage"] = [
+        _coverage(view_ids=["ghost-view"])
+    ]
+
+    r = run_gate(bundle, _facts(), _tables())
+
+    assert "VISUAL_COVERAGE_INVALID" in _codes(r)
+
+
+def test_structured_visual_omission_satisfies_critical_claim_coverage():
+    bundle = _bundle([], action_cards=[_action_card()])
+    bundle["sections"][0]["visual_coverage"] = [
+        _coverage(
+            status="omitted",
+            view_ids=[],
+            reason_code="not_visualizable",
+            reason="当前事实只有单点值，图形不会增加决策信息",
+        )
+    ]
+
+    r = run_gate(bundle, _facts(), _tables())
+
+    assert r.status == "PASS", r.hard_failures
+
+
+def test_visual_coverage_cannot_move_a_claim_to_another_section():
+    bundle = _bundle([], action_cards=[_action_card()])
+    bundle["sections"][0]["visual_coverage"] = []
+    bundle["sections"].append(
+        {
+            "section_id": "product_structure",
+            "title": "商品结构",
+            "claims": [],
+            "curated_views": [],
+            "visual_coverage": [
+                _coverage(
+                    status="omitted",
+                    view_ids=[],
+                    reason_code="not_visualizable",
+                    reason="测试",
+                )
+            ],
+            "spine_callbacks": ["L1"],
+        }
+    )
+
+    report = run_gate(bundle, _facts(), _tables())
+
+    assert report.status == "FAIL"
+    assert any(
+        failure["code"] == "VISUAL_COVERAGE_INVALID"
+        and "belongs to section" in failure["detail"]
+        for failure in report.hard_failures
+    )
+
+
+def test_visual_coverage_rejects_view_declared_for_another_section():
+    bundle = _bundle(
+        [_view(section_id="product_structure")],
+        action_cards=[_action_card()],
+    )
+    bundle["sections"][0]["visual_coverage"] = [_coverage()]
+
+    report = run_gate(bundle, _facts(), _tables())
+
+    assert report.status == "FAIL"
+    assert any(
+        failure["code"] == "VISUAL_COVERAGE_INVALID"
+        and "belongs to section" in failure["detail"]
+        for failure in report.hard_failures
+    )
+
+
+def test_visual_coverage_rejects_view_supporting_claim_from_another_section():
+    bundle = _bundle(
+        [_view(supports_claim="product.claim")],
+        action_cards=[_action_card()],
+    )
+    bundle["sections"][0]["visual_coverage"] = [
+        _coverage(
+            status="omitted",
+            view_ids=[],
+            reason_code="not_visualizable",
+            reason="测试",
+        )
+    ]
+    bundle["sections"].append(
+        {
+            "section_id": "product_structure",
+            "title": "商品结构",
+            "claims": [
+                _claim(claim_id="product.claim", section_id="product_structure")
+            ],
+            "curated_views": [],
+            "visual_coverage": [],
+            "spine_callbacks": ["L1"],
+        }
+    )
+
+    report = run_gate(bundle, _facts(), _tables())
+
+    assert report.status == "FAIL"
+    assert any(
+        failure["code"] == "VISUAL_COVERAGE_INVALID"
+        and "supports claim" in failure["detail"]
+        for failure in report.hard_failures
+    )
+
+
+def test_visual_coverage_rejects_unknown_claim_record():
+    bundle = _bundle([], action_cards=[_action_card()])
+    bundle["sections"][0]["visual_coverage"] = [
+        _coverage(
+            status="omitted",
+            view_ids=[],
+            reason_code="not_visualizable",
+            reason="测试",
+        ),
+        {
+            "claim_id": "ghost.claim",
+            "status": "omitted",
+            "view_ids": [],
+            "reason_code": "not_visualizable",
+            "reason": "测试",
+        },
+    ]
+
+    report = run_gate(bundle, _facts(), _tables())
+
+    assert report.status == "FAIL"
+    assert any(
+        failure["code"] == "VISUAL_COVERAGE_INVALID"
+        and failure["claim_id"] == "ghost.claim"
+        and "unknown claim" in failure["detail"]
+        for failure in report.hard_failures
+    )
+
+
+def test_visual_coverage_rejects_omitted_claim_with_a_retained_view():
+    bundle = _bundle([_view()], action_cards=[_action_card()])
+    bundle["sections"][0]["visual_coverage"] = [
+        _coverage(
+            status="omitted",
+            view_ids=[],
+            reason_code="not_visualizable",
+            reason="测试",
+        )
+    ]
+
+    report = run_gate(bundle, _facts(), _tables())
+
+    assert report.status == "FAIL"
+    assert any(
+        failure["code"] == "VISUAL_COVERAGE_INVALID"
+        and "not retained by visual coverage" in failure["detail"]
+        for failure in report.hard_failures
+    )
+
+
+def test_retained_visual_coverage_rejects_unrenderable_view():
+    bad_view = _view(columns=["component", "ghost_col"])
+    bundle = _bundle([bad_view], action_cards=[_action_card()])
+    bundle["sections"][0]["visual_coverage"] = [_coverage()]
+
+    r = run_gate(bundle, _facts(), _tables())
+
+    assert "VISUAL_COVERAGE_UNRENDERABLE" in _codes(r)
 
 
 def test_rich_section_many_tables_and_charts_passes_no_cap():

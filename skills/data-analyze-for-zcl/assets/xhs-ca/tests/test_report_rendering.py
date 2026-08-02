@@ -1,3 +1,7 @@
+import base64
+import re
+import struct
+
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding, Subsection
 from xhs_ceramics_analytics.evidence import DescriptiveReliability, EvidenceStrength
 from xhs_ceramics_analytics.reporting.html import (
@@ -269,7 +273,40 @@ def test_render_html_uses_custom_title_when_provided():
     named = render_html([result], title="千帆经营诊断报告")
     assert "<title>小红书账号分析报告</title>" in default
     assert "<title>千帆经营诊断报告</title>" in named
-    assert "<h1>千帆经营诊断报告</h1>" in named
+    assert '<h1>千帆经营诊断报告<img class="title-mascot title-mascot--animated"' in named
+
+
+def test_report_titles_embed_transparent_looping_mascot_without_network_refs():
+    result = AnalysisResult(task_id="x", title="X", findings=[_full_finding()])
+    reports = (
+        render_html([result], title="测试报告"),
+        render_markdown_document_html("# 测试报告\n\n正文。"),
+    )
+
+    for html in reports:
+        assert '<h1>测试报告<img class="title-mascot title-mascot--animated"' in html
+        assert 'class="title-mascot title-mascot--still"' in html
+        assert re.search(r"\.title-mascot\s*\{[^}]*top:\s*2px;", html, re.DOTALL)
+        assert "prefers-reduced-motion: reduce" in html
+        assert "http://" not in html
+        assert "https://" not in html
+
+        gif_match = re.search(r'data:image/gif;base64,([^\"]+)', html)
+        png_match = re.search(r'data:image/png;base64,([^\"]+)', html)
+        assert gif_match is not None
+        assert png_match is not None
+
+        gif = base64.b64decode(gif_match.group(1))
+        png = base64.b64decode(png_match.group(1))
+        assert gif[:6] in (b"GIF87a", b"GIF89a")
+        assert struct.unpack("<HH", gif[6:10]) == (164, 136)
+        assert b"NETSCAPE2.0" in gif
+        graphic_controls = re.findall(rb"\x21\xf9\x04(.)(..)(.)\x00", gif, re.DOTALL)
+        assert graphic_controls
+        assert all(control[0][0] & 0x01 for control in graphic_controls)
+        assert png[:8] == b"\x89PNG\r\n\x1a\n"
+        assert struct.unpack(">II", png[16:24]) == (164, 136)
+        assert png[25] == 6  # RGBA
 
 
 def test_render_markdown_uses_chinese_report_labels():
@@ -447,7 +484,7 @@ def test_render_markdown_document_html_wraps_custom_report():
 
     assert "<!doctype html>" in html
     assert "<title>经营诊断报告</title>" in html
-    assert "<h1>经营诊断报告</h1>" in html
+    assert '<h1>经营诊断报告<img class="title-mascot title-mascot--animated"' in html
     # h2/h3 now carry a stable TOC anchor id so the persistent 目录 can link to them
     assert '<h2 id="sec-1">关键结论</h2>' in html
     assert "<table>" in html
@@ -471,7 +508,7 @@ def test_cli_render_html_converts_custom_markdown_report(tmp_path):
     assert html_path.exists()
     html = html_path.read_text(encoding="utf-8")
     assert "<!doctype html>" in html
-    assert "<h1>经营诊断报告</h1>" in html
+    assert '<h1>经营诊断报告<img class="title-mascot title-mascot--animated"' in html
     assert f"Wrote report: {html_path}" in result.stdout
 
 
@@ -1126,7 +1163,7 @@ def test_task_charts_land_in_analysis_section():
     assert 'class="chart"' in analysis
 
 
-def test_html_report_has_no_script_or_external_refs():
+def test_html_report_has_only_deterministic_inline_tooltip_script_and_no_external_refs():
     html = render_html(
         [
             AnalysisResult(
@@ -1150,10 +1187,13 @@ def test_html_report_has_no_script_or_external_refs():
             )
         ]
     )
-    assert "<script" not in html
+    assert html.count("<script") == 1
+    assert '<script id="field-tooltip-position">' in html
+    assert "<script src=" not in html
     assert "http://" not in html
     assert "https://" not in html
-    assert "src=" not in html
+    assert 'src="data:image/gif;base64,' in html
+    assert 'src="data:image/png;base64,' in html
 
 
 def test_section_keeps_table_when_a_chart_builder_raises(monkeypatch):

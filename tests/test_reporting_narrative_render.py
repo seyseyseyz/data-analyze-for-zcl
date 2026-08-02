@@ -65,11 +65,76 @@ def test_render_draft_overwrites_untrusted_rendered_sentence():
 
 
 def test_bundle_to_markdown_includes_all_sections():
-    md = nr.bundle_to_markdown(nr.render_draft(_bundle(), _facts()), _facts(), title="测试报告")
+    facts = {
+        **_facts(),
+        "blocked_modules": ["paid_traffic_efficiency", "comment_demand_mining"],
+    }
+    md = nr.bundle_to_markdown(nr.render_draft(_bundle(), facts), facts, title="测试报告")
     assert "人均产出从 ¥10.0 回落到 ¥8.7。" in md
     assert "生意大盘·月对月" in md
-    assert "暂时答不了的问题" in md
-    assert "笔记→订单归因：平台无链路。" in md
+    assert "缺哪些数据，补齐后能分析什么" in md
+    assert "广告投放明细" in md
+    assert "评论明细" in md
+    assert "投入产出效率" in md
+    assert "用户想买什么、担心什么" in md
+    assert "暂时答不了的问题" not in md
+    assert "笔记→订单归因：平台无链路。" not in md
+
+
+def test_bundle_to_markdown_includes_supported_optional_data_upgrades():
+    facts = {**_facts(), "blocked_modules": []}
+    tables = {
+        "note_funnel": [
+            {
+                "to_live_count_optional": None,
+                "to_live_gmv_optional": None,
+            }
+        ],
+        "table_row_counts": [{"table": "notes", "rows": 1}],
+    }
+
+    md = nr.bundle_to_markdown(
+        nr.render_draft(_bundle(), facts),
+        facts,
+        title="测试报告",
+        result_tables=tables,
+    )
+
+    assert "可选增强数据：补充后可以看得更细" in md
+    assert "笔记引流到直播间的数据" in md
+
+
+def test_retained_view_renders_one_escaped_data_view_id_marker():
+    bundle = nr.render_draft(_bundle(), _facts())
+    bundle["sections"][0]["curated_views"] = [
+        {
+            "view_id": 'view<&"',
+            "section_id": "core_business",
+            "supports_claim": "c0",
+            "template": "comparison_table",
+            "source": {"table": "comparison"},
+            "columns": ["label", "value"],
+            "title": "对比",
+            "how_to_read": "看差异",
+            "why_it_matters": "用于判断优先级",
+        }
+    ]
+    tables = {
+        "comparison": [
+            {"label": "甲", "value": 10},
+            {"label": "乙", "value": 8},
+        ]
+    }
+
+    markdown = nr.bundle_to_markdown(
+        bundle,
+        _facts(),
+        title="测试报告",
+        result_tables=tables,
+    )
+
+    assert markdown.count("data-view-id=") == 1
+    assert 'data-view-id="view&lt;&amp;&quot;"' in markdown
 
 
 def test_grounded_action_cards_render_compactly_without_internal_ids():

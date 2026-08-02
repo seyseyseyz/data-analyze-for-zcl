@@ -103,9 +103,24 @@ def test_reviewer_prompt_names_the_three_required_lenses():
 
 def test_visual_prompt_emits_the_runtime_view_spec_shape():
     text = _prompt("visual_curator")
-    for field in ("supports_claim", "source.table", "columns", "rows", "chart"):
+    for field in (
+        "supports_claim",
+        "source.table",
+        "columns",
+        "column_labels",
+        "rows",
+        "chart",
+    ):
         assert field in text
     assert "supports_claim_id" not in text
+
+
+def test_visual_prompt_preserves_high_value_diagnostic_breadth():
+    text = _prompt("visual_curator")
+    for topic in ("搜索词", "笔记", "SKU"):
+        assert topic in text
+    assert "经营诊断明细" in text
+    assert "不得删除" in text
 
 
 def test_merchant_final_review_reads_candidate_html_and_is_not_an_editor():
@@ -118,6 +133,8 @@ def test_merchant_final_review_reads_candidate_html_and_is_not_an_editor():
 def test_prompts_name_the_runtime_ingest_envelopes():
     assert '"sections"' in _prompt("visual_curator")
     assert '"curated_views"' in _prompt("visual_curator")
+    assert '"visual_coverage"' in _prompt("visual_curator")
+    assert "decision-critical" in _prompt("visual_curator")
     assert '"edits"' in _prompt("continuity")
     merchant = _prompt("merchant_final_review")
     assert '"issues"' in merchant

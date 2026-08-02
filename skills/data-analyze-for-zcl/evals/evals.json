@@ -326,6 +326,58 @@
       "required_contains": ["NOT_JUDGABLE", "缺"],
       "forbidden_contains": ["lift", "销量提升", "pre_units", "post_units"],
       "expected_output_summary": "Skill triggers sku_counterfactual_lift but daily_sku_sales is missing (no orders data). Must return NOT_JUDGABLE, reference troubleshooting, mention missing data, and never fabricate lift numbers."
+    },
+    {
+      "id": 26,
+      "category": "workflow-contract",
+      "task_slug": "inspect",
+      "prompt": "我已同意多 agent 最终报告。文件夹名字写的是 4-7 月，但可能不准；正式 build 前先只做只读 inspect，确认真实日期、店铺名、重复文件、字段映射和任务覆盖，不要改源文件。",
+      "files": ["tests/fixtures/business_overview_daily.csv", "tests/fixtures/traffic_source.csv", "tests/fixtures/notes.csv"],
+      "expected_trigger": true,
+      "expected_reads": ["SKILL.md"],
+      "forbidden_reads": ["references/troubleshooting.md"],
+      "required_contains": ["inspection.json", "report_period", "store", "duplicate_rows", "provisional"],
+      "forbidden_contains": ["已修改源文件", "最终报告已完成"],
+      "expected_output_summary": "Skill runs the read-only inspect command before build, writes a machine-readable provisional inspection manifest, trusts dates and store evidence from the exports rather than the folder label, reports dedupe/mapping/coverage findings, and leaves source files byte-for-byte untouched."
+    },
+    {
+      "id": 27,
+      "category": "workflow-contract",
+      "task_slug": "narrative_dispatch_recovery",
+      "prompt": "这份小红书陶瓷经营报告已授权多 agent。status 返回 6 个 pending task，但平台同时最多 5 个；第 5 个 agent 完成后第 6 个还没派发。请继续，不要降级，也不要重复执行已经派发或已 ingest 的任务。",
+      "files": [],
+      "expected_trigger": true,
+      "expected_reads": ["orchestration/runbook.md"],
+      "forbidden_reads": ["references/troubleshooting.md"],
+      "required_contains": ["record-dispatch", "dispatch_status", "task_id", "close"],
+      "forbidden_contains": ["multi-agent-unavailable", "finalize-deterministic", "重新授权"],
+      "expected_output_summary": "Skill treats the capacity limit as recoverable scheduling pressure: reserve and record at most five unique tasks, ingest and close completed agents, release failed reservations, then dispatch the remaining exact task_id without duplicates, fallback, or another authorization question."
+    },
+    {
+      "id": 28,
+      "category": "workflow-contract",
+      "task_slug": "narrative_visual_coverage",
+      "prompt": "视觉审阅想删掉支撑“支付金额下滑”这个核心结论的唯一趋势图，但报告里还有一张无关的 SVG，所以页面看起来不算纯文字。请按 data-analyze-for-zcl 的最终报告契约处理。",
+      "files": [],
+      "expected_trigger": true,
+      "expected_reads": ["orchestration/runbook.md", "orchestration/schemas/visual_coverage.json"],
+      "forbidden_reads": ["references/troubleshooting.md"],
+      "required_contains": ["visual_coverage", "claim_id", "view_id", "dropped_by_review"],
+      "forbidden_contains": ["有任意 SVG 即通过", "无需记录 omission"],
+      "expected_output_summary": "Skill preserves claim-level visual accountability. Deleting the only proof view must update the matching visual_coverage record with a structured dropped_by_review omission; an unrelated SVG cannot satisfy the claim, and the deterministic gate rejects a missing, mismatched, duplicated, or unrenderable retained view."
+    },
+    {
+      "id": 29,
+      "category": "workflow-contract",
+      "task_slug": "narrative_candidate_lineage",
+      "prompt": "商家终审 candidate HTML 已生成，但终审前有人改了 narrative bundle，随后想直接把旧 candidate 当 final 交付。请判断能否 finalize，并说明必须验证什么。",
+      "files": [],
+      "expected_trigger": true,
+      "expected_reads": ["orchestration/runbook.md"],
+      "forbidden_reads": ["references/troubleshooting.md"],
+      "required_contains": ["candidate_html_sha256", "candidate_bundle_sha256", "bundle", "字节一致"],
+      "forbidden_contains": ["可以直接交付", "只看 stage=finalized"],
+      "expected_output_summary": "Skill fails closed when the narrative bundle drifts after candidate creation. Merchant final review and finalization must reference the frozen candidate bundle/Markdown/HTML hashes, and the delivered final HTML must be byte-identical to the reviewed candidate; otherwise no delivery success may be claimed."
     }
   ]
 }

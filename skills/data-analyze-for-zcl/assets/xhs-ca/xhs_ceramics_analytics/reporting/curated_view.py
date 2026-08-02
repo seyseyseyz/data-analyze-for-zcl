@@ -18,6 +18,8 @@ numbers are*.
 from __future__ import annotations
 
 import logging
+import json
+import math
 from dataclasses import dataclass
 from html import escape
 
@@ -27,6 +29,7 @@ from xhs_ceramics_analytics.reporting.formatting import (
     format_scalar,
     is_timeseries_table,
 )
+from xhs_ceramics_analytics.reporting.field_tooltips import field_tooltip_markup
 from xhs_ceramics_analytics.reporting.table_labels import table_label
 from xhs_ceramics_analytics.reporting.view_spec import (
     CHART_TEMPLATES,
@@ -249,8 +252,65 @@ def _is_highlighted(row: dict, highlight: dict) -> bool:
 
 # ---- table HTML (reuses the deterministic renderer's .table-wrap markup) --
 
+_FLAG_COLUMNS = frozenset(
+    {
+        "fdr_significant",
+        "is_anomaly",
+        "is_dominant",
+        "is_saturation",
+        "is_sweet_spot",
+    }
+)
+_CATEGORY_COLUMNS = frozenset(
+    {
+        "category",
+        "category_l1",
+        "category_l2",
+        "channel",
+        "carrier",
+        "carrier_zh",
+        "band",
+        "price_band",
+        "audience_type",
+        "source_page",
+        "publish_window",
+    }
+)
 
-def _build_table_html(view: ViewSpec, rows: list[dict], highlight_flags: list[bool]) -> str | None:
+
+def _column_kind(column: str, rows: list[dict]) -> str:
+    """Classify a displayed column for layout only; values and labels stay unchanged."""
+    values = [row.get(column) for row in rows if row.get(column) is not None]
+    if column.startswith("is_") or column in _FLAG_COLUMNS or any(
+        isinstance(value, bool) for value in values
+    ):
+        return "flag"
+    if column.endswith(("_name", "_title")) or column in {
+        "title",
+        "search_term",
+        "example_comments",
+        "reason",
+    }:
+        return "identity"
+    if column.startswith("category_") or column in _CATEGORY_COLUMNS:
+        return "category"
+    if any(_numeric_sort_value(value) is not None for value in values):
+        return "number"
+    return "text"
+
+
+def _column_attrs(column: str, rows: list[dict]) -> str:
+    key = escape(column, quote=True)
+    return f'data-col-key="{key}" data-col-kind="{_column_kind(column, rows)}"'
+
+
+def _build_table_html(
+    view: ViewSpec,
+    rows: list[dict],
+    highlight_flags: list[bool],
+    *,
+    tooltip_surface: str = "curated",
+) -> str | None:
     """Build the curated table HTML — capped to the most-valuable rows, foldable.
 
     Mirrors the deterministic renderer's ``.table-wrap`` markup and stdlib HTML
@@ -272,20 +332,30 @@ def _build_table_html(view: ViewSpec, rows: list[dict], highlight_flags: list[bo
     shown_rows = rows[:DEFAULT_MAX_ROWS]
     shown_flags = highlight_flags[:DEFAULT_MAX_ROWS]
 
+    colgroup = "".join(f"<col {_column_attrs(column, shown_rows)}>" for column in columns)
+    source = view.source if isinstance(view.source, dict) else {}
+    table_name = str(source.get("table") or "") or None
+    tooltip_scope = f"{tooltip_surface}-{view.view_id or table_name or 'table'}"
     header = "".join(
-        f"<th>{escape(str(labels.get(col) or field_label(col)))}</th>" for col in columns
+        f"<th>{field_tooltip_markup(str(col), str(labels.get(col) or field_label(col)), scope=tooltip_scope, table_name=table_name)}</th>"
+        for col in columns
     )
+    sort_matrix = _numeric_sort_matrix(shown_rows, columns)
     body_rows: list[str] = []
     for row, highlighted in zip(shown_rows, shown_flags):
         cells = "".join(f"<td>{_cell_html(col, row.get(col))}</td>" for col in columns)
         tr_open = f'<tr class="{_HIGHLIGHT_CLASS}">' if highlighted else "<tr>"
         body_rows.append(f"{tr_open}{cells}</tr>")
 
+    sort_payload = json.dumps(sort_matrix, ensure_ascii=False, allow_nan=False)
     table = (
         '<div class="table-wrap"><table>'
+        f"<colgroup>{colgroup}</colgroup>"
         f"<thead><tr>{header}</tr></thead>"
         f"<tbody>{''.join(body_rows)}</tbody>"
-        "</table></div>"
+        "</table>"
+        f'<script type="application/json" class="ca-sort-values">{sort_payload}</script>'
+        "</div>"
     )
 
     if total > len(shown_rows):
@@ -295,6 +365,67 @@ def _build_table_html(view: ViewSpec, rows: list[dict], highlight_flags: list[bo
             f"<summary>{escape(caption)}</summary>{table}</details>"
         )
     return table
+
+
+def render_diagnostic_table(
+    rows: object,
+    columns: object,
+    *,
+    column_labels: dict | None = None,
+    table_name: str | None = None,
+) -> str | None:
+    """Render a controller-selected diagnostic table without an agent-authored view.
+
+    The inputs are existing deterministic result rows and a subset of their real
+    columns. Unlike curated comparison/ranking views, a one-row diagnostic table is
+    still useful and therefore does not apply :data:`MIN_TABLE_ROWS`.
+    """
+    clean_rows = [row for row in (rows or []) if isinstance(row, dict)]
+    selected = [str(column) for column in (columns or []) if str(column)]
+    if not clean_rows or not selected:
+        return None
+    real_columns = {key for row in clean_rows for key in row if isinstance(key, str)}
+    selected = [column for column in selected if column in real_columns]
+    if not selected:
+        return None
+    view = ViewSpec(
+        source={"table": table_name} if table_name else {},
+        columns=tuple(selected),
+        column_labels=column_labels or {},
+    )
+    return _build_table_html(
+        view,
+        clean_rows,
+        [False] * len(clean_rows),
+        tooltip_surface="diagnostic",
+    )
+
+
+def _numeric_sort_value(value: object) -> int | float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    return value
+
+
+def _numeric_sort_matrix(rows: list[dict], columns: list[str]) -> list[list[int | None]]:
+    """Encode numeric ordering as ranks so raw ratios never leak into HTML source."""
+    rank_maps: list[dict[int | float, int]] = []
+    for column in columns:
+        values = {
+            value
+            for row in rows
+            if (value := _numeric_sort_value(row.get(column))) is not None
+        }
+        rank_maps.append({value: rank for rank, value in enumerate(sorted(values), 1)})
+    return [
+        [
+            rank_maps[index].get(_numeric_sort_value(row.get(column)))
+            for index, column in enumerate(columns)
+        ]
+        for row in rows
+    ]
 
 
 def _cell_html(field_name: str, value: object) -> str:

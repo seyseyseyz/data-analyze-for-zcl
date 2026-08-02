@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Sequence
+from datetime import datetime
 
 from markupsafe import Markup, escape
 
@@ -33,6 +34,22 @@ _HATCH = (
     "</defs>"
 )
 
+_TOOLTIP_STYLE = (
+    "<style>"
+    ".ca-tooltip-trigger{fill:transparent;stroke:transparent;pointer-events:all;"
+    "cursor:help;outline:none}"
+    ".ca-tooltip{opacity:0;visibility:hidden;pointer-events:none;"
+    "transition:opacity 80ms ease;transition-delay:120ms}"
+    ".ca-tooltip-trigger:hover+.ca-tooltip,.ca-tooltip-trigger:focus+.ca-tooltip{"
+    "opacity:1;visibility:visible}"
+    ".ca-tooltip-trigger:focus-visible{stroke:var(--accent,#5B6570);"
+    "stroke-width:2}"
+    ".ca-tooltip-bg{fill:var(--ink-strong,#24282B);stroke:var(--surface,#FFF);"
+    "stroke-width:1;filter:drop-shadow(0 2px 5px rgba(0,0,0,.18))}"
+    ".ca-tooltip-text{fill:#FFF;font-size:12px;font-weight:500}"
+    "</style>"
+)
+
 
 def _esc(text: object) -> str:
     return str(escape("" if text is None else text))
@@ -43,16 +60,84 @@ def _num(value: float) -> str:
 
 
 def _frame(body: str, width: int, height: int, label: str = "数据图表，详见下方表格") -> str:
-    # role="img" + aria-label gives screen readers a single accessible name; the
-    # detailed numbers stay reachable in the accompanying data table below.
+    # Interactive charts use group semantics so their focusable tooltip triggers stay
+    # exposed. Non-interactive charts remain one named image, avoiding verbose reads.
     # ``max-width`` caps the chart at its OWN viewBox width: the shared
     # ``.chart-svg { width:100% }`` rule would otherwise stretch a 640/308-wide
     # chart to the full content column (the "宽高太大" complaint). It still shrinks
     # responsively on a narrower column; it just never scales ABOVE its design size.
+    interactive = 'class="ca-tooltip-trigger"' in body
+    role = "group" if interactive else "img"
+    tooltip_style = _TOOLTIP_STYLE if interactive else ""
     return (
-        f'<svg viewBox="0 0 {width} {height}" class="chart-svg" role="img" '
+        f'<svg viewBox="0 0 {width} {height}" class="chart-svg" role="{role}" '
         f'aria-label="{_esc(label)}" preserveAspectRatio="xMidYMid meet" '
-        f'style="max-width:{width}px">{_HATCH}{body}</svg>'
+        f'style="max-width:{width}px">{_HATCH}{tooltip_style}{body}</svg>'
+    )
+
+
+def _tooltip_lines(text: str, max_width: float) -> list[str]:
+    """Wrap tooltip copy by the same deterministic width estimate used by legends."""
+    lines: list[str] = []
+    current = ""
+    current_width = 0.0
+    for char in text:
+        char_width = 15.0 if ord(char) > 0x2E80 else 8.0
+        if current and current_width + char_width > max_width:
+            lines.append(current)
+            current, current_width = char, char_width
+        else:
+            current += char
+            current_width += char_width
+    if current or not lines:
+        lines.append(current)
+    return lines
+
+
+def _tooltip_trigger(
+    text: object,
+    *,
+    hit_x: float,
+    hit_y: float,
+    hit_width: float,
+    hit_height: float,
+    anchor_x: float,
+    anchor_y: float,
+    canvas_width: float,
+    canvas_height: float,
+) -> str:
+    """Return a focusable transparent hit area plus a fast pure-SVG tooltip."""
+    value = "" if text is None else str(text)
+    text_budget = min(264.0, max(80.0, canvas_width - 24.0))
+    lines = _tooltip_lines(value, text_budget)
+    content_width = max((_legend_text_w(line) for line in lines), default=0.0)
+    box_width = min(canvas_width - 8.0, max(48.0, content_width + 16.0))
+    box_height = 12.0 + 16.0 * len(lines)
+
+    left = anchor_x + 10.0
+    if left + box_width > canvas_width - 4.0:
+        left = anchor_x - box_width - 10.0
+    left = min(max(4.0, left), max(4.0, canvas_width - box_width - 4.0))
+    top = anchor_y - box_height - 8.0
+    if top < 4.0:
+        top = anchor_y + 8.0
+    top = min(max(4.0, top), max(4.0, canvas_height - box_height - 4.0))
+
+    tspans = "".join(
+        f'<tspan x="8" y="{_num(19 + index * 16)}">{_esc(line)}</tspan>'
+        for index, line in enumerate(lines)
+    )
+    return (
+        '<g class="ca-tooltip-wrap">'
+        f'<rect class="ca-tooltip-trigger" tabindex="0" focusable="true" '
+        f'aria-label="{_esc(value)}" x="{_num(round(hit_x))}" y="{_num(round(hit_y))}" '
+        f'width="{_num(round(max(12.0, hit_width)))}" '
+        f'height="{_num(round(max(12.0, hit_height)))}" rx="3"/>'
+        f'<g class="ca-tooltip" role="tooltip" '
+        f'transform="translate({_num(round(left))} {_num(round(top))})">'
+        f'<rect class="ca-tooltip-bg" width="{_num(round(box_width))}" '
+        f'height="{_num(round(box_height))}" rx="6"/>'
+        f'<text class="ca-tooltip-text">{tspans}</text></g></g>'
     )
 
 
@@ -64,6 +149,7 @@ def _frame(body: str, width: int, height: int, label: str = "数据图表，详�
 _MAX_AXIS_LABELS = 12  # most category / x-axis labels drawn; the rest are thinned
 _MAX_LINE_MARKERS = 24  # above this a line drops per-point circles (keeps the path)
 _MAX_BARS = 12  # curated bar templates cap to this many categories
+_MAX_VERTICAL_BARS = 5  # beyond this, labels and values need the full-width hbar layout
 
 
 def _axis_label_indices(n: int, max_labels: int = _MAX_AXIS_LABELS) -> set[int]:
@@ -202,13 +288,14 @@ def _hbar(
     # Size the right gutter to the widest value label so a full-length bar's
     # number never runs off the right edge (fit the layout to the content, don't
     # clip). Left labels wider than the gutter are truncated with an ellipsis;
-    # the full text stays reachable in each bar's <title>.
+    # the fast custom tooltip keeps the full text reachable.
     max_val_w = max((_legend_text_w(vt) for _, _, vt, _ in rows), default=0.0)
     pad_r = max(56.0, gap + max_val_w + 8.0)
     track = max(40.0, width - pad_l - pad_r)
     label_gutter = pad_l - 14
     vmax = value_max or 1.0
     parts: list[str] = []
+    overlays: list[str] = []
     for i, (label, value, value_text, tone) in enumerate(rows):
         y = 20 + i * 34
         bar_w = max(0.0, (value / vmax) * track) if value is not None else 0.0
@@ -228,21 +315,48 @@ def _hbar(
             # gives the ranking a calm hierarchy while the top bar stays saturated.
             fill = "var(--ink)" if tone == "var(--ink-strong)" else tone
             opacity = "1" if i == 0 else _num(max(0.5, 0.92 - 0.1 * i))
+        visible_label = _truncate(str(label), label_gutter)
         parts.append(
             f'<text x="{pad_l - 10}" y="{y + 15}" text-anchor="end" class="ca-cat">'
-            f"{_esc(_truncate(str(label), label_gutter))}<title>{_esc(label)}</title></text>"
+            f"{_esc(visible_label)}</text>"
         )
         parts.append(
             f'<rect x="{pad_l}" y="{y}" width="{_num(bar_w)}" height="20" rx="10" '
-            f'fill="{fill}" fill-opacity="{opacity}">'
-            f"<title>{_esc(label)}：{_esc(value_text)}</title></rect>"
+            f'fill="{fill}" fill-opacity="{opacity}"/>'
         )
         parts.append(
             f'<text x="{_num(pad_l + bar_w + gap)}" y="{y + 15}" class="ca-num">'
             f"{_esc(value_text)}</text>"
         )
+        visible_width = min(label_gutter, _legend_text_w(visible_label))
+        overlays.append(
+            _tooltip_trigger(
+                label,
+                hit_x=pad_l - 10 - visible_width,
+                hit_y=y,
+                hit_width=visible_width,
+                hit_height=20,
+                anchor_x=pad_l - 10,
+                anchor_y=y + 10,
+                canvas_width=width,
+                canvas_height=height,
+            )
+        )
+        overlays.append(
+            _tooltip_trigger(
+                f"{label}：{value_text}",
+                hit_x=pad_l,
+                hit_y=y,
+                hit_width=bar_w,
+                hit_height=20,
+                anchor_x=pad_l + bar_w / 2,
+                anchor_y=y + 10,
+                canvas_width=width,
+                canvas_height=height,
+            )
+        )
     parts.append(f'<line x1="{pad_l}" y1="12" x2="{pad_l}" y2="{height - 6}" class="ca-axis"/>')
-    return _frame("".join(parts), width, height)
+    return _frame("".join(parts + overlays), width, height)
 
 
 # Weak reads neutral-grey (not warning-yellow) to match the report's tag palette:
@@ -269,7 +383,7 @@ def _legend_text_w(text: str) -> float:
 def _truncate(text: str, max_w: float) -> str:
     """Clip text to an advance-width budget, appending an ellipsis. Keeps a chart
     label inside its gutter instead of overrunning the plotting area; callers keep
-    the full text reachable via a <title>."""
+    the full text reachable via a custom tooltip."""
     if _legend_text_w(text) <= max_w:
         return text
     ellipsis = "…"
@@ -298,13 +412,27 @@ def evidence_distribution(evidence_counts: Sequence[dict]) -> Markup:
     # in the legend below instead of overflowing into the neighbouring segment.
     x = 0.0
     gap = 2.0  # 2px surface gap between adjacent segments (marks-and-anatomy)
+    overlays: list[str] = []
     for item in present:
         count = int(item["count"])
         seg_w = max(0.0, (count / total) * track - gap)
         tone = _EVIDENCE_TONE.get(str(item["value"]), "var(--surface-soft)")
         parts.append(
             f'<rect x="{_num(x)}" y="34" width="{_num(seg_w)}" height="22" rx="4" '
-            f'fill="{tone}"><title>{_esc(item["label"])} {count}</title></rect>'
+            f'fill="{tone}"/>'
+        )
+        overlays.append(
+            _tooltip_trigger(
+                f'{item["label"]} {count}',
+                hit_x=x,
+                hit_y=34,
+                hit_width=seg_w,
+                hit_height=22,
+                anchor_x=x + seg_w / 2,
+                anchor_y=45,
+                canvas_width=width,
+                canvas_height=height,
+            )
         )
         x += seg_w + gap
     # Legend row: a swatch + "<tier> <count>" per present tier, always legible.
@@ -316,7 +444,7 @@ def evidence_distribution(evidence_counts: Sequence[dict]) -> Markup:
         parts.append(f'<rect x="{_num(lx)}" y="79" width="14" height="14" rx="3" fill="{tone}"/>')
         parts.append(f'<text x="{_num(lx + 20)}" y="91" class="ca-num">{_esc(caption)}</text>')
         lx += 14 + 6 + _legend_text_w(caption) + 24
-    return Markup(_frame("".join(parts), width, height, label="结论置信度分布图"))
+    return Markup(_frame("".join(parts + overlays), width, height, label="结论置信度分布图"))
 
 
 _MEASURE_TITLE = {"avg_reads": "平均阅读数", "avg_collects": "平均收藏数"}
@@ -352,6 +480,7 @@ def _vbar(
     bw = min(slot * 0.6, 64)
     fill = "url(#ca-hatch)" if de_emphasize else "var(--ink-strong)"
     opacity = "0.55" if de_emphasize else "1"
+    overlays: list[str] = []
     body.append(
         f'<line x1="{pad_x}" y1="{_num(zero_y)}" x2="{width - pad_x}" '
         f'y2="{_num(zero_y)}" class="ca-axis"/>'
@@ -365,7 +494,20 @@ def _vbar(
         body.append(
             f'<rect x="{_num(cx - bw / 2)}" y="{_num(y_top)}" '
             f'width="{_num(bw)}" height="{_num(bh)}" rx="4" fill="{fill}" '
-            f'fill-opacity="{opacity}"><title>{_esc(cat)}：{_esc(text)}</title></rect>'
+            f'fill-opacity="{opacity}"/>'
+        )
+        overlays.append(
+            _tooltip_trigger(
+                f"{cat}：{text}",
+                hit_x=cx - bw / 2,
+                hit_y=y_top,
+                hit_width=bw,
+                hit_height=bh,
+                anchor_x=cx,
+                anchor_y=y_top + bh / 2,
+                canvas_width=width,
+                canvas_height=height,
+            )
         )
         body.append(
             f'<text x="{_num(cx)}" y="{_num(num_y)}" text-anchor="middle" '
@@ -376,7 +518,7 @@ def _vbar(
                 f'<text x="{_num(cx)}" y="{_num(baseline_y + 20)}" text-anchor="middle" '
                 f'class="ca-cat">{_esc(cat)}</text>'
             )
-    return _frame("".join(body), width, height)
+    return _frame("".join(body + overlays), width, height)
 
 
 def _waterfall(
@@ -421,6 +563,7 @@ def _waterfall(
     fill = "url(#ca-hatch)" if de_emphasize else "var(--ink-strong)"
     opacity = "0.55" if de_emphasize else "1"
     body = [_title(title)]
+    overlays: list[str] = []
     body.append(
         f'<line x1="{pad_x}" y1="{_num(zero_y)}" x2="{width - pad_x}" '
         f'y2="{_num(zero_y)}" class="ca-axis"/>'
@@ -434,7 +577,20 @@ def _waterfall(
         body.append(
             f'<rect x="{_num(cx - bw / 2)}" y="{_num(y_top)}" '
             f'width="{_num(bw)}" height="{_num(seg_h)}" rx="4" fill="{fill}" '
-            f'fill-opacity="{opacity}"><title>{_esc(cat)}：{_esc(text)}</title></rect>'
+            f'fill-opacity="{opacity}"/>'
+        )
+        overlays.append(
+            _tooltip_trigger(
+                f"{cat}：{text}",
+                hit_x=cx - bw / 2,
+                hit_y=y_top,
+                hit_width=bw,
+                hit_height=seg_h,
+                anchor_x=cx,
+                anchor_y=y_top + seg_h / 2,
+                canvas_width=width,
+                canvas_height=height,
+            )
         )
         body.append(
             f'<text x="{_num(cx)}" y="{_num(y_top + seg_h / 2)}" text-anchor="middle" '
@@ -445,7 +601,7 @@ def _waterfall(
                 f'<text x="{_num(cx)}" y="{_num(top_y + plot_h + 20)}" text-anchor="middle" '
                 f'class="ca-cat">{_esc(cat)}</text>'
             )
-    return _frame("".join(body), width, height)
+    return _frame("".join(body + overlays), width, height)
 
 
 def _measure_panel(cats, rows, key, de_emphasize) -> str:
@@ -662,6 +818,7 @@ def _scatter(
         f'class="ca-cat">{_esc(x_label)}</text>',
         f'<text x="{pad_l}" y="{pad_t - 12}" class="ca-cat">{_esc(y_label)}</text>',
     ]
+    overlays: list[str] = []
     if median_lines and len(points) >= 2:
         mx, my = _median([p["x"] for p in points]), _median([p["y"] for p in points])
         body.append(
@@ -685,8 +842,20 @@ def _scatter(
             stroke = "var(--muted)" if de else "var(--surface)"
         body.append(
             f'<circle cx="{_num(cx)}" cy="{_num(cy)}" r="6" fill="{fill}" '
-            f'stroke="{stroke}" stroke-width="2" fill-opacity="{opacity}">'
-            f"<title>{_esc(p['label'])}</title></circle>"
+            f'stroke="{stroke}" stroke-width="2" fill-opacity="{opacity}"/>'
+        )
+        overlays.append(
+            _tooltip_trigger(
+                p["label"],
+                hit_x=cx - 10,
+                hit_y=cy - 10,
+                hit_width=20,
+                hit_height=20,
+                anchor_x=cx,
+                anchor_y=cy,
+                canvas_width=width,
+                canvas_height=height,
+            )
         )
         if cx > width / 2:
             tx, anchor = cx - 9, "end"
@@ -696,7 +865,7 @@ def _scatter(
             f'<text x="{_num(tx)}" y="{_num(cy + 4)}" text-anchor="{anchor}" class="ca-cat">'
             f"{_esc(p['label'])}</text>"
         )
-    return _frame("".join(body), width, height)
+    return _frame("".join(body + overlays), width, height)
 
 
 def _build_opportunity(result: AnalysisResult, confidence: ReaderConfidence) -> str:
@@ -776,16 +945,49 @@ _BUILDERS["paid_traffic_efficiency"] = _build_paid
 
 
 def _short_date(value: object) -> str:
-    """Trim an ISO date to MM-DD for a compact axis; pass anything else through.
+    """Trim an ISO or compact date to MM-DD for a compact axis.
 
-    Analysis modules normalize dates to canonical ISO ('YYYY-MM-DD') at the source
-    (see core_business._gmv_trend / demand_funnel), so this only strips the year for
-    a narrow edge tick — it does not re-derive any date format.
+    Most analysis modules normalize dates to ISO (``YYYY-MM-DD``), while some
+    imported platform tables retain ``YYYYMMDD``. Both are display-equivalent on
+    a trend axis; unrelated labels pass through unchanged.
     """
     text = str(value)
     if len(text) == 10 and text[4] == "-" and text[7] == "-":
         return text[5:]
+    if len(text) == 8 and text.isdigit():
+        try:
+            datetime.strptime(text, "%Y%m%d")
+        except ValueError:
+            return text
+        return f"{text[4:6]}-{text[6:8]}"
     return text
+
+
+def _date_sort_key(value: object) -> str | None:
+    """Return a canonical sortable date key for supported axis date forms."""
+    text = str(value)
+    for fmt in ("%Y-%m-%d", "%Y%m%d"):
+        try:
+            return datetime.strptime(text, fmt).date().isoformat()
+        except ValueError:
+            continue
+    return None
+
+
+def _share_bar_prefers_horizontal(
+    cats: Sequence[str], values: Sequence[float | None], value_texts: Sequence[str]
+) -> bool:
+    """Use the full-width bar layout when a 308px category axis cannot stay legible."""
+    plotted = [(cat, text) for cat, value, text in zip(cats, values, value_texts) if value is not None]
+    if not plotted:
+        return False
+    if len(plotted) > _MAX_VERTICAL_BARS:
+        return True
+    slot = (308 - 2 * 20) / len(plotted)
+    label_budget = max(0.0, slot - 8.0)
+    return any(
+        max(_legend_text_w(cat), _legend_text_w(text)) > label_budget for cat, text in plotted
+    )
 
 
 def _timeseries_line(
@@ -1160,8 +1362,18 @@ def render_chart_template(
             return Markup("")
 
         de = _confidence_de_emphasize(confidence)
-        cats = [_cat_label(_cell(r, x_key)) for r in rows]
-        values = [_as_float(_cell(r, y_key)) for r in rows]
+        ordered_rows = list(rows)
+        if template == "trend_line":
+            date_keys = [_date_sort_key(_cell(row, x_key)) for row in ordered_rows]
+            if date_keys and all(key is not None for key in date_keys):
+                ordered_rows = [
+                    row
+                    for _, row in sorted(
+                        zip(date_keys, ordered_rows), key=lambda item: item[0]
+                    )
+                ]
+        cats = [_cat_label(_cell(r, x_key)) for r in ordered_rows]
+        values = [_as_float(_cell(r, y_key)) for r in ordered_rows]
         # Value labels are TYPE-AWARE via the shared fact-layer formatter: a percent
         # column reads "64.5%" (not the raw ratio "0.64"), money rounds to whole yuan,
         # counts group — exactly as the tables render the same key. This is the curated
@@ -1185,11 +1397,19 @@ def render_chart_template(
             cats, values, texts = cats[:_MAX_BARS], values[:_MAX_BARS], texts[:_MAX_BARS]
 
         if template == "share_bar":
-            svg = _vbar(cats, values, texts, title="", de_emphasize=de)
+            if _share_bar_prefers_horizontal(cats, values, texts):
+                vmax = max((v for v in values if v is not None), default=0.0)
+                hbar_rows = [
+                    (cat, v, txt, "var(--ink-strong)")
+                    for cat, v, txt in zip(cats, values, texts)
+                ]
+                svg = _hbar(hbar_rows, value_max=vmax, de_emphasize=de)
+            else:
+                svg = _vbar(cats, values, texts, title="", de_emphasize=de)
         elif template == "horizontal_bar":
             # Horizontal bars read far better than vertical when the category labels
             # are long CJK strings (search terms, SKU names): _hbar right-aligns and
-            # truncates the label while keeping the full text in each bar's <title>.
+            # truncates the label while keeping the full text in a custom tooltip.
             vmax = max((v for v in values if v is not None), default=0.0)
             hbar_rows = [
                 (cat, v, txt, "var(--ink-strong)") for cat, v, txt in zip(cats, values, texts)

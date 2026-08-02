@@ -12,10 +12,15 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["section_id", "curated_views"],
+        "required": ["section_id", "curated_views", "visual_coverage"],
         "properties": {
           "section_id": {"type": "string", "minLength": 1},
-          "curated_views": {"type": "array", "items": {"$ref": "view_spec.json"}}
+          "curated_views": {"type": "array", "items": {"$ref": "view_spec.json"}},
+          "visual_coverage": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {"$ref": "visual_coverage.json"}
+          }
         }
       }
     }

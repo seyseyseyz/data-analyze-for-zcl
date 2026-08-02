@@ -328,6 +328,50 @@ def test_drop_gate_failed_views_removes_labeled_view():
     assert [v["view_id"] for v in state["sections"]["生意大盘"]["curated_views"]] == ["v_ok"]
 
 
+def test_drop_gate_failed_view_records_structured_coverage_omission():
+    state = {
+        "sections": {
+            "生意大盘": {
+                "section_id": "生意大盘",
+                "curated_views": [
+                    {
+                        "view_id": "v_bad",
+                        "supports_claim": "c1",
+                        "template": "comparison_table",
+                    }
+                ],
+                "visual_coverage": [
+                    {
+                        "claim_id": "c1",
+                        "status": "retained",
+                        "view_ids": ["v_bad"],
+                        "reason_code": None,
+                        "reason": None,
+                    }
+                ],
+            }
+        }
+    }
+    hard = [
+        {
+            "code": "VIEW_SPEC_INVALID",
+            "claim_id": "v_bad",
+            "detail": "源表列不存在",
+        }
+    ]
+
+    assert nw._drop_gate_failed_views(state, hard) is True
+    assert state["sections"]["生意大盘"]["visual_coverage"] == [
+        {
+            "claim_id": "c1",
+            "status": "omitted",
+            "view_ids": [],
+            "reason_code": "dropped_by_gate",
+            "reason": "源表列不存在",
+        }
+    ]
+
+
 def test_drop_gate_failed_views_uses_positional_label_when_no_view_id():
     # A view with no view_id is labeled `{section_id}:curated_view[{idx}]` by the gate;
     # the drop must map that positional label back to the right view.

@@ -1,12 +1,11 @@
 """Persistent (常驻) pure-CSS anchored table of contents shared by both HTML reports.
 
-The single-file HTML contract forbids ``<script>`` (see
-``test_report_rendering.test_html_report_has_no_script_or_external_refs``), so the
-TOC is CSS-only: a sticky rail (a left column on wide viewports, a top strip on
-narrow) plus in-page anchor links and ``scroll-behavior: smooth``. There is no
-scroll-spy / active-section highlighting — that would require JavaScript, which
-the single-file guarantee bans. ``build_toc_nav`` is a pure, never-raise builder
-consumed by BOTH the fact-layer (Jinja) and narrative (hand-rolled) renderers.
+The TOC itself is CSS-only: a sticky rail (a left column on wide viewports, a top
+strip on narrow) plus in-page anchor links and ``scroll-behavior: smooth``. There
+is no scroll-spy / active-section highlighting. Narrative reports may carry the
+separate inline table-sorting script, but no external dependency. ``build_toc_nav``
+is a pure, never-raise builder consumed by BOTH the fact-layer (Jinja) and narrative
+(hand-rolled) renderers.
 """
 import re
 
@@ -19,6 +18,10 @@ from xhs_ceramics_analytics.reporting.html import (
 )
 
 _BANNED_HOST_TOKENS = ("claude", "codex", "gpt", "opus", "sonnet", "anthropic", "openai")
+
+
+def _without_embedded_image_payloads(html: str) -> str:
+    return re.sub(r"data:image/(?:gif|png);base64,[^\"']+", "", html, flags=re.IGNORECASE)
 
 
 def _results():
@@ -148,12 +151,38 @@ def test_narrative_html_has_persistent_toc_rail_with_resolving_anchors():
     assert anchors <= heading_ids
 
 
-def test_narrative_html_toc_is_persistent_and_smooth_with_no_script():
+def test_narrative_html_toc_is_persistent_and_smooth_without_script_dependency():
     html = render_markdown_document_html("# T\n\n## 一\n\n正文。\n")
     assert "position: sticky" in html
     assert "scroll-behavior: smooth" in html
-    assert "<script" not in html
+    nav = html.split("</nav>", 1)[0]
+    assert "<script" not in nav
+    assert '<script id="ca-table-sort">' in html
+    assert '(state + 1) % 3' in html
+    assert 'state === 1 ? "descending" : "ascending"' in html
+    assert 'event.key === "Enter" || event.key === " "' in html
+    assert "if (aMissing) return 1" in html
+    assert "if (bMissing) return -1" in html
+    assert "<script src=" not in html
     assert "http://" not in html and "https://" not in html
+
+
+def test_narrative_layout_gives_tables_more_room_and_prevents_vertical_headers():
+    html = render_markdown_document_html("# T\n\n## 经营诊断明细\n\n正文。\n")
+
+    assert "--toc-rail-w: 196px" in html
+    assert "--toc-gap: 32px" in html
+    assert "--toc-content: 1040px" in html
+    assert "--toc-content-wide: 1268px" in html
+    assert '.table-wrap table:has(col[data-col-kind]) {' in html
+    assert "width: max-content" in html
+    assert "min-width: 100%" in html
+    assert '.table-wrap th { white-space: nowrap; }' in html
+    assert 'col[data-col-kind="identity"]' in html
+    assert "width: 240px" in html
+    assert 'col[data-col-kind="number"]' in html
+    assert "width: 1%" in html
+    assert 'col[data-col-kind="flag"]' in html
 
 
 def test_narrative_html_without_subheadings_degrades_without_rail():
@@ -218,9 +247,11 @@ def test_fact_layer_toc_includes_priority_and_assistant_label():
     assert "分析助手" not in html
 
 
-def test_fact_layer_toc_keeps_no_script_and_tokenized_borders():
+def test_fact_layer_toc_keeps_only_tooltip_positioner_and_tokenized_borders():
     html = render_html(_results())
-    assert "<script" not in html
+    assert html.count("<script") == 1
+    assert '<script id="field-tooltip-position">' in html
+    assert "<script src=" not in html
     assert "http://" not in html and "https://" not in html
     assert "1px solid #EAEAEA" not in html
 
@@ -235,13 +266,13 @@ def test_fact_layer_toc_keeps_no_script_and_tokenized_borders():
 
 
 def test_fact_layer_rendered_html_is_host_neutral():
-    lowered = render_html(_results()).lower()
+    lowered = _without_embedded_image_payloads(render_html(_results())).lower()
     for banned in _BANNED_HOST_TOKENS:
         assert banned not in lowered, f"host token {banned!r} leaked into fact-layer HTML"
 
 
 def test_narrative_rendered_html_is_host_neutral():
     md = "# 报告标题\n\n## 生意大盘\n\n正文一。\n\n### 拆解\n\n正文二。\n"
-    lowered = render_markdown_document_html(md).lower()
+    lowered = _without_embedded_image_payloads(render_markdown_document_html(md)).lower()
     for banned in _BANNED_HOST_TOKENS:
         assert banned not in lowered, f"host token {banned!r} leaked into narrative HTML"

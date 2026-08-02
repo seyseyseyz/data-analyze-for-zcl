@@ -5,7 +5,7 @@ like「开窑/上新 + 系列名 + 器型 + 时间」and「买前确认区:尺�
 merchants cited as directly actionable. This feature adds them as a static, reproducible
 appendix: pure domain knowledge, carrying NO data and NO bare numbers (fill-in-the-blank
 「占位」slots only), so it ships identically every run and never touches the numeric-trust
-boundary. Host-neutral. Rendered as a 可复用内容模板 section before the cannot_say block.
+boundary. Host-neutral. Rendered before the deterministic data-gap block.
 """
 import re
 
@@ -31,7 +31,7 @@ def test_library_is_nonempty_number_free_and_host_neutral():
         assert tok not in low
 
 
-def test_templates_render_into_bundle_before_cannot_say():
+def test_templates_render_before_data_gap_section():
     bundle = {
         "facts_hash": "h",
         "headline": "标题。",
@@ -39,11 +39,15 @@ def test_templates_render_into_bundle_before_cannot_say():
         "sections": [{"section_id": "core", "title": "生意大盘", "claims": [], "curated_views": []}],
         "cannot_say": ["暂无法把订单归因到具体笔记。"],
     }
-    md = nr.bundle_to_markdown(bundle, {"facts_hash": "h", "facts": {}})
+    md = nr.bundle_to_markdown(
+        bundle,
+        {"facts_hash": "h", "facts": {}, "blocked_modules": ["comment_demand_mining"]},
+    )
     assert "## 可复用内容模板" in md
-    assert "## 暂时答不了的问题" in md
-    # the playbook precedes the open-questions caveat block
-    assert md.index("## 可复用内容模板") < md.index("## 暂时答不了的问题")
+    assert "## 缺哪些数据，补齐后能分析什么" in md
+    # the playbook precedes the operator-facing data request block
+    assert md.index("## 可复用内容模板") < md.index("## 缺哪些数据，补齐后能分析什么")
+    assert "## 暂时答不了的问题" not in md
     # a known template surfaces
     assert "买前确认区" in md
 

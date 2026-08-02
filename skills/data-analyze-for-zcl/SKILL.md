@@ -40,7 +40,14 @@ Use this skill when the user provides Xiaohongshu (小红书 / 千帆) exported 
    the date range from the exports when possible; if the shop name remains unavailable,
    use the neutral `店铺` fallback.
 
-5. **Build** — run `scripts/xhs-ca build <files...>`. If header-mapping fails, read
+5. **Build** — first run the read-only preflight `scripts/xhs-ca inspect
+   <files-or-directories...> --out <state-dir>/inspection.json`. Treat it as provisional:
+   verify inferred workbook date range and shop name, file hashes/duplicate groups,
+   per-table input/accepted/duplicate/conflict rows, mapping diagnostics, coverage and
+   exact next-data-needed. Prefer workbook dates over parent-folder labels and never
+   mutate source exports. Then run `scripts/xhs-ca build <files...>`; the formal
+   `build_manifest.json` must agree with the inspected source set and inference. A
+   mismatch is a blocker, not permission to hand-edit the manifest. If header-mapping fails, read
    `assets/xhs-ca/references/xhs_glossary.md` and
    `assets/xhs-ca/references/data_contract/_index.md`, then inspect the unmapped columns
    through the **字段映射自愈** risk gate below. Keep optional or safely degradable fields
@@ -87,8 +94,11 @@ narrative workflow and is the only default delivery surface:
    spine adjudication → per-domain writer/challenger/adjudicator → cross-domain synthesis →
    independent visual curation → deterministic gate → three independent review lenses →
    continuity → candidate HTML → merchant final review. Always dispatch the exact pending
-   `task_id` values returned by `status --json`; ingest every required result with
-   `--task-id`, and never advance over a missing sidecar. A cache hit may skip agent work,
+   `task_id` values returned by `status --json`. Use each task's `result_path`, `schema_path`,
+   enum hints, controller fields, current round, dynamic allowed values and contract version
+   as its dispatch contract. Reserve only real capacity, persist dispatch/agent transitions,
+   validate each result read-only, then ingest with `--task-id`; never advance over a
+   missing sidecar. A cache hit may skip agent work,
    but authorization was still obtained first.
    If agent dispatch hits a concurrency limit, first inspect the already-dispatched
    agents, ingest their finished results, close completed agents to release capacity,
@@ -119,6 +129,34 @@ no chart reached the HTML at all, `finalize` records
 `degradation_reason=visuals_missing` — surface that in the step-10 summary rather
 than presenting a silently prose-only narrative as complete.
 
+Every decision-critical claim must have one structured `visual_coverage` record.
+Retained records name real, matching and renderable `view_id` values; omissions use an
+allowed reason code plus a specific reason. Gate/review removals become
+`dropped_by_gate`/`dropped_by_review`, never a silent empty list. Every retained view
+appears exactly once in final HTML as an escaped `data-view-id`.
+
+The single HTML must also retain a deterministic **经营诊断明细** layer for available,
+non-empty high-value search-term, content/note, SKU, channel, audience and refund tables.
+Curated-view rejection must not erase those merchant-useful diagnostics. Long tables may
+be capped/folded, and numeric columns may sort interactively using embedded deterministic
+sort ranks; sorting must remain offline and must not expose unformatted source ratios.
+
+The final report must replace a vague “暂时答不了的问题” section with deterministic
+**缺哪些数据，补齐后能分析什么** derived from `blocked_modules`. Merge blocked tasks that require
+the same data package, then state (1) what data to provide, (2) the minimum recommended
+fields/content, and (3) which analyses become available afterward. Never expose internal
+task slugs or raw table identifiers. Write for a non-specialist merchant: prefer everyday
+Chinese and expand unavoidable abbreviations on first use, such as `成交额（GMV）` and
+`规格编号（SKU）`. `cannot_say` remains an internal safety boundary and must not be rendered
+as the merchant-facing data request.
+
+Split that module into two reader-facing layers. **当前缺失数据** comes from blocked tasks.
+**可选增强数据** may list only capabilities already implemented by the task registry when
+deterministic result fields or the source-table inventory prove that the optional input is absent.
+An existing field whose real value is zero is not missing. Capability wording must stay narrow:
+`to_live_count` and `to_live_gmv` support笔记引流直播间访问/成交分析，但不代表系统已支持
+独立的直播总览、直播间停留或直播商品漏斗；不得承诺后者。
+
 8. **Custom integrated reports** — only when the data falls outside the built-in task
    registry: write the internal Markdown source, then render one final HTML with
    `scripts/xhs-ca render-html <report.md>`. For built-in tasks, use step 7's single
@@ -132,10 +170,14 @@ than presenting a silently prose-only narrative as complete.
    neutral `店铺` fallback, and no platform name leads it. Do not present sidecars,
    Markdown, data-quality inspection output, or a fact-layer HTML as additional
    deliverables. Unless the run records `degradation_reason=visuals_missing`, verify the
-   final HTML contains a useful chart when chartable evidence exists (for example,
-   `<svg` count ≥1). A prose-only finalized report without that degradation reason
-   is a defect. If rendering fails, report the exact error; do not silently substitute
-   Markdown.
+   final HTML contains a useful chart when chartable evidence exists. Verify exact
+   `<title>` and unique `<h1>`, zero unresolved `{tN}`, zero external resource dependency,
+   and one `data-view-id` marker for every retained view. The merchant-reviewed candidate
+   bundle/HTML hashes must match the final artifact, and the production directory must
+   contain exactly one HTML. An unrelated fallback SVG does not clear a recorded
+   critical-claim omission. A prose-only finalized report without the proper degradation
+   reason is a defect. If rendering fails, report the exact error; do not silently
+   substitute Markdown.
 
 10. **Summarize** — present findings with evidence tier, key numbers, report caveats,
     next-data-needed, recommended action, narrative workflow status, and the one final
@@ -242,6 +284,9 @@ HAR/platform field catalog into the report.
 # Build database from multiple export files
 <skill-dir>/scripts/xhs-ca build notes.xlsx orders.xlsx skus.xlsx
 
+# Read-only provisional inspection before build
+<skill-dir>/scripts/xhs-ca inspect <files-or-directories...> --out <state-dir>/inspection.json
+
 # Build with comments only
 <skill-dir>/scripts/xhs-ca build comments.xlsx
 
@@ -259,6 +304,13 @@ HAR/platform field catalog into the report.
 
 # Prepare the authorized quality-first merchant report from the validated sidecar pair.
 <skill-dir>/scripts/xhs-ca narrative prepare --run-dir <run-dir> --results <state-dir>/results.json --facts <state-dir>/facts.json --name 店铺名日期范围经营诊断报告 --multi-agent-authorized
+
+# Durable dispatch loop: reserve -> record -> validate -> ingest
+<skill-dir>/scripts/xhs-ca narrative reserve --run-dir <run-dir> --capacity <n> --json
+<skill-dir>/scripts/xhs-ca narrative record-dispatch --run-dir <run-dir> --task-id <task_id> --agent-id <agent_id> --result-path <file>
+<skill-dir>/scripts/xhs-ca narrative record-agent-state --run-dir <run-dir> --task-id <task_id> --status result_ready
+<skill-dir>/scripts/xhs-ca narrative validate --run-dir <run-dir> --stage <stage> --task-id <task_id> --source <file> --json
+<skill-dir>/scripts/xhs-ca narrative ingest --run-dir <run-dir> --stage <stage> --task-id <task_id> --source <file>
 
 # Explicit-decline fallback: initialize deterministic-only state, then render one HTML.
 <skill-dir>/scripts/xhs-ca narrative prepare --run-dir <run-dir> --results <state-dir>/results.json --facts <state-dir>/facts.json --name 店铺名日期范围经营诊断报告 --multi-agent-declined

@@ -6,12 +6,16 @@ but never spawns sub-agents. The host agent drives it (see runbook.md).
 from __future__ import annotations
 
 import copy
+import fcntl
 import hashlib
 import json
 import os
 import re
+import stat
 import tempfile
-from functools import lru_cache
+from contextlib import contextmanager
+from functools import lru_cache, wraps
+from html.parser import HTMLParser
 from pathlib import Path
 
 from jsonschema import Draft202012Validator
@@ -25,8 +29,10 @@ from xhs_ceramics_analytics.paths import (
 )
 from xhs_ceramics_analytics.reporting.factcheck_gate import run_gate
 from xhs_ceramics_analytics.reporting.factcheck_gate import (
+    _decision_critical_claim_ids,
     _view_label as _gate_view_label,
 )
+from xhs_ceramics_analytics.reporting.data_gaps import data_gap_markdown
 from xhs_ceramics_analytics.reporting.html import render_markdown_document_html
 from xhs_ceramics_analytics.reporting.narrative_render import (
     apply_continuity_edits,
@@ -41,7 +47,7 @@ from xhs_ceramics_analytics.reporting.report_telemetry import (
 from xhs_ceramics_analytics.reporting.view_spec import _template_of
 
 MAX_FAN_AGENTS = 6
-MAX_GATE_ROUNDS = 2
+MAX_GATE_ROUNDS = 5
 # Review-stage patch budget (spec §Multi-Reviewer Review): a view whose 3 reviewers
 # reach no keep/drop majority is re-authored at most this many times; a view still
 # unconverged after the budget is spent is dropped, never blocking the report.
@@ -56,6 +62,7 @@ _SINGLE_HTML_WORKFLOWS = {
 }
 
 _STATE_FILE = "state.json"
+_STATE_LOCK_FILE = ".state.lock"
 _RESULT_TABLES_FILE = "result_tables.json"
 _SLUG_STRIP = re.compile(r"[^\w一-鿿]+")
 _TERMINAL_STAGES = {"finalized", "blocked", "delivery_failed"}
@@ -254,6 +261,28 @@ def _write_state(run_dir: Path, state: dict) -> None:
             temporary.unlink()
 
 
+@contextmanager
+def _state_lock(run_dir: Path):
+    """Serialize read-modify-write transactions across host processes and threads."""
+    run_dir = Path(run_dir)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    with (run_dir / _STATE_LOCK_FILE).open("a+", encoding="utf-8") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def _serialized_state_mutation(function):
+    @wraps(function)
+    def wrapped(run_dir, *args, **kwargs):
+        with _state_lock(Path(run_dir)):
+            return function(run_dir, *args, **kwargs)
+
+    return wrapped
+
+
 def _write_json_atomic(path: Path, payload: dict) -> None:
     """Atomically publish a JSON artifact beside its final destination."""
     path = Path(path)
@@ -313,6 +342,10 @@ def _stable_hash(value) -> str:
     return hashlib.sha256(blob).hexdigest()
 
 
+def _sha256_bytes(value: bytes) -> str:
+    return hashlib.sha256(value).hexdigest()
+
+
 def _brief_hash(path) -> str:
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
@@ -354,6 +387,12 @@ def _set_stage_tasks(state: dict, stage: str, tasks) -> None:
             },
         )
         item.setdefault("status", "pending")
+        item.setdefault("dispatch_status", "pending")
+        item.setdefault("attempt", 0)
+        item.setdefault(
+            "result_path",
+            str(Path(item["brief"]).parent.parent / "results" / f"{Path(item['brief']).stem}.json"),
+        )
         items.append(item)
     state["_tasks"] = {"stage": stage, "items": items}
 
@@ -374,6 +413,133 @@ def _pending_tasks(state: dict, stage: str | None = None) -> list[dict]:
 def _complete_task(state: dict, task: dict | None) -> None:
     if task is not None:
         task["status"] = "completed"
+        task["dispatch_status"] = "ingested" if task.get("agent_id") else "closed"
+
+
+_IN_FLIGHT_DISPATCH_STATES = {"reserved", "dispatched", "result_ready", "ingested"}
+
+
+def _dispatch_task(state: dict, task_id: str) -> dict:
+    matches = [
+        task
+        for task in _stage_tasks(state)
+        if str(task.get("task_id")) == str(task_id)
+    ]
+    if len(matches) != 1:
+        raise ValueError(f"unknown task_id for current stage: {task_id}")
+    return matches[0]
+
+
+@_serialized_state_mutation
+def reserve_tasks(run_dir, *, capacity: int) -> list[dict]:
+    """Reserve only the tasks that fit in the host's currently available slots."""
+    if capacity < 1:
+        raise ValueError("capacity must be at least 1")
+    run_dir = Path(run_dir)
+    state = _load_state(run_dir)
+    if state is None:
+        raise FileNotFoundError(f"no run at {run_dir}")
+    tasks = _stage_tasks(state)
+    in_flight = sum(
+        1
+        for task in tasks
+        if task.get("dispatch_status") in _IN_FLIGHT_DISPATCH_STATES
+    )
+    slots = max(capacity - in_flight, 0)
+    reserved: list[dict] = []
+    for task in tasks:
+        if slots == 0:
+            break
+        if task.get("status") == "completed":
+            continue
+        dispatch_status = task.get("dispatch_status") or "pending"
+        if dispatch_status not in {"pending", "failed", "closed"}:
+            continue
+        task["dispatch_status"] = "reserved"
+        task["attempt"] = int(task.get("attempt") or 0) + 1
+        task.pop("agent_id", None)
+        task.pop("last_error", None)
+        reserved.append(_task_with_contract(run_dir, state, task))
+        slots -= 1
+    if reserved:
+        _write_state(run_dir, state)
+    return reserved
+
+
+@_serialized_state_mutation
+def record_dispatch(run_dir, *, task_id: str, agent_id: str, result_path) -> dict:
+    run_dir = Path(run_dir)
+    state = _load_state(run_dir)
+    if state is None:
+        raise FileNotFoundError(f"no run at {run_dir}")
+    task = _dispatch_task(state, task_id)
+    if task.get("dispatch_status") != "reserved":
+        raise ValueError("task must be reserved before recording a dispatch")
+    if not str(agent_id).strip():
+        raise ValueError("agent_id must be non-empty")
+    if any(
+        other is not task and str(other.get("agent_id") or "") == str(agent_id)
+        for other in _stage_tasks(state)
+    ):
+        raise ValueError(f"agent_id is already assigned: {agent_id}")
+    canonical_result_path = Path(result_path).resolve()
+    if any(
+        other is not task
+        and other.get("result_path")
+        and Path(str(other["result_path"])).resolve() == canonical_result_path
+        for other in _stage_tasks(state)
+    ):
+        raise ValueError(f"result_path is already assigned: {canonical_result_path}")
+    task["agent_id"] = str(agent_id)
+    task["result_path"] = str(canonical_result_path)
+    task["dispatch_status"] = "dispatched"
+    _write_state(run_dir, state)
+    return _task_with_contract(run_dir, state, task)
+
+
+@_serialized_state_mutation
+def release_task(run_dir, *, task_id: str) -> dict:
+    run_dir = Path(run_dir)
+    state = _load_state(run_dir)
+    if state is None:
+        raise FileNotFoundError(f"no run at {run_dir}")
+    task = _dispatch_task(state, task_id)
+    if task.get("dispatch_status") != "reserved" or task.get("agent_id"):
+        raise ValueError("only an unassigned reservation can be released")
+    task["dispatch_status"] = "pending"
+    _write_state(run_dir, state)
+    return _task_with_contract(run_dir, state, task)
+
+
+@_serialized_state_mutation
+def record_agent_state(
+    run_dir,
+    *,
+    task_id: str,
+    status: str,
+    error: str | None = None,
+) -> dict:
+    if status not in {"result_ready", "failed", "closed"}:
+        raise ValueError("agent status must be result_ready, failed, or closed")
+    run_dir = Path(run_dir)
+    state = _load_state(run_dir)
+    if state is None:
+        raise FileNotFoundError(f"no run at {run_dir}")
+    task = _dispatch_task(state, task_id)
+    current = task.get("dispatch_status")
+    if status == "result_ready" and current != "dispatched":
+        raise ValueError("only a dispatched task can become result_ready")
+    if status == "failed" and current not in {"reserved", "dispatched", "result_ready"}:
+        raise ValueError("only an in-flight task can fail")
+    if status == "closed" and not (
+        task.get("status") == "completed" or current == "failed"
+    ):
+        raise ValueError("close only an ingested or failed task")
+    task["dispatch_status"] = status
+    if error not in (None, ""):
+        task["last_error"] = str(error)
+    _write_state(run_dir, state)
+    return _task_with_contract(run_dir, state, task)
 
 
 def _task_for_ingest(
@@ -405,11 +571,6 @@ def _task_for_ingest(
             and str(task.get("target_id")) != str(target_id)
         ):
             return None
-        if source is not None:
-            source_path = Path(source)
-            brief_path = Path(task.get("brief", ""))
-            if brief_path != source_path and brief_path.name != source_path.name:
-                return None
         return task
 
     if source is not None:
@@ -446,6 +607,97 @@ def _task_for_ingest(
     ):
         return pending[0]
     return None
+
+
+def _enforce_agent_ingest_contract(
+    state: dict,
+    stage: str,
+    *,
+    source=None,
+    text=None,
+    task_id=None,
+) -> str | None:
+    """Validate and atomically read a dispatched agent's registered result file."""
+    agent_tasks = [
+        task
+        for task in _pending_tasks(state, stage)
+        if task.get("agent_id")
+        and task.get("dispatch_status") in {"dispatched", "result_ready"}
+    ]
+    if agent_tasks and task_id in (None, ""):
+        raise ValueError("task_id is required while the current stage has dispatched agent tasks")
+    task = _task_for_ingest(state, stage, source=source, task_id=task_id)
+    if agent_tasks and task is None:
+        raise ValueError("task_id must match one pending task in the current stage")
+    if task is None or not task.get("agent_id"):
+        return None
+    if task.get("dispatch_status") != "result_ready":
+        raise ValueError("agent task must be result_ready before ingest")
+    if source is None:
+        raise ValueError("agent ingest must read the registered result_path")
+    registered = Path(str(task.get("result_path") or ""))
+    provided = Path(source)
+    if registered.is_symlink() or provided.is_symlink():
+        raise ValueError("agent ingest result_path must not be a symbolic link")
+    expected = registered.resolve()
+    actual = provided.resolve()
+    if actual != expected:
+        raise ValueError("agent ingest source must match the registered result_path")
+    if text is not None:
+        raise ValueError("agent ingest cannot use inline text")
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(registered, flags)
+    except FileNotFoundError as exc:
+        raise ValueError(
+            "agent ingest registered result_path must be an existing file"
+        ) from exc
+    except OSError as exc:
+        raise ValueError("agent ingest could not open the registered result_path") from exc
+    try:
+        file_stat = os.fstat(descriptor)
+        if not stat.S_ISREG(file_stat.st_mode):
+            raise ValueError("agent ingest registered result_path must be a regular file")
+        file_identity = (int(file_stat.st_dev), int(file_stat.st_ino))
+        with os.fdopen(descriptor, mode="r", encoding="utf-8") as handle:
+            descriptor = -1
+            verified_text = handle.read()
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+    if any(
+        other is not task
+        and (
+            other.get("result_file_device"),
+            other.get("result_file_inode"),
+        )
+        == file_identity
+        for other in _stage_tasks(state, stage)
+    ):
+        raise ValueError("agent ingest result file was already ingested by another task")
+    if any(
+        other is not task
+        and other.get("result_path")
+        and _same_regular_file_identity(
+            Path(str(other["result_path"])),
+            file_identity,
+        )
+        for other in _stage_tasks(state, stage)
+    ):
+        raise ValueError("agent ingest result_path aliases another task's result file")
+    task["result_file_device"], task["result_file_inode"] = file_identity
+    return verified_text
+
+
+def _same_regular_file_identity(path: Path, identity: tuple[int, int]) -> bool:
+    try:
+        file_stat = path.stat(follow_symlinks=False)
+    except OSError:
+        return False
+    return stat.S_ISREG(file_stat.st_mode) and (
+        int(file_stat.st_dev),
+        int(file_stat.st_ino),
+    ) == identity
 
 
 def _write_seed_brief(run_dir: Path, capped_slices: list[dict], report_name: str) -> None:
@@ -826,15 +1078,24 @@ def _write_visual_curation_brief(run_dir: Path, state: dict) -> Path:
         "",
         "你只负责把已经裁决的 claim 配成最合适的表或图，不改 claim、不写新结论。",
         "每个视图必须绑定 supports_claim 和真实 source.table；columns 只能来自表目录。",
-        "仅选列、排序、TopN，不聚合、不重算。列名使用确定性字段标签；字段解释不直接铺在 HTML 中。",
+        "仅选列、排序、TopN，不聚合、不重算。column_labels 只把真实字段翻译成商家可读纯文字，",
+        "不得改指标定义、单位、口径或数值；字段解释不直接铺在 HTML 中。",
         "没有增量阅读价值的视图不要放，避免把原始数据整表倾倒给用户。",
+        "确定性渲染层会另行保留经营诊断明细；搜索词、笔记、SKU、渠道、人群、退款等高价值",
+        "结果表不得删除。策展视图负责提炼重点，不负责裁掉这些诊断明细。",
+        "每个 decision-critical claim 必须写一条 visual_coverage：要么 retained 并列出",
+        "同 claim 的 view_ids，要么 omitted 并给出结构化 reason_code 与具体 reason。",
         "",
-        '返回 JSON only: {"sections":[{"section_id","curated_views":[...]}]}',
+        '返回 JSON only: {"sections":[{"section_id","curated_views":[...],'
+        '"visual_coverage":[...]}]}',
         "",
         "```json",
         json.dumps(
             {
                 "sections": list((state.get("sections") or {}).values()),
+                "decision_critical_claim_ids": sorted(
+                    _decision_critical_claim_ids(_bundle_from_state(state))
+                ),
                 "available_tables": _tables_catalog(tables),
             },
             ensure_ascii=False,
@@ -1182,6 +1443,7 @@ _QUALITY_STAGE_SCHEMAS = {
     "merchant_review": "merchant_final_review.json",
 }
 _QUALITY_REVISION_STAGES = {"patch", "merchant_patch"}
+_TASK_CONTRACT_VERSION = 1
 
 
 @lru_cache(maxsize=1)
@@ -1241,6 +1503,346 @@ def _validate_quality_stage_payload(stage: str, payload) -> None:
     schema_name = _QUALITY_STAGE_SCHEMAS.get(stage)
     if schema_name is not None:
         _validate_against_quality_schema(payload, schema_name)
+
+
+@lru_cache(maxsize=None)
+def _quality_schema_enum_hints(schema_name: str) -> dict[str, list]:
+    def collect(schema: dict, prefix: str, seen: frozenset[str]) -> dict[str, list]:
+        hints: dict[str, list] = {}
+        ref = schema.get("$ref")
+        if isinstance(ref, str) and ref and ref not in seen:
+            ref_path = (_SCHEMA_DIR / ref).resolve()
+            if ref_path.is_file():
+                referenced = json.loads(ref_path.read_text(encoding="utf-8"))
+                hints.update(collect(referenced, prefix, seen | {ref}))
+        enum = schema.get("enum")
+        if isinstance(enum, list) and prefix:
+            hints[prefix] = list(enum)
+        properties = schema.get("properties")
+        if isinstance(properties, dict):
+            for key, child in properties.items():
+                if isinstance(child, dict):
+                    child_prefix = f"{prefix}.{key}" if prefix else str(key)
+                    hints.update(collect(child, child_prefix, seen))
+        items = schema.get("items")
+        if isinstance(items, dict):
+            hints.update(collect(items, f"{prefix}[]", seen))
+        for keyword in ("oneOf", "anyOf", "allOf"):
+            branches = schema.get(keyword)
+            if isinstance(branches, list):
+                for branch in branches:
+                    if isinstance(branch, dict):
+                        hints.update(collect(branch, prefix, seen))
+        return hints
+
+    schema_path = (_SCHEMA_DIR / schema_name).resolve()
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    return collect(schema, "", frozenset({schema_name}))
+
+
+def _quality_schema_name(stage: str) -> str | None:
+    if stage in _QUALITY_REVISION_STAGES:
+        return "targeted_revision.json"
+    return _QUALITY_STAGE_SCHEMAS.get(stage)
+
+
+def _task_current_round(state: dict, stage: str) -> int:
+    if stage == "patch":
+        return int(state.get("_patch_round") or 0)
+    if stage == "merchant_patch":
+        return int(state.get("_merchant_revision_rounds") or 0)
+    if stage == "review":
+        return int(state.get("_review_patch_rounds") or 0)
+    return 0
+
+
+def _task_with_contract(run_dir: Path, state: dict, task: dict) -> dict:
+    enriched = dict(task)
+    stage = str(task.get("stage") or state.get("stage") or "")
+    schema_name = (
+        _quality_schema_name(stage)
+        if state.get("workflow_version") == QUALITY_WORKFLOW_VERSION
+        else None
+    )
+    result_path = task.get("result_path")
+    if result_path in (None, ""):
+        brief_stem = Path(task.get("brief") or task.get("task_id") or "result").stem
+        result_path = Path(run_dir) / "results" / f"{brief_stem}.json"
+    controller_fields = {
+        key: task[key]
+        for key in (
+            "task_id",
+            "candidate_id",
+            "section_id",
+            "lens",
+            "target_type",
+            "target_id",
+            "source_blocker_ids",
+        )
+        if task.get(key) not in (None, "")
+    }
+    current_round = _task_current_round(state, stage)
+    if stage in _QUALITY_REVISION_STAGES:
+        controller_fields["round"] = current_round
+    dynamic_allowed = {
+        "spine_link_ids": _spine_link_ids(state),
+    }
+    patch_review = state.get("_patch_review")
+    if isinstance(patch_review, dict):
+        dynamic_allowed["source_blocker_ids"] = sorted(
+            {
+                str(blocker_id)
+                for issue in (patch_review.get("issues") or [])
+                if isinstance(issue, dict)
+                for blocker_id in (issue.get("source_blocker_ids") or [])
+                if blocker_id not in (None, "")
+            }
+        )
+    enriched.update(
+        {
+            "result_path": str(result_path),
+            "schema_path": str(_SCHEMA_DIR / schema_name) if schema_name else None,
+            "allowed_enums": (
+                _quality_schema_enum_hints(schema_name) if schema_name else {}
+            ),
+            "controller_fields": controller_fields,
+            "current_round": current_round,
+            "dynamic_allowed": dynamic_allowed,
+            "contract_version": _TASK_CONTRACT_VERSION,
+        }
+    )
+    return enriched
+
+
+def _bind_controller_field(payload: dict, field: str, expected) -> dict:
+    if expected in (None, ""):
+        return payload
+    actual = payload.get(field)
+    if actual not in (None, "") and str(actual) != str(expected):
+        raise ValueError(
+            f"controller field {field!r} conflicts with task contract: "
+            f"expected {expected!r}, got {actual!r}"
+        )
+    return {**payload, field: expected}
+
+
+def _payload_with_controller_fields(
+    state: dict,
+    stage: str,
+    task: dict,
+    payload,
+):
+    if stage in _QUALITY_REVISION_STAGES:
+        if not isinstance(payload, list):
+            return payload
+        normalized = []
+        current_round = _task_current_round(state, stage)
+        for revision in payload:
+            if not isinstance(revision, dict):
+                normalized.append(revision)
+                continue
+            item = revision
+            for field in ("target_type", "target_id", "source_blocker_ids"):
+                item = _bind_controller_field(item, field, task.get(field))
+            item = _bind_controller_field(item, "round", current_round)
+            normalized.append(item)
+        return normalized
+    if not isinstance(payload, dict):
+        return payload
+    normalized = payload
+    bindings = {
+        "candidate_id": task.get("candidate_id") if stage == "seed" else None,
+        "section_id": task.get("section_id"),
+        "lens": task.get("lens") if stage == "review" else None,
+    }
+    for field, expected in bindings.items():
+        normalized = _bind_controller_field(normalized, field, expected)
+    return normalized
+
+
+def _validate_quality_task_output(
+    state: dict,
+    stage: str,
+    payload,
+    *,
+    source=None,
+    section_id=None,
+    lens=None,
+    task_id=None,
+) -> tuple[dict, object, list[dict]]:
+    parsed_section = payload.get("section_id") if isinstance(payload, dict) else None
+    task = _task_for_ingest(
+        state,
+        stage,
+        source=source,
+        section_id=(section_id or parsed_section) if task_id in (None, "") else None,
+        lens=(lens or (payload.get("lens") if isinstance(payload, dict) else None))
+        if task_id in (None, "")
+        else None,
+        task_id=task_id,
+    )
+    if task is None:
+        raise ValueError(f"quality stage {stage!r} output does not identify one pending task")
+    normalized = _payload_with_controller_fields(state, stage, task, payload)
+    _validate_quality_stage_payload(stage, normalized)
+    if stage == "visual_curation":
+        _validate_visual_curation_coverage(state, normalized)
+    return task, normalized, []
+
+
+def _validate_visual_curation_coverage(state: dict, payload: dict) -> None:
+    """Reject semantically incomplete visual curation before task completion."""
+    bundle = _bundle_from_state(state)
+    critical = _decision_critical_claim_ids(bundle)
+    section_ids: set[str] = set()
+    claim_sections: dict[str, str] = {}
+    for section in bundle.get("sections") or []:
+        if not isinstance(section, dict) or not section.get("section_id"):
+            continue
+        section_id = str(section["section_id"])
+        section_ids.add(section_id)
+        for claim in section.get("claims") or []:
+            if not isinstance(claim, dict) or not claim.get("claim_id"):
+                continue
+            claim_id = str(claim["claim_id"])
+            previous = claim_sections.setdefault(claim_id, section_id)
+            if previous != section_id:
+                raise ValueError(
+                    f"claim {claim_id} belongs to multiple sections: "
+                    f"{previous}, {section_id}"
+                )
+    claim_ids = set(claim_sections)
+    views: dict[str, dict] = {}
+    coverage: dict[str, dict] = {}
+    duplicates: set[str] = set()
+    payload_sections: set[str] = set()
+    for section in payload.get("sections") or []:
+        if not isinstance(section, dict):
+            continue
+        section_id = str(section.get("section_id") or "")
+        if section_id not in section_ids:
+            raise ValueError(f"visual curation cites unknown section: {section_id}")
+        if section_id in payload_sections:
+            raise ValueError(f"visual curation has duplicate section: {section_id}")
+        payload_sections.add(section_id)
+        for view in section.get("curated_views") or []:
+            if isinstance(view, dict) and view.get("view_id"):
+                view_id = str(view["view_id"])
+                view_section = str(view.get("section_id") or "")
+                if view_section != section_id:
+                    raise ValueError(
+                        f"view {view_id} belongs to section {view_section}, "
+                        f"not {section_id}"
+                    )
+                supports_claim = str(view.get("supports_claim") or "")
+                claim_section = claim_sections.get(supports_claim)
+                if claim_section is not None and claim_section != section_id:
+                    raise ValueError(
+                        f"view {view_id} supports claim {supports_claim} from section "
+                        f"{claim_section}, not {section_id}"
+                    )
+                views[view_id] = view
+        for record in section.get("visual_coverage") or []:
+            if not isinstance(record, dict) or not record.get("claim_id"):
+                continue
+            claim_id = str(record["claim_id"])
+            claim_section = claim_sections.get(claim_id)
+            if claim_section is not None and claim_section != section_id:
+                raise ValueError(
+                    f"claim {claim_id} belongs to section {claim_section}, "
+                    f"not {section_id}"
+                )
+            if claim_id in coverage:
+                duplicates.add(claim_id)
+            coverage[claim_id] = record
+    if duplicates:
+        raise ValueError(
+            "visual coverage duplicates claim_id: " + ", ".join(sorted(duplicates))
+        )
+    unknown = sorted(set(coverage) - claim_ids)
+    if unknown:
+        raise ValueError("visual coverage cites unknown claim: " + ", ".join(unknown))
+    missing = sorted(critical - set(coverage))
+    if missing:
+        raise ValueError(
+            "decision-critical claim has no visual coverage: " + ", ".join(missing)
+        )
+    for claim_id, record in coverage.items():
+        if record.get("status") != "retained":
+            continue
+        for view_id in record.get("view_ids") or []:
+            view = views.get(str(view_id))
+            if not isinstance(view, dict) or str(view.get("supports_claim") or "") != claim_id:
+                raise ValueError(
+                    f"visual coverage for {claim_id} references a missing or mismatched view: "
+                    f"{view_id}"
+                )
+    for view_id, view in views.items():
+        claim_id = str(view.get("supports_claim") or "")
+        record = coverage.get(claim_id)
+        if (
+            not isinstance(record, dict)
+            or record.get("status") != "retained"
+            or view_id not in {str(value) for value in record.get("view_ids") or []}
+        ):
+            raise ValueError(f"view {view_id} is not retained by visual coverage")
+
+
+def validate_output(
+    run_dir,
+    *,
+    stage: str,
+    source=None,
+    text=None,
+    section_id=None,
+    lens=None,
+    task_id=None,
+) -> dict:
+    """Validate one task result without changing run state or task status."""
+    run_dir = Path(run_dir)
+    state = _load_state(run_dir)
+    if state is None:
+        raise FileNotFoundError(f"no run at {run_dir}")
+    allowed = _EXPECTED_STATUS.get(stage)
+    if allowed is None:
+        raise ValueError(f"unknown stage {stage!r}")
+    if state.get("stage") not in allowed:
+        raise ValueError(
+            f"cannot validate {stage!r} while run is at stage {state.get('stage')!r}"
+        )
+    if text is None:
+        if source is None:
+            raise ValueError("provide either source or text")
+        text = Path(source).read_text(encoding="utf-8")
+    payload = extract_json(text)
+    if state.get("workflow_version") == QUALITY_WORKFLOW_VERSION:
+        task, payload, diagnostics = _validate_quality_task_output(
+            state,
+            stage,
+            payload,
+            source=source,
+            section_id=section_id,
+            lens=lens,
+            task_id=task_id,
+        )
+    else:
+        task = _task_for_ingest(
+            state,
+            stage,
+            source=source,
+            section_id=section_id,
+            lens=lens,
+            task_id=task_id,
+        )
+        if _stage_tasks(state, stage) and task is None:
+            raise ValueError(f"{stage} output does not identify one pending task")
+        diagnostics = []
+    return {
+        "valid": True,
+        "task_id": task.get("task_id") if task is not None else None,
+        "payload": payload,
+        "diagnostics": diagnostics,
+    }
 
 
 def _scan_balanced(text: str):
@@ -1402,6 +2004,7 @@ def _merge_section_fields(state: dict, section_patch: dict) -> None:
         "body",
         "claims",
         "curated_views",
+        "visual_coverage",
         "spine_callbacks",
         "spine_dissent",
         "adjudication_notes",
@@ -1414,6 +2017,54 @@ def _merge_section_fields(state: dict, section_patch: dict) -> None:
         **{key: value for key, value in section_patch.items() if key in allowed},
         "section_id": section_id,
     }
+
+
+def _spine_link_ids(state: dict) -> list[str]:
+    spine = state.get("_spine") or {}
+    spine_brief = spine.get("spine_brief") if isinstance(spine, dict) else {}
+    backbone = (
+        spine_brief.get("decomposition_backbone")
+        if isinstance(spine_brief, dict)
+        else []
+    )
+    return [
+        str(item["link_id"])
+        for item in (backbone or [])
+        if isinstance(item, dict) and item.get("link_id") not in (None, "")
+    ]
+
+
+def _normalize_spine_callbacks(
+    run_dir: Path,
+    state: dict,
+    payload: dict,
+    task: dict,
+) -> dict:
+    callbacks = payload.get("spine_callbacks")
+    if not isinstance(callbacks, list):
+        return payload
+    allowed = _spine_link_ids(state)
+    allowed_set = set(allowed)
+    kept = [callback for callback in callbacks if callback in allowed_set]
+    removed = [callback for callback in callbacks if callback not in allowed_set]
+    if not removed:
+        return payload
+    record = {
+        "stage": "domain_adjudication",
+        "task_id": task.get("task_id"),
+        "section_id": payload.get("section_id"),
+        "field": "spine_callbacks",
+        "removed": removed,
+        "kept": kept,
+        "allowed": allowed,
+    }
+    records = state.setdefault("_normalizations", [])
+    records.append(record)
+    audit_text = "\n".join(
+        json.dumps(item, ensure_ascii=False, sort_keys=True) for item in records
+    )
+    _write_text_atomic(Path(run_dir) / "normalizations.jsonl", audit_text + "\n")
+    return {**payload, "spine_callbacks": kept}
 
 
 def _ingest_quality_stage(
@@ -1479,6 +2130,7 @@ def _ingest_quality_stage(
     elif stage == "domain_adjudication":
         if not isinstance(parsed, dict):
             raise ValueError("domain adjudication output must be an object")
+        parsed = _normalize_spine_callbacks(run_dir, state, parsed, task)
         _record_section(state, parsed)
     elif stage == "visual_curation":
         if not isinstance(parsed, dict) or not isinstance(parsed.get("sections"), list):
@@ -1490,6 +2142,9 @@ def _ingest_quality_stage(
                     {
                         "section_id": section_patch.get("section_id"),
                         "curated_views": list(section_patch.get("curated_views") or []),
+                        "visual_coverage": list(
+                            section_patch.get("visual_coverage") or []
+                        ),
                     },
                 )
     elif stage == "patch":
@@ -1504,6 +2159,7 @@ def _ingest_quality_stage(
             patch_review,
             expected_round=int(state.get("_patch_round") or 0),
         )
+        _sync_recorded_visuals_from_bundle(state, state["_bundle"])
     elif stage == "merchant_review":
         if not isinstance(parsed, dict) or parsed.get("verdict") not in {"pass", "revise"}:
             raise ValueError("merchant review verdict must be pass or revise")
@@ -1521,6 +2177,7 @@ def _ingest_quality_stage(
             state.get("_merchant_review") or {},
             expected_round=int(state.get("_merchant_revision_rounds") or 0),
         )
+        _sync_recorded_visuals_from_bundle(state, state["_bundle"])
 
     _complete_task(state, task)
     state.setdefault("history", []).append(f"ingest:{stage}")
@@ -1528,6 +2185,7 @@ def _ingest_quality_stage(
     return state
 
 
+@_serialized_state_mutation
 def ingest_output(
     run_dir,
     *,
@@ -1552,13 +2210,32 @@ def ingest_output(
             f"cannot ingest {stage!r} while run is at stage {state['stage']!r}"
         )
 
-    if text is None:
+    verified_agent_text = _enforce_agent_ingest_contract(
+        state,
+        stage,
+        source=source,
+        text=text,
+        task_id=task_id,
+    )
+
+    if verified_agent_text is not None:
+        text = verified_agent_text
+    elif text is None:
         if source is None:
             raise ValueError("provide either source or text")
         text = Path(source).read_text(encoding="utf-8")
 
     if state.get("workflow_version") == QUALITY_WORKFLOW_VERSION:
-        _validate_quality_stage_payload(stage, extract_json(text))
+        validation = validate_output(
+            run_dir,
+            stage=stage,
+            source=source,
+            text=text,
+            section_id=section_id,
+            lens=lens,
+            task_id=task_id,
+        )
+        text = json.dumps(validation["payload"], ensure_ascii=False)
 
     quality_state = _ingest_quality_stage(
         run_dir,
@@ -1887,6 +2564,7 @@ def _sync_recorded_curated_views(
     patch_rounds: int,
     *,
     quality_workflow: bool = False,
+    reasons: dict | None = None,
 ) -> None:
     """Apply the same drop decisions to ``state['sections']`` so a later patch
     rebuild (via :func:`_bundle_from_state`) does not resurrect a dropped view.
@@ -1905,6 +2583,210 @@ def _sync_recorded_curated_views(
             quality_workflow=quality_workflow,
         )
         section["curated_views"] = kept
+        if quality_workflow:
+            section["visual_coverage"] = _coverage_after_view_drop(
+                section,
+                kept,
+                reason_code="dropped_by_review",
+                review_reasons=reasons or {},
+            )
+
+
+def _coverage_after_view_drop(
+    section: dict,
+    kept_views,
+    *,
+    reason_code: str,
+    review_reasons: dict | None = None,
+) -> list[dict]:
+    """Keep visual coverage aligned when deterministic review removes views."""
+    coverage = section.get("visual_coverage")
+    if not isinstance(coverage, list):
+        return []
+    kept_ids = {
+        str(view.get("view_id"))
+        for view in kept_views or []
+        if isinstance(view, dict) and view.get("view_id")
+    }
+    reasons = review_reasons or {}
+    section_id = section.get("section_id")
+    output: list[dict] = []
+    for record in coverage:
+        if not isinstance(record, dict) or record.get("status") != "retained":
+            output.append(record)
+            continue
+        original_ids = [str(view_id) for view_id in record.get("view_ids") or []]
+        retained_ids = [view_id for view_id in original_ids if view_id in kept_ids]
+        if retained_ids:
+            output.append({**record, "view_ids": retained_ids})
+            continue
+        reason_texts: list[str] = []
+        for view_id in original_ids:
+            values = reasons.get(_view_key(section_id, {"view_id": view_id}, 0), {})
+            if isinstance(values, dict):
+                reason_texts.extend(str(value) for value in values.values() if value)
+        output.append(
+            {
+                "claim_id": record.get("claim_id"),
+                "status": "omitted",
+                "view_ids": [],
+                "reason_code": reason_code,
+                "reason": "；".join(dict.fromkeys(reason_texts))
+                or (
+                    "独立评审未保留可用视图"
+                    if reason_code == "dropped_by_review"
+                    else "确定性门禁未保留可用视图"
+                ),
+            }
+        )
+    return output
+
+
+def _sync_recorded_visuals_from_bundle(state: dict, bundle: dict) -> None:
+    """Keep durable section visuals aligned with a targeted bundle revision."""
+    recorded_sections = state.get("sections")
+    if not isinstance(recorded_sections, dict):
+        return
+    for section in bundle.get("sections") or []:
+        if not isinstance(section, dict):
+            continue
+        section_id = _slug(str(section.get("section_id") or section.get("title") or ""))
+        recorded = recorded_sections.get(section_id)
+        if not isinstance(recorded, dict):
+            continue
+        for field in ("curated_views", "visual_coverage"):
+            if field in section:
+                recorded[field] = copy.deepcopy(section[field])
+
+
+def _recover_orphaned_review_coverage_patch(state: dict) -> bool:
+    """Repair interrupted runs whose review patch dropped views but not coverage.
+
+    The recovery is deliberately narrow: every current gate failure must be a
+    visual-coverage failure, every missing view must be named by the preceding
+    review patch, and every pending task must be the generated claim repair for
+    one of those failures.  This prevents a genuine curator/gate mismatch from
+    being silently reclassified as a review omission.
+    """
+    if (
+        state.get("workflow_version") != QUALITY_WORKFLOW_VERSION
+        or state.get("stage") != "patch"
+    ):
+        return False
+    pending = _pending_tasks(state, "patch")
+    failures = state.get("_gate_failures")
+    review_pending = {
+        str(value) for value in state.get("_review_patch_pending") or [] if value
+    }
+    if not pending or not isinstance(failures, list) or not failures or not review_pending:
+        return False
+    if any(
+        not isinstance(failure, dict)
+        or failure.get("code") != "VISUAL_COVERAGE_INVALID"
+        or not failure.get("claim_id")
+        for failure in failures
+    ):
+        return False
+    failure_claims = {str(failure["claim_id"]) for failure in failures}
+    issues = {
+        str(issue.get("issue_id")): issue
+        for issue in (state.get("_patch_review") or {}).get("issues") or []
+        if isinstance(issue, dict) and issue.get("issue_id")
+    }
+    pending_claims = {str(task.get("target_id") or "") for task in pending}
+    if not issues or pending_claims != failure_claims:
+        return False
+    for task in pending:
+        target_id = str(task.get("target_id") or "")
+        blocker_ids = task.get("source_blocker_ids")
+        if task.get("target_type") != "claim" or not blocker_ids:
+            return False
+        if any(
+            str(blocker_id) not in issues
+            or issues[str(blocker_id)].get("target_type") != "claim"
+            or str(issues[str(blocker_id)].get("target_id") or "") != target_id
+            for blocker_id in blocker_ids
+        ):
+            return False
+
+    bundle = state.get("_bundle")
+    if not isinstance(bundle, dict):
+        return False
+    recovered_claims: set[str] = set()
+    recovery_plan: list[tuple[dict, set[str], dict[str, str]]] = []
+    for section in bundle.get("sections") or []:
+        if not isinstance(section, dict):
+            continue
+        section_id = str(section.get("section_id") or section.get("title") or "")
+        views = section.get("curated_views") or []
+        view_claims = {
+            str(view.get("view_id")): str(view.get("supports_claim") or "")
+            for view in views
+            if isinstance(view, dict) and view.get("view_id")
+        }
+        recoverable_claims: set[str] = set()
+        for record in section.get("visual_coverage") or []:
+            if not isinstance(record, dict) or record.get("status") != "retained":
+                continue
+            claim_id = str(record.get("claim_id") or "")
+            absent_ids = [
+                str(view_id)
+                for view_id in record.get("view_ids") or []
+                if str(view_id) not in view_claims
+            ]
+            mismatched_ids = [
+                str(view_id)
+                for view_id in record.get("view_ids") or []
+                if str(view_id) in view_claims
+                and view_claims[str(view_id)] != claim_id
+            ]
+            if not absent_ids or mismatched_ids:
+                continue
+            review_keys = {f"{section_id}::{view_id}" for view_id in absent_ids}
+            if review_keys.issubset(review_pending):
+                recoverable_claims.add(claim_id)
+                if claim_id in failure_claims:
+                    recovered_claims.add(claim_id)
+        if recoverable_claims:
+            recovery_plan.append((section, recoverable_claims, view_claims))
+    if not recovery_plan or recovered_claims != failure_claims:
+        return False
+
+    for section, recoverable_claims, view_claims in recovery_plan:
+        updated_coverage = []
+        for record in section.get("visual_coverage") or []:
+            claim_id = str(record.get("claim_id") or "") if isinstance(record, dict) else ""
+            if (
+                not isinstance(record, dict)
+                or record.get("status") != "retained"
+                or claim_id not in recoverable_claims
+            ):
+                updated_coverage.append(record)
+                continue
+            retained_ids = [
+                str(view_id)
+                for view_id in record.get("view_ids") or []
+                if view_claims.get(str(view_id)) == claim_id
+            ]
+            if retained_ids:
+                updated_coverage.append({**record, "view_ids": retained_ids})
+                continue
+            updated_coverage.append(
+                {
+                    "claim_id": record.get("claim_id"),
+                    "status": "omitted",
+                    "view_ids": [],
+                    "reason_code": "dropped_by_review",
+                    "reason": "独立评审未保留可用视图",
+                }
+            )
+        section["visual_coverage"] = updated_coverage
+
+    _sync_recorded_visuals_from_bundle(state, bundle)
+    _set_stage_tasks(state, "patch", [])
+    state.pop("_review_patch_pending", None)
+    state.setdefault("history", []).append("recover:orphaned_visual_coverage")
+    return True
 
 
 def _write_review_briefs(run_dir: Path, bundle: dict, *, state: dict | None = None) -> list[Path]:
@@ -2276,7 +3158,15 @@ def _resolve_review_stage(run_dir: Path, state: dict) -> dict:
             quality_workflow=quality_workflow,
         )
         patched_keys.extend(patched)
-        new_sections.append({**section, "curated_views": kept})
+        updated_section = {**section, "curated_views": kept}
+        if quality_workflow:
+            updated_section["visual_coverage"] = _coverage_after_view_drop(
+                section,
+                kept,
+                reason_code="dropped_by_review",
+                review_reasons=reasons,
+            )
+        new_sections.append(updated_section)
 
     new_bundle = {**bundle, "sections": new_sections}
     state["_bundle"] = new_bundle
@@ -2286,6 +3176,7 @@ def _resolve_review_stage(run_dir: Path, state: dict) -> dict:
         reviews,
         patch_rounds,
         quality_workflow=quality_workflow,
+        reasons=reasons,
     )
 
     if patched_keys:
@@ -2329,7 +3220,9 @@ def _resolve_review_stage(run_dir: Path, state: dict) -> dict:
                 {
                     "brief": path,
                     "role": "targeted_reviser",
+                    "target_type": issue.get("target_type"),
                     "target_id": issue.get("target_id"),
+                    "source_blocker_ids": [issue.get("issue_id")],
                 }
                 for path, issue in patch_outputs
             ],
@@ -2369,8 +3262,16 @@ def status_json(run_dir) -> dict:
         briefs = [str(briefs_dir / "review_patch.md")]
     else:
         briefs = []
-    pending = [dict(task) for task in tasks if task.get("status") != "completed"]
-    completed = [dict(task) for task in tasks if task.get("status") == "completed"]
+    pending = [
+        _task_with_contract(run_dir, state, task)
+        for task in tasks
+        if task.get("status") != "completed"
+    ]
+    completed = [
+        _task_with_contract(run_dir, state, task)
+        for task in tasks
+        if task.get("status") == "completed"
+    ]
     return {
         "stage": stage,
         "workflow_version": state.get("workflow_version"),
@@ -2414,6 +3315,7 @@ def _drop_gate_failed_views(state: dict, hard_failures) -> bool:
     them — they keep the exhaust→skeleton path (never-block is view-specific). Returns
     ``True`` iff any view was removed. Never raises."""
     failed_labels: set[str] = set()
+    failure_details: dict[str, str] = {}
     for failure in hard_failures or []:
         if not isinstance(failure, dict):
             continue
@@ -2421,6 +3323,9 @@ def _drop_gate_failed_views(state: dict, hard_failures) -> bool:
         key = failure.get("claim_id")
         if code in _PER_VIEW_GATE_CODES and isinstance(key, str) and key:
             failed_labels.add(key)
+            failure_details[key] = str(
+                failure.get("detail") or failure.get("message") or "确定性门禁未通过"
+            )
     if not failed_labels:
         return False
 
@@ -2437,6 +3342,7 @@ def _drop_gate_failed_views(state: dict, hard_failures) -> bool:
         # The gate labels views against the section_id it saw in the bundle
         # (_bundle_from_state passes these very section dicts), so use the same.
         section_id = section.get("section_id", sid)
+        original_views = list(views)
         kept = [
             view
             for idx, view in enumerate(views)
@@ -2444,13 +3350,59 @@ def _drop_gate_failed_views(state: dict, hard_failures) -> bool:
         ]
         if len(kept) != len(views):
             section["curated_views"] = kept
+            if "visual_coverage" in section:
+                reason_map = {}
+                for idx, view in enumerate(original_views):
+                    label = _gate_view_label(view, section_id, idx)
+                    if label not in failed_labels or not isinstance(view, dict):
+                        continue
+                    view_id = view.get("view_id")
+                    if view_id:
+                        reason_map[_view_key(section_id, view, idx)] = {
+                            "gate": failure_details.get(label, "确定性门禁未通过")
+                        }
+                section["visual_coverage"] = _coverage_after_view_drop(
+                    section,
+                    kept,
+                    reason_code="dropped_by_gate",
+                    review_reasons=reason_map,
+                )
             changed = True
     return changed
 
 
+def _persist_gate_attempt(run_dir: Path, state: dict, report, bundle: dict) -> Path:
+    """Persist one gate result before any state transition or fallback."""
+    run_dir = Path(run_dir)
+    attempt = int(state.get("_gate_attempt") or 0) + 1
+    archive_path = run_dir / "gate_reports" / f"gate-{attempt}.json"
+    latest_path = run_dir / "gate_report.json"
+    report_text = json.dumps(
+        {
+            "status": report.status,
+            "hard_failures": list(report.hard_failures),
+            "warnings": list(getattr(report, "warnings", []) or []),
+            "capped_claims": list(getattr(report, "capped_claims", []) or []),
+        },
+        sort_keys=True,
+        ensure_ascii=False,
+        indent=2,
+    )
+    _write_text_atomic(archive_path, report_text)
+    _write_text_atomic(latest_path, report_text)
+    state["_gate_attempt"] = attempt
+    state["_gate_failures"] = list(report.hard_failures)
+    state["_gate_report_path"] = str(latest_path)
+    state["_gate_bundle_hash"] = _stable_hash(bundle)
+    _write_state(run_dir, state)
+    return latest_path
+
+
 def _run_gate_stage(run_dir: Path, state: dict, facts_json: dict, project_root) -> dict:
     result_tables = _load_result_tables(run_dir)
-    report = _run_gate(state.get("_bundle", _bundle_from_state(state)), facts_json, result_tables)
+    bundle = state.get("_bundle", _bundle_from_state(state))
+    report = _run_gate(bundle, facts_json, result_tables)
+    _persist_gate_attempt(run_dir, state, report, bundle)
     if report.status == "PASS":
         state["_bundle"] = report.bundle
         # numeric trust is now locked; a bundle with curated views goes to the
@@ -2464,13 +3416,13 @@ def _run_gate_stage(run_dir: Path, state: dict, facts_json: dict, project_root) 
     if quality_workflow and dropped_views:
         state["_bundle"] = render_draft(_bundle_from_state(state), facts_json)
         report = _run_gate(state["_bundle"], facts_json, result_tables)
+        _persist_gate_attempt(run_dir, state, report, state["_bundle"])
         if report.status == "PASS":
             return _enter_review_or_continuity(run_dir, state)
     rounds = state.get("_gate_rounds", 0) + 1
     state["_gate_rounds"] = rounds
     if rounds > MAX_GATE_ROUNDS:
         return _route_deterministic(run_dir, state, project_root, "gate_exhausted")
-    state["_gate_failures"] = list(report.hard_failures)
     state["stage"] = "patch"
     if quality_workflow:
         issues = _gate_patch_issues(
@@ -2501,7 +3453,9 @@ def _run_gate_stage(run_dir: Path, state: dict, facts_json: dict, project_root) 
                 {
                     "brief": path,
                     "role": "targeted_reviser",
+                    "target_type": issue.get("target_type"),
                     "target_id": issue.get("target_id"),
+                    "source_blocker_ids": [issue.get("issue_id")],
                 }
                 for path, issue in patch_outputs
             ],
@@ -2706,6 +3660,14 @@ def _apply_one_merchant_revision(bundle: dict, revision: dict) -> bool:
                         and str(view.get("supports_claim") or "") == target_id
                     )
                 ]
+                section["visual_coverage"] = [
+                    record
+                    for record in section.get("visual_coverage") or []
+                    if not (
+                        isinstance(record, dict)
+                        and str(record.get("claim_id") or "") == target_id
+                    )
+                ]
             for owner in [bundle, *(bundle.get("sections") or [])]:
                 if not isinstance(owner, dict):
                     continue
@@ -2732,6 +3694,12 @@ def _apply_one_merchant_revision(bundle: dict, revision: dict) -> bool:
                 target_id=target_id,
                 replacement=replacement,
             )
+            if section_changed and "visual_coverage" in section:
+                section["visual_coverage"] = _coverage_after_view_drop(
+                    section,
+                    section["curated_views"],
+                    reason_code="dropped_by_review",
+                )
             changed = changed or section_changed
     else:
         for owner in [bundle, *(bundle.get("sections") or [])]:
@@ -2810,6 +3778,11 @@ def _apply_merchant_revisions(
             raise ValueError("drop revision replacement must be null")
         if not str(revision.get("reason") or "").strip():
             raise ValueError("targeted revision reason must be non-empty")
+        current_target = _target_object(output, str(target_type), target_id)
+        if operation == "replace" and current_target == replacement:
+            raise ValueError(
+                f"targeted revision did not change {target_type}:{target_id}"
+            )
         if not _apply_one_merchant_revision(output, revision):
             raise ValueError(f"targeted revision did not match {target_type}:{target_id}")
     return output
@@ -2892,11 +3865,21 @@ def _enter_merchant_review(
         result_tables=tables,
     )
     html = render_markdown_document_html(markdown, title=state.get("report_name"))
+    _validate_delivery_html(
+        html,
+        str(state.get("report_name") or ""),
+        retained_view_ids=_retained_view_ids(bundle),
+    )
     candidate_path = Path(run_dir) / "candidate.html"
     _write_text_atomic(candidate_path, html)
     review_brief = _write_merchant_review_brief(run_dir, state, bundle, candidate_path)
     state["stage"] = "merchant_review"
     state["candidate_html"] = str(candidate_path)
+    state["candidate_lineage"] = {
+        "bundle_hash": _stable_hash(bundle),
+        "markdown_hash": _sha256_bytes(markdown.encode("utf-8")),
+        "candidate_html_hash": _sha256_bytes(html.encode("utf-8")),
+    }
     state.pop("_merchant_review", None)
     _set_stage_tasks(
         state,
@@ -3054,6 +4037,7 @@ def _advance_quality_stage(
     return state
 
 
+@_serialized_state_mutation
 def advance_run(run_dir, *, project_root=None) -> dict:
     """Move the run forward one step: seed→fan→synth→gate→(patch→gate)*→continuity→gate→finalized.
 
@@ -3065,6 +4049,8 @@ def advance_run(run_dir, *, project_root=None) -> dict:
     if state is None:
         raise FileNotFoundError(f"no run at {run_dir}")
     stage = state["stage"]
+    if _recover_orphaned_review_coverage_patch(state):
+        stage = state["stage"]
     pending = _pending_tasks(state, stage)
     if pending:
         task_ids = ", ".join(str(task.get("task_id")) for task in pending)
@@ -3138,9 +4124,9 @@ def _fmt_value(value):
 def _deterministic_markdown(run_dir, facts_json: dict, report_name: str) -> str:
     """Build the '确定性骨架版' markdown straight from capped slices + facts.
 
-    Preserves conclusions/actions/caveats verbatim (no paraphrasing) and lists
-    any blocked modules under an explicit "暂时答不了的问题" section. Never raises
-    on missing/partial data — absent fields are simply omitted.
+    Preserves conclusions/actions/caveats verbatim (no paraphrasing) and turns
+    blocked modules into a merchant-facing data request with unlocked analyses.
+    Never raises on missing/partial data — absent fields are simply omitted.
     """
     run_dir = Path(run_dir)
     slices_doc = json.loads((run_dir / "domain_slices.json").read_text(encoding="utf-8"))
@@ -3178,23 +4164,19 @@ def _deterministic_markdown(run_dir, facts_json: dict, report_name: str) -> str:
             lines.append("")
 
     blocked = slices_doc.get("blocked_modules") or []
-    if blocked:
-        lines.append("## 暂时答不了的问题")
-        lines.append("")
-        for b in blocked:
-            if isinstance(b, dict):
-                slug = b.get("slug", "")
-                reason = b.get("reason", "")
-            else:
-                slug = str(b)
-                reason = ""
-            lines.append(f"- {slug}：{reason}")
+    gaps = data_gap_markdown(blocked, result_tables=_load_result_tables(run_dir))
+    if gaps:
+        lines.append(gaps)
         lines.append("")
 
     return "\n".join(lines) + "\n"
 
 
-def _visual_coverage_reason(markdown: str, result_tables: object) -> str | None:
+def _visual_coverage_reason(
+    markdown: str,
+    result_tables: object,
+    bundle: dict | None = None,
+) -> str | None:
     """Non-blocking success-path signal: ``"visuals_missing"`` when the fact layer HAD
     chartable data yet the finalized narrative carries zero charts, else ``None``.
 
@@ -3205,24 +4187,167 @@ def _visual_coverage_reason(markdown: str, result_tables: object) -> str | None:
     failure: the caller still finalizes (no skeleton, no gate FAIL), it just stamps the
     reason so the delivery note can say charts are missing. Never raises."""
     try:
+        coverage = [
+            record
+            for section in (bundle or {}).get("sections") or []
+            if isinstance(section, dict)
+            for record in section.get("visual_coverage") or []
+            if isinstance(record, dict)
+        ]
+        if coverage and any(record.get("status") == "omitted" for record in coverage):
+            return "visuals_missing"
         if has_chartable_tables(result_tables) and "<svg" not in (markdown or ""):
             return "visuals_missing"
         return None
     except Exception:
-        return None
+        return "visuals_missing"
 
 
-def _validate_delivery_html(html: str, report_name: str) -> None:
-    normalized = str(html or "").lower()
-    if not normalized.strip():
+def _retained_view_ids(bundle: dict) -> list[str]:
+    return [
+        str(view["view_id"])
+        for _section_id, _idx, view in _iter_curated_views(bundle)
+        if isinstance(view, dict) and view.get("view_id")
+    ]
+
+
+_RESOURCE_ATTRS = {
+    "script": {"src"},
+    "link": {"href"},
+    "img": {"src", "srcset"},
+    "iframe": {"src"},
+    "source": {"src", "srcset"},
+    "video": {"src", "poster"},
+    "audio": {"src"},
+    "object": {"data"},
+    "embed": {"src"},
+}
+_EXTERNAL_URL = re.compile(r"(?:^|,\s*)(?:https?:)?//", re.IGNORECASE)
+
+
+class _DeliveryHTMLAudit(HTMLParser):
+    """Collect delivery invariants from real tags, ignoring comments/script text."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.stack: list[str] = []
+        self.starts: dict[str, int] = {"html": 0, "body": 0, "h1": 0}
+        self.ends: dict[str, int] = {"html": 0, "body": 0, "h1": 0}
+        self.title_starts = 0
+        self.title_ends = 0
+        self.titles: list[list[str]] = []
+        self.h1s: list[list[str]] = []
+        self.current_title: list[str] | None = None
+        self.current_h1: list[str] | None = None
+        self.view_ids: list[str] = []
+        self.external_dependency = False
+        self.css_fragments: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        tag = tag.lower()
+        attr_map = {str(key).lower(): value for key, value in attrs}
+        if tag in self.starts:
+            self.starts[tag] += 1
+        if tag == "title" and "head" in self.stack and "svg" not in self.stack:
+            self.title_starts += 1
+            self.current_title = []
+            self.titles.append(self.current_title)
+        if tag == "h1":
+            self.current_h1 = []
+            self.h1s.append(self.current_h1)
+        marker = attr_map.get("data-view-id")
+        if marker is not None:
+            self.view_ids.append(str(marker))
+        for attr_name in _RESOURCE_ATTRS.get(tag, set()):
+            value = attr_map.get(attr_name)
+            if value is not None and _EXTERNAL_URL.search(str(value)):
+                self.external_dependency = True
+        style = attr_map.get("style")
+        if style is not None:
+            self.css_fragments.append(str(style))
+        self.stack.append(tag)
+
+    def handle_startendtag(self, tag: str, attrs) -> None:
+        self.handle_starttag(tag, attrs)
+        self.handle_endtag(tag)
+
+    def handle_endtag(self, tag: str) -> None:
+        tag = tag.lower()
+        if tag in self.ends:
+            self.ends[tag] += 1
+        if tag == "title" and self.current_title is not None:
+            self.title_ends += 1
+            self.current_title = None
+        if tag == "h1" and self.current_h1 is not None:
+            self.current_h1 = None
+        if tag in self.stack:
+            reverse_index = self.stack[::-1].index(tag)
+            del self.stack[len(self.stack) - reverse_index - 1 :]
+
+    def handle_data(self, data: str) -> None:
+        if self.current_title is not None:
+            self.current_title.append(data)
+        if self.current_h1 is not None:
+            self.current_h1.append(data)
+        if "style" in self.stack:
+            self.css_fragments.append(data)
+
+
+def _validate_delivery_html(
+    html: str,
+    report_name: str,
+    *,
+    retained_view_ids: list[str] | None = None,
+) -> None:
+    html = str(html or "")
+    if not html.strip():
         raise ValueError("HTML renderer returned an empty document")
-    for marker in ("<html", "<body", "</body>", "</html>"):
-        if marker not in normalized:
-            raise ValueError(f"HTML document is missing {marker}")
-    if report_name and report_name not in html:
-        raise ValueError("HTML document is missing the report title")
-    if re.search(r"<(?:script|link)\b[^>]+(?:src|href)=[\"']https?://", html, re.IGNORECASE):
-        raise ValueError("HTML document contains an external script or stylesheet dependency")
+    audit = _DeliveryHTMLAudit()
+    audit.feed(html)
+    audit.close()
+    for tag in ("html", "body"):
+        if audit.starts[tag] != 1 or audit.ends[tag] != 1:
+            raise ValueError(f"HTML document must contain one complete {tag} element")
+    if audit.title_starts != 1 or audit.title_ends != 1:
+        raise ValueError("HTML document must contain one complete head title")
+    title_text = "".join(audit.titles[0]).strip()
+    if title_text != str(report_name or ""):
+        raise ValueError("HTML title does not exactly match the report title")
+    if audit.starts["h1"] != 1 or audit.ends["h1"] != 1:
+        raise ValueError("HTML h1 does not exactly match the report title")
+    h1_texts = ["".join(value).strip() for value in audit.h1s]
+    if h1_texts != [str(report_name or "")]:
+        raise ValueError("HTML h1 does not exactly match the report title")
+    if re.search(r"\{t\d+\}", html):
+        raise ValueError("HTML document contains an unresolved number token")
+    if audit.external_dependency or any(
+        re.search(r"url\(\s*[\"']?\s*(?:https?:)?//", fragment, re.IGNORECASE)
+        or re.search(
+            r"@import\s+(?:url\(\s*)?[\"']?\s*(?:https?:)?//",
+            fragment,
+            re.IGNORECASE,
+        )
+        for fragment in audit.css_fragments
+    ):
+        raise ValueError("HTML document contains an external dependency")
+    markers = audit.view_ids
+    for view_id in retained_view_ids or []:
+        if markers.count(str(view_id)) != 1:
+            raise ValueError(
+                f"retained view {view_id!r} must appear exactly once in delivery HTML"
+            )
+    unexpected_markers = sorted(set(markers) - {str(value) for value in retained_view_ids or []})
+    if unexpected_markers:
+        raise ValueError(
+            "delivery HTML contains unexpected data-view-id markers: "
+            + ", ".join(unexpected_markers)
+        )
+
+
+def _validate_delivery_directory(out_dir: Path, html_path: Path) -> None:
+    html_files = sorted(Path(out_dir).glob("*.html"))
+    if html_files != [Path(html_path)] or not html_path.is_file():
+        raise ValueError("production directory must contain exactly one final HTML")
 
 
 def finalize_narrative(
@@ -3256,6 +4381,10 @@ def finalize_narrative(
     result_tables = _load_result_tables(run_dir)
 
     try:
+        candidate_lineage = state.get("candidate_lineage") or {}
+        expected_bundle_hash = candidate_lineage.get("bundle_hash")
+        if expected_bundle_hash and expected_bundle_hash != _stable_hash(bundle):
+            raise ValueError("candidate bundle changed after review")
         final_gate = _run_gate(bundle, facts_json, result_tables)
         if final_gate.status != "PASS":
             raise ValueError(f"final narrative gate failed: {final_gate.hard_failures}")
@@ -3300,15 +4429,26 @@ def finalize_narrative(
     # chartable data but not one chart survived (fallback included), record the gap so
     # the delivery note surfaces it. This never routes to skeleton or fails the gate —
     # the report still finalizes with whatever visuals it does carry.
-    reason = _visual_coverage_reason(markdown, result_tables)
+    reason = _visual_coverage_reason(markdown, result_tables, bundle)
 
     html_path = out_dir / f"{report_name}.html"
     error_path = run_dir / "internal" / "render_errors.txt"
     try:
+        for stale_html in out_dir.glob("*.html"):
+            stale_html.unlink()
         html_path.unlink(missing_ok=True)
         html = render_markdown_document_html(markdown, title=report_name)
-        _validate_delivery_html(html, report_name)
+        _validate_delivery_html(
+            html,
+            report_name,
+            retained_view_ids=_retained_view_ids(bundle),
+        )
+        final_html_hash = _sha256_bytes(html.encode("utf-8"))
+        candidate_html_hash = candidate_lineage.get("candidate_html_hash")
+        if candidate_html_hash and final_html_hash != candidate_html_hash:
+            raise ValueError("final HTML differs from the merchant-reviewed candidate")
         _write_text_atomic(html_path, html)
+        _validate_delivery_directory(out_dir, html_path)
         error_path.unlink(missing_ok=True)
     except Exception as exc:
         _write_text_atomic(error_path, f"HTML rendering failed: {exc}\n")
@@ -3351,6 +4491,30 @@ def finalize_narrative(
             cache_status = "write_failed"
             cache_error = str(exc)
 
+    state = {
+        **state,
+        "_bundle": bundle,
+        "stage": "finalized",
+        "degradation_reason": reason,
+        "delivery_status": "ready",
+        "delivery_error": None,
+        "error": None,
+        "cache_status": cache_status,
+        "cache_error": cache_error,
+        "artifacts": {**(state.get("artifacts") or {}), "html": str(html_path)},
+        "internal_artifacts": {
+            **(state.get("internal_artifacts") or {}),
+            "markdown": str(internal_markdown),
+            **({"cache": str(cache_path)} if quality_workflow and cache_path.exists() else {}),
+        },
+        "artifact_lineage": {
+            **(state.get("candidate_lineage") or {}),
+            "final_bundle_hash": _stable_hash(bundle),
+            "final_html_hash": _sha256_bytes(html.encode("utf-8")),
+        },
+        "history": [*state.get("history", []), "finalize_narrative"],
+    }
+    _write_state(run_dir, state)
     try:
         record = build_run_record(
             mode="frozen" if cache_hit else "gate",
@@ -3369,26 +4533,6 @@ def finalize_narrative(
         append_run_record(state_dir(project_root) / "report_runs.jsonl", record)
     except Exception:
         pass  # telemetry is best-effort; never break the report
-
-    state = {
-        **state,
-        "_bundle": bundle,
-        "stage": "finalized",
-        "degradation_reason": reason,
-        "delivery_status": "ready",
-        "delivery_error": None,
-        "error": None,
-        "cache_status": cache_status,
-        "cache_error": cache_error,
-        "artifacts": {**(state.get("artifacts") or {}), "html": str(html_path)},
-        "internal_artifacts": {
-            **(state.get("internal_artifacts") or {}),
-            "markdown": str(internal_markdown),
-            **({"cache": str(cache_path)} if quality_workflow and cache_path.exists() else {}),
-        },
-        "history": [*state.get("history", []), "finalize_narrative"],
-    }
-    _write_state(run_dir, state)
     return state
 
 
@@ -3426,10 +4570,14 @@ def finalize_deterministic(run_dir, *, project_root=None, reason, timestamp=None
     html_path = out_dir / f"{report_name}.html"
     error_path = run_dir / "internal" / "render_errors.txt"
     try:
+        for stale_html in out_dir.glob("*.html"):
+            stale_html.unlink()
         html_path.unlink(missing_ok=True)
-        html = render_markdown_document_html(markdown, title=f"{report_name}（确定性骨架版）")
-        _validate_delivery_html(html, report_name)
+        skeleton_title = f"{report_name}（确定性骨架版）"
+        html = render_markdown_document_html(markdown, title=skeleton_title)
+        _validate_delivery_html(html, skeleton_title)
         _write_text_atomic(html_path, html)
+        _validate_delivery_directory(out_dir, html_path)
         error_path.unlink(missing_ok=True)
     except Exception as exc:
         _write_text_atomic(error_path, f"HTML rendering failed: {exc}\n")
@@ -3454,19 +4602,6 @@ def finalize_deterministic(run_dir, *, project_root=None, reason, timestamp=None
         _write_state(run_dir, failed_state)
         raise RuntimeError(f"HTML rendering failed: {exc}") from exc
 
-    try:
-        record = build_run_record(
-            mode="skeleton",
-            facts_hash=facts_json.get("facts_hash", ""),
-            cache_hit=False,
-            cache_status=state.get("cache_status"),
-            delivery_status="ready",
-            degradation_reason=reason,
-        )
-        append_run_record(state_dir(project_root) / "report_runs.jsonl", record)
-    except Exception:
-        pass  # telemetry is best-effort; never break the report
-
     state = {
         **state,
         "stage": "blocked",
@@ -3482,4 +4617,16 @@ def finalize_deterministic(run_dir, *, project_root=None, reason, timestamp=None
         "history": [*state.get("history", []), f"finalize_deterministic:{reason}"],
     }
     _write_state(run_dir, state)
+    try:
+        record = build_run_record(
+            mode="skeleton",
+            facts_hash=facts_json.get("facts_hash", ""),
+            cache_hit=False,
+            cache_status=state.get("cache_status"),
+            delivery_status="ready",
+            degradation_reason=reason,
+        )
+        append_run_record(state_dir(project_root) / "report_runs.jsonl", record)
+    except Exception:
+        pass  # telemetry is best-effort; never break the report
     return state

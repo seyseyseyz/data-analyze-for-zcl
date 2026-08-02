@@ -8,9 +8,15 @@ byte-stable, sort/TopN/highlight are honored, and any malformed spec / missing
 table / missing column degrades to a no-html result WITHOUT raising.
 """
 
+import re
+
 from xhs_ceramics_analytics.analysis.result import Finding
 from xhs_ceramics_analytics.evidence import EvidenceStrength
-from xhs_ceramics_analytics.reporting.curated_view import CuratedView, render_view
+from xhs_ceramics_analytics.reporting.curated_view import (
+    CuratedView,
+    render_diagnostic_table,
+    render_view,
+)
 
 # ---- fixtures -------------------------------------------------------------
 
@@ -94,7 +100,7 @@ def test_engine_never_invents_a_number_absent_from_source():
 def test_column_labels_become_headers_source_names_do_not_leak():
     view = render_view(_table_spec(), _tables(), finding=_finding())
     assert "<th>增长来源</th>" in view.table_html
-    assert "<th>对GMV的拉动</th>" in view.table_html
+    assert '<strong class="field-tooltip-label">对GMV的拉动</strong>' in view.table_html
 
 
 def test_table_reuses_deterministic_table_wrap_markup():
@@ -102,6 +108,36 @@ def test_table_reuses_deterministic_table_wrap_markup():
     html = view.table_html
     assert '<div class="table-wrap">' in html
     assert "<table>" in html and "<thead>" in html and "<tbody>" in html
+
+
+def test_curated_and_diagnostic_tooltip_ids_use_separate_namespaces():
+    curated = render_view(
+        _table_spec(view_id="growth_bridge"),
+        _tables(),
+        finding=_finding(),
+    ).table_html
+    diagnostic = render_diagnostic_table(
+        _tables()["growth_bridge"],
+        ["component", "delta_gmv"],
+        table_name="growth_bridge",
+    )
+
+    curated_ids = set(re.findall(r'aria-describedby="([^"]+)"', curated))
+    diagnostic_ids = set(re.findall(r'aria-describedby="([^"]+)"', diagnostic))
+
+    assert curated_ids
+    assert diagnostic_ids
+    assert curated_ids.isdisjoint(diagnostic_ids)
+
+
+def test_numeric_table_rows_embed_sort_ranks_without_leaking_raw_values():
+    view = render_view(_table_spec(), _tables(), finding=_finding())
+
+    assert 'class="ca-sort-values">[[null, 3], [null, 2], [null, 1]]' in view.table_html
+    assert "12000" not in view.table_html
+    assert "8000" not in view.table_html
+    assert "<td>1.2万</td>" in view.table_html
+    assert "<td>8,000</td>" in view.table_html
 
 
 def test_emoji_in_source_cell_is_preserved():
@@ -298,6 +334,37 @@ def test_percent_column_renders_as_percentage():
     html = render_view(spec, tables, finding=_finding()).table_html
     assert "4.6%" in html
     assert "0.046" not in html  # never the raw ratio
+
+
+def test_diagnostic_table_marks_column_semantics_for_readable_widths():
+    rows = [
+        {
+            "sku_name": "PiGoo手作｜兴安岭之夜｜鱼盘 brunch盘",
+            "category_l1": "餐饮具",
+            "paid_orders": 10,
+            "fdr_significant": False,
+        },
+        {
+            "sku_name": "PiGoo手作｜咖啡杯碟套装礼盒",
+            "category_l1": "餐饮具",
+            "paid_orders": 14,
+            "fdr_significant": True,
+        },
+    ]
+
+    html = render_diagnostic_table(
+        rows,
+        ["sku_name", "category_l1", "paid_orders", "fdr_significant"],
+    )
+
+    assert '<div class="table-wrap"><table><colgroup>' in html
+    assert 'data-col-key="sku_name" data-col-kind="identity"' in html
+    assert 'data-col-key="category_l1" data-col-kind="category"' in html
+    assert 'data-col-key="paid_orders" data-col-kind="number"' in html
+    assert 'data-col-key="fdr_significant" data-col-kind="flag"' in html
+    assert html.count('data-col-key="sku_name" data-col-kind="identity"') == 1
+    assert '<strong class="field-tooltip-label">SKU 名称</strong>' in html
+    assert "<td>餐饮具</td>" in html
 
 
 def test_none_cell_renders_placeholder_not_empty():

@@ -60,5 +60,8 @@ def test_narrative_html_injects_chart_css():
     assert ".ca-row-highlight" in html
     # a hairline axis stroke is now defined (was invisible before)
     assert ".ca-axis" in html and "stroke: var(--line)" in html
-    # still single-file: no script injected alongside the CSS
-    assert "<script" not in html
+    # Numeric-table sorting is bundled inline; it must not add a network dependency.
+    assert '<script id="ca-table-sort">' in html
+    assert "ca-sort-values" in html
+    assert "addEventListener(\"click\"" in html
+    assert "https://" not in html and "http://" not in html

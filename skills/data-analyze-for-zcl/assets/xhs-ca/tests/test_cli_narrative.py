@@ -2,10 +2,79 @@ import json
 
 from typer.testing import CliRunner
 
+from xhs_ceramics_analytics import cli
 from xhs_ceramics_analytics.cli import app
 from xhs_ceramics_analytics.reporting import frozen_narrative as fn
 
 runner = CliRunner()
+
+
+def test_narrative_validate_prints_machine_readable_result(tmp_path, monkeypatch):
+    source = tmp_path / "result.json"
+    source.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(
+        cli._nw,
+        "validate_output",
+        lambda *args, **kwargs: {
+            "valid": True,
+            "task_id": "seed:candidate-a",
+            "payload": {"candidate_id": "candidate-a"},
+            "diagnostics": [],
+        },
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "narrative",
+            "validate",
+            "--run-dir",
+            str(tmp_path / "run"),
+            "--stage",
+            "seed",
+            "--task-id",
+            "seed:candidate-a",
+            "--source",
+            str(source),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == {
+        "valid": True,
+        "task_id": "seed:candidate-a",
+        "payload": {"candidate_id": "candidate-a"},
+        "diagnostics": [],
+    }
+
+
+def test_narrative_reserve_prints_the_capacity_bounded_batch(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        cli._nw,
+        "reserve_tasks",
+        lambda *args, **kwargs: [
+            {"task_id": "fan:域0", "dispatch_status": "reserved"}
+        ],
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "narrative",
+            "reserve",
+            "--run-dir",
+            str(tmp_path / "run"),
+            "--capacity",
+            "5",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == [
+        {"task_id": "fan:域0", "dispatch_status": "reserved"}
+    ]
 
 
 def _facts_file(tmp_path):

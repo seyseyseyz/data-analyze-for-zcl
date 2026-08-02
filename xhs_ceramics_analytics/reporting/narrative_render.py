@@ -14,13 +14,18 @@ import copy
 import hashlib
 import json
 import re
+from html import escape
 from typing import NamedTuple
 
 from xhs_ceramics_analytics.evidence import EvidenceStrength
 from xhs_ceramics_analytics.reporting.charts import render_chart_template
 from xhs_ceramics_analytics.reporting.confidence_pill import confidence_pill_html
 from xhs_ceramics_analytics.reporting.content_templates import content_templates_markdown
-from xhs_ceramics_analytics.reporting.curated_view import render_view
+from xhs_ceramics_analytics.reporting.curated_view import (
+    render_diagnostic_table,
+    render_view,
+)
+from xhs_ceramics_analytics.reporting.data_gaps import data_gap_markdown
 from xhs_ceramics_analytics.reporting.factcheck_gate import (
     allowed_confidence_tag,
     run_gate,
@@ -29,10 +34,12 @@ from xhs_ceramics_analytics.reporting.first_screen import (
     first_screen_markdown,
     normalize_line,
 )
+from xhs_ceramics_analytics.reporting.formatting import is_timeseries_table
 from xhs_ceramics_analytics.reporting.html import (
     RAW_HTML_CLOSE,
     RAW_HTML_OPEN,
     render_markdown_document_html,
+    user_table_columns,
 )
 from xhs_ceramics_analytics.reporting.markdown import render_markdown
 from xhs_ceramics_analytics.reporting.table_labels import table_label
@@ -40,6 +47,67 @@ from xhs_ceramics_analytics.reporting.table_labels import table_label
 _TOKEN_RE = re.compile(r"\{t\d+\}")
 _DIGIT_RE = re.compile(r"\d")
 _SKELETON_BANNER = "> **本报告为确定性骨架版：叙事层未通过事实校验，数字与表格仍完整可核。**"
+
+_DIAGNOSTIC_TABLE_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (
+        "搜索、内容与笔记诊断",
+        (
+            "carrier_search_efficiency",
+            "search_term_opportunities",
+            "note_commercial_funnel",
+            "note_conversion_outliers",
+            "note_refund_outliers",
+            "high_refund_notes",
+            "reshoot_candidates",
+            "posting_windows",
+        ),
+    ),
+    (
+        "商品与 SKU 机会",
+        (
+            "sku_gmv_pareto",
+            "sku_net_value_fact",
+            "product_net_value",
+            "sku_intent_funnel",
+            "sku_refund_outliers",
+            "sku_conversion_and_aov",
+            "sku_price_sweet_spot",
+        ),
+    ),
+    (
+        "渠道与流量诊断",
+        (
+            "traffic_channel_structure",
+            "channel_conversion",
+            "channel_refund",
+            "traffic_source_efficiency",
+            "shop_funnel_stages",
+        ),
+    ),
+    (
+        "用户与需求诊断",
+        (
+            "audience_composition",
+            "first_purchase_cycle_funnel",
+            "shop_source_structure",
+        ),
+    ),
+    (
+        "退款与售后诊断",
+        (
+            "refund_layer_breakdown",
+            "product_refund_concentration",
+            "sku_refund_paytime",
+            "sku_refund_refundtime",
+        ),
+    ),
+    (
+        "生意大盘诊断",
+        (
+            "business_self_benchmark",
+        ),
+    ),
+)
 
 
 def fill_sentence(sentence: str, number_tokens: list[dict], facts: dict) -> str:
@@ -223,15 +291,17 @@ def _section_confidence(claims: object, facts: dict | None = None) -> str | None
     below it (the "域头弱 / 视图强" split). It is NOT read from the agent-authored
     ``confidence`` field, which the gate only ever caps DOWNWARD (an agent's timid 弱
     would otherwise stick on the headline even when the evidence defensibly allows 强).
-    Only claims that actually anchor a fact are counted, so a pure-prose section still
-    renders no pill. Returns ``None`` when nothing anchors. Never raises.
+    Anchored measurement claims use their FactBook ceiling. Mechanism claims count as
+    weak even without a numeric anchor, because omitting a decision hypothesis would
+    let strong descriptive facts overstate the whole section. Other unanchored prose
+    remains neutral. Returns ``None`` when nothing qualifies. Never raises.
     """
     facts = facts if isinstance(facts, dict) else {}
     counts: dict[str, int] = {}
     for claim in claims or []:
         if not isinstance(claim, dict) or not _rendered(claim):
             continue
-        if not _claim_anchors_fact(claim, facts):
+        if not _claim_anchors_fact(claim, facts) and claim.get("claim_kind") != "mechanism":
             continue
         tag = allowed_confidence_tag(claim, facts)
         if tag in _TAG_RANK:
@@ -359,32 +429,84 @@ def bundle_to_markdown(
                 continue
             parts.append(sentence)
         if tables:
-            view_parts, chart_count, charted = _curated_view_parts(
+            view_parts, _chart_count, charted = _curated_view_parts(
                 section, tables, claims_by_id, facts
             )
             parts.extend(view_parts)
             charted_tables |= charted
-            # Defense-in-depth: a CORE domain that produced no chart-template curated
-            # view gets one deterministic chart auto-injected from the source table,
-            # so the narrative reliably carries visuals instead of shipping prose-only.
-            # The fallback skips any table already charted anywhere in the report (#7) so
-            # it never emits a chart that duplicates one shown in another section.
-            if chart_count == 0:
-                parts.extend(_fallback_chart_parts(heading, tables, charted_tables))
+            # The deterministic chart registry supplements agent curation with every
+            # distinct, decision-useful built-in chart available for this domain. It
+            # has no per-domain quota: duplication is prevented by source table, not by
+            # suppressing all remaining charts after the first one survives review.
+            parts.extend(_fallback_chart_parts(heading, tables, charted_tables))
+    parts.extend(_diagnostic_table_parts(tables))
     parts.extend(_action_card_parts(bundle))
     # 可复用内容模板: a static, number-free ceramics content playbook (领域内容模板库).
     # Deterministic and reproducible — appended after the data sections and before the
-    # open-questions caveats, so the reader meets findings, then what-to-make, then gaps.
+    # operator-facing data request, so the reader meets findings, actions, then gaps.
     parts.append(content_templates_markdown())
-    cannot = [
-        s
-        for s in (_strip_raw_html_markers(str(c).strip()) for c in (bundle.get("cannot_say") or []))
-        if s
-    ]
-    if cannot:
-        parts.append("## 暂时答不了的问题")
-        parts.extend(f"- {c}" for c in cannot)
+    gaps = data_gap_markdown(
+        facts_json.get("blocked_modules") if isinstance(facts_json, dict) else [],
+        result_tables=tables,
+    )
+    if gaps:
+        parts.append(gaps)
     return "\n\n".join(parts) + "\n"
+
+
+def _diagnostic_table_parts(result_tables: dict) -> list[str]:
+    """Render high-value built-in diagnostics beneath the concise narrative.
+
+    These tables are controller-selected from stable built-in table IDs and filled
+    only from the deterministic result layer. They are not agent-authored views and
+    therefore cannot disappear when a visual-review round drops a chart.
+    """
+    groups: list[tuple[str, list[tuple[str, str]]]] = []
+    for group_title, table_names in _DIAGNOSTIC_TABLE_GROUPS:
+        rendered_tables: list[tuple[str, str]] = []
+        for table_name in table_names:
+            rows = result_tables.get(table_name)
+            if not isinstance(rows, list) or not any(isinstance(row, dict) for row in rows):
+                continue
+            clean_rows = [row for row in rows if isinstance(row, dict)]
+            columns = user_table_columns(table_name, clean_rows)
+            # Presentation intent is fail-closed: per-day/per-period rows are visual
+            # evidence, not a scroll-heavy diagnostic grid. Even if a future registry
+            # edit accidentally lists one here, it remains chart-only.
+            if is_timeseries_table(table_name, columns):
+                continue
+            table_html = render_diagnostic_table(
+                clean_rows,
+                columns,
+                table_name=table_name,
+            )
+            if not table_html:
+                continue
+            marker = escape(table_name, quote=True)
+            rendered_tables.append(
+                (
+                    table_label(table_name),
+                    _raw_html_block(
+                        f'<div class="diagnostic-table" data-diagnostic-table="{marker}">'
+                        f"{table_html}</div>"
+                    ),
+                )
+            )
+        if rendered_tables:
+            groups.append((group_title, rendered_tables))
+    if not groups:
+        return []
+
+    parts = [
+        "## 经营诊断明细",
+        "以下表格保留可复用的经营诊断证据；长表默认截取最有价值的行，数值列可点击排序。",
+    ]
+    for group_title, rendered_tables in groups:
+        parts.append(f"### {group_title}")
+        for label, table_html in rendered_tables:
+            parts.append(f"#### {label}")
+            parts.append(table_html)
+    return parts
 
 
 class _EvidenceCarrier:
@@ -470,7 +592,8 @@ def _curated_view_parts(
             view = render_view(spec, result_tables, finding=finding)
         except Exception:  # never-raise: render_view is already defensive, stay so
             continue
-        view_parts = _single_view_parts(view)
+        view_id = str(spec.get("view_id") or "") if isinstance(spec, dict) else ""
+        view_parts = _single_view_parts(view, view_id=view_id)
         if view_parts and str(getattr(view, "chart_svg", "") or "").strip():
             chart_count += 1
             table = _view_source_table(spec)
@@ -480,7 +603,7 @@ def _curated_view_parts(
     return parts, chart_count, charted_tables
 
 
-def _single_view_parts(view: object) -> list[str]:
+def _single_view_parts(view: object, *, view_id: str = "") -> list[str]:
     """Markdown parts for one rendered :class:`curated_view.CuratedView`. Empty when
     the view degraded or carries no renderable html — the section degrades silently."""
     if getattr(view, "degraded", True):
@@ -498,10 +621,16 @@ def _single_view_parts(view: object) -> list[str]:
     title = _strip_raw_html_markers(str(getattr(view, "title", "") or "").strip())
     if title:
         parts.append(f"### {title}")
-    if table_html:
-        parts.append(_raw_html_block(str(table_html)))
-    if chart_svg:
-        parts.append(_raw_html_block(str(chart_svg)))
+    visual_html = "".join(
+        str(block) for block in (table_html, chart_svg) if block
+    )
+    if visual_html:
+        marker = escape(str(view_id), quote=True)
+        parts.append(
+            _raw_html_block(
+                f'<div class="curated-view" data-view-id="{marker}">{visual_html}</div>'
+            )
+        )
     how_to_read = _strip_raw_html_markers(str(getattr(view, "how_to_read", "") or "").strip())
     if how_to_read:
         parts.append(how_to_read)
@@ -546,18 +675,25 @@ class _FallbackChart(NamedTuple):
     caption: str  # neutral, non-interpretive caption (carries no conclusion/tier)
 
 
-# Per-domain deterministic chart fallback. Keyed by the domain title, which the
+# Per-domain deterministic chart registry. Keyed by the domain title, which the
 # narrative bundle uses verbatim as each section's title/section_id (see
-# reporting.domains.DOMAINS). Each domain lists ORDERED candidates; the first whose
-# source table exists in result_tables and renders a non-empty SVG is injected — and
-# ONLY when the section produced zero chart-template curated views, so an agent-authored
-# chart is never doubled. Numbers are filled by render_chart_template straight from the
-# source-table cells (the numeric-trust boundary); nothing here is agent-authored. Only
-# the five data-bearing core domains are mapped — action/appendix domains have no chart.
+# reporting.domains.DOMAINS). Every listed candidate carries an explicit presentation
+# intent; all usable, non-duplicate candidates render. There is deliberately no fixed
+# per-domain quota: breadth comes from a reviewed registry, while ``charted_tables``
+# prevents duplicate evidence. Numbers are filled by render_chart_template straight
+# from source-table cells (the numeric-trust boundary); nothing here is agent-authored.
 _FALLBACK_CHARTS: dict[str, tuple[_FallbackChart, ...]] = {
     "生意大盘": (
         _FallbackChart(
             "business_trend", "trend_line", "date", "gmv", "GMV 走势", "每日 GMV 走势。"
+        ),
+        _FallbackChart(
+            "business_net_revenue",
+            "trend_line",
+            "date",
+            "net_retention_rate",
+            "退款后收入留存走势",
+            "每日退款后支付金额留存率。",
         ),
     ),
     "流量与内容": (
@@ -572,6 +708,14 @@ _FALLBACK_CHARTS: dict[str, tuple[_FallbackChart, ...]] = {
             "搜索支付转化走势",
             "搜索承接的支付转化走势。",
         ),
+        _FallbackChart(
+            "note_gmv_pareto",
+            "horizontal_bar",
+            "note_title",
+            "gmv_share",
+            "头部笔记成交贡献",
+            "头部笔记的 GMV 占比。",
+        ),
     ),
     "商品结构": (
         _FallbackChart(
@@ -579,7 +723,7 @@ _FALLBACK_CHARTS: dict[str, tuple[_FallbackChart, ...]] = {
             "share_bar",
             "category_l2",
             "gmv_share",
-            "品类 GMV 分布",
+            "二级品类 GMV 分布",
             "各二级品类 GMV 占比。",
         ),
         _FallbackChart(
@@ -587,8 +731,16 @@ _FALLBACK_CHARTS: dict[str, tuple[_FallbackChart, ...]] = {
             "share_bar",
             "category_l1",
             "gmv_share",
-            "品类 GMV 分布",
+            "一级品类 GMV 分布",
             "各一级品类 GMV 占比。",
+        ),
+        _FallbackChart(
+            "sku_price_band_distribution",
+            "share_bar",
+            "band",
+            "gmv_share",
+            "价位带 GMV 分布",
+            "各价位带 GMV 占比。",
         ),
     ),
     "用户与需求": (
@@ -608,6 +760,22 @@ _FALLBACK_CHARTS: dict[str, tuple[_FallbackChart, ...]] = {
             "新老客 GMV 贡献",
             "新老客 GMV 占比。",
         ),
+        _FallbackChart(
+            "demand_funnel_trend",
+            "trend_line",
+            "date",
+            "cart_to_pay",
+            "加购到支付走势",
+            "每日加购到支付比走势。",
+        ),
+        _FallbackChart(
+            "wishlist_demand_trend",
+            "trend_line",
+            "date",
+            "new_wishlist_users",
+            "新增心愿需求走势",
+            "每日新增心愿用户走势。",
+        ),
     ),
     "退款与售后": (
         _FallbackChart(
@@ -626,16 +794,32 @@ _FALLBACK_CHARTS: dict[str, tuple[_FallbackChart, ...]] = {
             "各品类退款率",
             "各一级品类退款率。",
         ),
+        _FallbackChart(
+            "refund_trend",
+            "trend_line",
+            "period",
+            "refund_rate",
+            "退款率走势",
+            "每日支付订单退款率走势。",
+        ),
+        _FallbackChart(
+            "refund_by_price_band",
+            "share_bar",
+            "band",
+            "refund_rate",
+            "价位带退款率",
+            "各价位带支付订单退款率。",
+        ),
+        _FallbackChart(
+            "refund_time_pressure",
+            "trend_line",
+            "date",
+            "refund_amount_refundtime",
+            "退款金额发生走势",
+            "按退款发生时间统计的每日退款金额。",
+        ),
     ),
 }
-
-
-def _fallback_provenance(table: str) -> str:
-    """Provenance stamped under an auto-injected chart, naming its source table by the
-    same human :func:`table_label` the curated views and appendix use. The internal
-    "事实层 result_tables · 自动补图" wording is deliberately gone — it named an
-    implementation layer, not anything a merchant recognizes."""
-    return f"> 来源:{table_label(table)}"
 
 
 # The set of tables the fallback can actually chart — the definition of "the fact layer
@@ -664,18 +848,19 @@ def has_chartable_tables(result_tables: object) -> bool:
 def _fallback_chart_parts(
     domain_title: str, result_tables: dict, charted_tables: set[str] | None = None
 ) -> list[str]:
-    """One deterministic chart for a core domain whose section produced no chart view.
+    """All useful deterministic charts for a core domain, without duplicates.
 
-    Walks the domain's ordered candidates and emits the first whose source table renders
-    a non-empty SVG (via :func:`render_chart_template`, so every number comes from the
-    table cells — the numeric-trust boundary). The caption is neutral and carries no
-    conclusion or evidence tier — a fallback visual asserts nothing beyond the source
-    data. A candidate whose table already appears in ``charted_tables`` is skipped so the
-    fallback never duplicates a chart shown in another section (#7); the table it does
-    chart is recorded there. Returns ``[]`` for an unmapped domain or when no candidate
-    table is usable. Never raises: a pathological table drops the fallback silently."""
+    Walks every registered candidate and emits each source table that renders a non-empty
+    SVG (via :func:`render_chart_template`, so every number comes from the table cells —
+    the numeric-trust boundary). The fallback emits only the chart heading and chart:
+    its fixed caption merely repeated the heading, while its table label was not a real
+    reader-facing source citation.
+    Tables already present in ``charted_tables`` are skipped, so a curated chart and a
+    deterministic chart never duplicate the same evidence. Returns ``[]`` for an
+    unmapped domain or when no candidate is usable. Never raises."""
     seen = charted_tables if isinstance(charted_tables, set) else set()
     try:
+        parts: list[str] = []
         for cand in _FALLBACK_CHARTS.get(domain_title, ()):  # unmapped domain → ()
             if cand.table in seen:  # already charted elsewhere → never duplicate it
                 continue
@@ -685,13 +870,9 @@ def _fallback_chart_parts(
             svg = render_chart_template(cand.template, list(rows), {"x": cand.x, "y": cand.y})
             if not str(svg).strip():
                 continue
-            parts = [f"### {cand.title}", _raw_html_block(str(svg))]
-            if cand.caption:
-                parts.append(cand.caption)
-            parts.append(_fallback_provenance(cand.table))
-            seen.add(cand.table)  # record so a later fallback won't repeat this chart
-            return parts
-        return []
+            parts.extend([f"### {cand.title}", _raw_html_block(str(svg))])
+            seen.add(cand.table)
+        return parts
     except Exception:
         return []
 

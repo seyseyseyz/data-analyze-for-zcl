@@ -1,4 +1,3 @@
-import hashlib
 import re
 from html import escape, unescape
 
@@ -19,11 +18,22 @@ from xhs_ceramics_analytics.reporting.facts_export import (
     fact_id_map_for_result,
     iter_result_finding_refs,
 )
+from xhs_ceramics_analytics.reporting.field_tooltips import (
+    FIELD_TOOLTIP_SCRIPT,
+    FIELD_TOOLTIP_STYLE,
+    field_tooltip_id,
+    tooltip_definition,
+)
 from xhs_ceramics_analytics.reporting.priority import build_priority_table
 from xhs_ceramics_analytics.reporting.section_order import APPENDIX_TASKS
 from xhs_ceramics_analytics.reporting.chart_style import CHART_STYLE
 from xhs_ceramics_analytics.reporting.confidence_pill import CONFIDENCE_PILL_STYLE
 from xhs_ceramics_analytics.reporting.table_labels import TABLE_LABELS as _TABLE_LABELS
+from xhs_ceramics_analytics.reporting.title_mascot import (
+    TITLE_MASCOT_CSS,
+    attach_title_mascot,
+    title_mascot_html,
+)
 from xhs_ceramics_analytics.reporting.toc import TOC_STYLE, build_toc_nav
 from xhs_ceramics_analytics.reporting.formatting import (
     field_help as _field_help,
@@ -70,6 +80,81 @@ _MAX_OPEN_TABLE_ROWS = 10
 # configurable value (CLI --assistant) so the deliverable never ships a vendor
 # name the reader didn't choose.
 _DEFAULT_ASSISTANT_NAME = "分析助手"
+
+TABLE_SORT_STYLE = """
+    th.ca-sortable {
+      cursor: pointer;
+      user-select: none;
+      white-space: nowrap;
+    }
+    th.ca-sortable::after { content: " ↕"; color: var(--muted); font-weight: 400; }
+    th.ca-sortable[aria-sort="descending"]::after { content: " ↓"; color: var(--ink-strong); }
+    th.ca-sortable[aria-sort="ascending"]::after { content: " ↑"; color: var(--ink-strong); }
+    th.ca-sortable:focus-visible { outline: 2px solid var(--yellow-text); outline-offset: -2px; }
+"""
+
+TABLE_SORT_SCRIPT = r"""<script id="ca-table-sort">
+(() => {
+  const decode = (wrapper) => {
+    try { return JSON.parse(wrapper.querySelector(".ca-sort-values")?.textContent || "[]"); }
+    catch (_) { return []; }
+  };
+  document.querySelectorAll(".table-wrap table").forEach((table) => {
+    const wrapper = table.closest(".table-wrap");
+    const body = table.tBodies[0];
+    const headers = Array.from(table.tHead?.rows[0]?.cells || []);
+    const rows = Array.from(body?.rows || []);
+    const matrix = wrapper ? decode(wrapper) : [];
+    if (!body || !headers.length || !rows.length || matrix.length !== rows.length) return;
+    const isTooltipEvent = (event) => Boolean(
+      event.target && event.target.closest(".field-tooltip")
+    );
+    const original = new Map(rows.map((row, index) => [row, index]));
+    const values = new Map(rows.map((row, index) => [row, matrix[index] || []]));
+    let activeColumn = -1;
+    let state = 0;
+
+    const sortBy = (column) => {
+      state = activeColumn === column ? (state + 1) % 3 : 1;
+      activeColumn = column;
+      headers.forEach((header, index) => header.setAttribute(
+        "aria-sort",
+        index !== column || state === 0 ? "none" : state === 1 ? "descending" : "ascending"
+      ));
+      const ordered = rows.slice().sort((left, right) => {
+        if (state === 0) return original.get(left) - original.get(right);
+        const a = values.get(left)[column];
+        const b = values.get(right)[column];
+        const aMissing = typeof a !== "number" || !Number.isFinite(a);
+        const bMissing = typeof b !== "number" || !Number.isFinite(b);
+        if (aMissing && bMissing) return original.get(left) - original.get(right);
+        if (aMissing) return 1;
+        if (bMissing) return -1;
+        return state === 1 ? b - a : a - b;
+      });
+      ordered.forEach((row) => body.appendChild(row));
+    };
+
+    headers.forEach((header, column) => {
+      if (!rows.some((row) => typeof values.get(row)[column] === "number")) return;
+      header.classList.add("ca-sortable");
+      header.tabIndex = 0;
+      header.setAttribute("role", "button");
+      header.setAttribute("aria-sort", "none");
+      header.addEventListener("click", (event) => {
+        if (!isTooltipEvent(event)) sortBy(column);
+      });
+      header.addEventListener("keydown", (event) => {
+        if (isTooltipEvent(event)) return;
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          sortBy(column);
+        }
+      });
+    });
+  });
+})();
+</script>"""
 
 # 经营导读的高亮大卡候选。重拍/重发是弱证据假设(#2)——它属于「流量与内容」域里的一条
 # 可选线索,不该被抬成导读大卡,故不在此列。
@@ -229,6 +314,59 @@ _USER_TABLE_COLUMNS = {
         "referral_gmv",
         "note_gmv",
     ),
+    "carrier_search_efficiency": (
+        "carrier",
+        "impressions",
+        "click_rate",
+        "click_to_pay_rate",
+        "effectiveness",
+        "gmv",
+    ),
+    "search_conversion_trend": (
+        "period",
+        "avg_pay_conversion",
+        "avg_pay_conversion_delta",
+        "pct",
+        "direction",
+        "conversion_source",
+    ),
+    "search_term_opportunities": (
+        "search_term",
+        "term_class",
+        "leak_type",
+        "impressions",
+        "click_rate",
+        "click_to_pay_rate",
+        "effectiveness",
+        "gmv",
+    ),
+    "note_commercial_funnel": (
+        "impressions",
+        "reads",
+        "read_rate",
+        "product_click_users_optional",
+        "product_click_to_order",
+        "paid_orders_optional",
+        "note_gmv_optional",
+        "net_note_gmv",
+    ),
+    "note_gmv_pareto": ("note_title", "note_gmv", "gmv_share", "cum_share"),
+    "note_conversion_outliers": (
+        "note_title",
+        "reads",
+        "paid",
+        "conversion",
+        "outlier_type",
+    ),
+    "note_refund_outliers": (
+        "note_title",
+        "note_paid_orders",
+        "note_refund_orders_pay",
+        "note_refund_rate_pay",
+        "baseline_refund_rate",
+        "fdr_significant",
+        "p_value",
+    ),
     "high_refund_notes": (
         "title",
         "note_refund_rate",
@@ -242,6 +380,52 @@ _USER_TABLE_COLUMNS = {
         "gmv",
         "gmv_share",
         "refund_rate",
+    ),
+    "sku_gmv_pareto": ("sku_name", "gmv", "gmv_share", "cum_share"),
+    "sku_net_value_fact": (
+        "sku_name",
+        "product_name",
+        "gmv",
+        "refund_amount_pay",
+        "net_gmv_pay",
+        "net_retention_rate",
+        "refund_rate_pay",
+    ),
+    "product_net_value": (
+        "product_name",
+        "sku_count",
+        "gmv",
+        "refund_amount_pay",
+        "net_gmv_pay",
+        "net_retention_rate",
+    ),
+    "sku_intent_funnel": (
+        "sku_name",
+        "wishlist_users",
+        "add_to_cart_users",
+        "paid_buyers",
+        "paid_units",
+        "wishlist_to_cart",
+        "cart_to_pay",
+    ),
+    "sku_category_mix": ("category_l1", "gmv", "gmv_share"),
+    "sku_refund_outliers": (
+        "sku_name",
+        "paid_orders",
+        "refund_orders_pay",
+        "refund_rate_pay",
+        "pre_ship_refund_rate_pay",
+        "post_ship_refund_rate_pay",
+        "fdr_significant",
+        "p_value",
+    ),
+    "sku_conversion_and_aov": (
+        "sku_name",
+        "add_to_cart_users",
+        "paid_buyers",
+        "cart_to_pay",
+        "aov",
+        "aov_tag",
     ),
     "sku_price_band_distribution": (
         "band",
@@ -272,6 +456,119 @@ _USER_TABLE_COLUMNS = {
         "contribution",
         "share",
         "is_dominant",
+    ),
+    "carrier_structure": ("carrier", "paid_orders", "gmv", "gmv_share", "order_share"),
+    "traffic_channel_structure": ("channel", "click_users", "click_share", "paid_buyers"),
+    "channel_scale": ("carrier_zh", "paid_orders", "buyers", "gmv", "net_gmv", "gmv_share"),
+    "channel_conversion": ("carrier_zh", "visitors", "buyers", "conversion", "aov", "ci_low", "ci_high"),
+    "channel_refund": (
+        "carrier_zh",
+        "refund_rate",
+        "pre_ship_rate",
+        "post_ship_rate",
+        "ci_low",
+        "ci_high",
+    ),
+    "traffic_source_efficiency": (
+        "account_name",
+        "channel",
+        "note_type",
+        "product_click_users",
+        "paid_buyers",
+        "gmv",
+        "gmv_per_buyer",
+    ),
+    "shop_funnel_stages": ("funnel_stage", "denominator", "rate", "ci_low", "ci_high", "ci_band"),
+    "audience_conversion": ("audience_type", "shop_visitors", "shop_payers", "conversion"),
+    "audience_conversion_comparison": (
+        "audience_type",
+        "visitors",
+        "click_users",
+        "payers",
+        "visit_click_rate",
+        "click_pay_rate",
+        "visit_pay_rate",
+    ),
+    "first_purchase_cycle_funnel": (
+        "first_purchase_cycle",
+        "visitors",
+        "payers",
+        "conversion",
+        "ci_low",
+        "ci_high",
+    ),
+    "shop_source_structure": (
+        "source_page",
+        "visitors",
+        "visitor_share",
+        "estimated_payers",
+        "pay_rate",
+        "gmv_share",
+        "gmv_per_user",
+    ),
+    "refund_layer_breakdown": ("axis", "layer", "refund_orders", "refund_amount", "refund_rate", "share"),
+    "refund_trend": ("period", "refund_rate", "refund_rate_delta", "pct", "direction"),
+    "refund_by_ship_stage": ("stage_zh", "rate"),
+    "refund_by_category": (
+        "category_l1",
+        "paid_orders",
+        "refund_orders",
+        "refund_rate",
+        "wilson_low",
+        "wilson_high",
+        "fdr_significant",
+    ),
+    "refund_by_price_band": ("band", "paid_orders", "gmv_share", "refund_rate", "aov_low", "aov_high"),
+    "product_refund_concentration": (
+        "product_name",
+        "category",
+        "price_band",
+        "refund_amount",
+        "amount_share",
+        "refund_rate",
+        "n",
+    ),
+    "sku_refund_paytime": (
+        "sku_name",
+        "product_name",
+        "category_l1",
+        "category_l2",
+        "gmv",
+        "refund_amount_pay",
+        "net_gmv_pay",
+        "refund_rate_pay",
+    ),
+    "sku_refund_refundtime": (
+        "sku_name",
+        "product_name",
+        "category_l1",
+        "category_l2",
+        "refund_amount_refundtime",
+    ),
+    "business_snapshot": (
+        "gmv",
+        "paid_orders",
+        "paid_units",
+        "avg_daily_product_visitors",
+        "avg_daily_paid_buyers",
+        "avg_daily_pay_conversion",
+        "avg_daily_aov",
+    ),
+    "business_net_revenue": (
+        "date",
+        "gmv",
+        "refund_amount_pay",
+        "net_gmv_pay",
+        "net_retention_rate",
+        "refund_rate_pay",
+    ),
+    "business_traffic_depth": (
+        "product_visitor_days",
+        "new_cart_user_days",
+        "product_visitor_to_new_cart",
+        "product_click_rate_pv",
+        "product_visitor_share",
+        "pv_per_visitor",
     ),
     "business_trend": (
         "date",
@@ -308,19 +605,23 @@ def render_html(
         report=_build_report_context(results, assistant=assistant, factbook=factbook),
         results=results,
         report_title=report_title,
+        title_mascot_css=TITLE_MASCOT_CSS,
+        title_mascot_html=title_mascot_html(),
+        field_tooltip_script=FIELD_TOOLTIP_SCRIPT,
     )
 
 
 def render_markdown_document_html(markdown_text: str, title: str | None = None) -> str:
     report_title = title or _extract_markdown_title(markdown_text) or "小红书账号分析报告"
     body_html, toc_entries = _markdown_document_body(markdown_text)
+    body_html = attach_title_mascot(body_html)
     toc_nav_html = build_toc_nav(toc_entries)
     escaped_title = escape(report_title)
-    # Narrative reading measure (960px); the wide envelope (960 + 232 rail + 44 gap
-    # = 1236, rounded to 1240) seats the rail beside the full 960px body. --toc-pad
+    # Narrative reading measure (1040px); the wide envelope (1040 + 196 rail + 32 gap
+    # = 1268) gives diagnostic tables more room without making the TOC dominant. --toc-pad
     # is left to TOC_STYLE's responsive value so it is not shadowed here.
     narrative_toc_css = TOC_STYLE + (
-        "\n    .page-grid { --toc-content: 960px; --toc-content-wide: 1240px; }\n"
+        "\n    .page-grid { --toc-content: 1040px; --toc-content-wide: 1268px; }\n"
     )
 
     main_html = f"""<main class="report-shell">
@@ -454,6 +755,17 @@ def render_markdown_document_html(markdown_text: str, title: str | None = None) 
       border-collapse: collapse;
       min-width: 560px;
     }}
+    .table-wrap table:has(col[data-col-kind]) {{
+      width: max-content;
+      min-width: 100%;
+    }}
+    .table-wrap th {{ white-space: nowrap; }}
+    .table-wrap col[data-col-kind="identity"] {{ width: 240px; }}
+    .table-wrap col[data-col-key="product_name"] {{ width: 220px; }}
+    .table-wrap col[data-col-key="note_title"] {{ width: 280px; }}
+    .table-wrap col[data-col-kind="category"] {{ width: 112px; }}
+    .table-wrap col[data-col-kind="number"] {{ width: 1%; }}
+    .table-wrap col[data-col-kind="flag"] {{ width: 164px; }}
     th, td {{
       padding: 12px 14px;
       border-bottom: 1px solid var(--line);
@@ -484,11 +796,16 @@ def render_markdown_document_html(markdown_text: str, title: str | None = None) 
     }}
 {CHART_STYLE}
 {CONFIDENCE_PILL_STYLE}
+{TABLE_SORT_STYLE}
+{FIELD_TOOLTIP_STYLE}
+{TITLE_MASCOT_CSS}
 {narrative_toc_css}
   </style>
 </head>
 <body>
   {content_html}
+  {FIELD_TOOLTIP_SCRIPT}
+  {TABLE_SORT_SCRIPT}
 </body>
 </html>
 """
@@ -930,24 +1247,7 @@ def _table_view(
     tooltip_scope: str = "table",
 ) -> dict[str, object]:
     all_columns = list(rows[0].keys()) if rows else []
-    preferred_columns = _USER_TABLE_COLUMNS.get(table_name, tuple(all_columns[:6]))
-    user_columns = [column for column in preferred_columns if column in all_columns]
-    if not user_columns:
-        user_columns = all_columns[:6]
-
-    # Drop a user column that is entirely blank across every shown row — a blank
-    # column only widens the grid and tells the reader nothing. The test is on the
-    # RENDERED cell, not the raw value: a column of empty strings or "—" placeholders
-    # is just as blank as an all-None one, yet ``is not None`` used to keep it. Guard
-    # the edge where dropping would empty the table: an all-blank grid keeps its
-    # columns, since a column-less table reads worse than a sparse one.
-    shown = rows[:_MAX_TABLE_ROWS]
-    non_empty = [
-        c
-        for c in user_columns
-        if any(_display_cell(c, r.get(c)) not in _BLANK_CELLS for r in shown)
-    ]
-    user_columns = non_empty or user_columns
+    user_columns = user_table_columns(table_name, rows)
 
     showing_count = min(len(rows), _MAX_TABLE_ROWS)
     display_text = f"共 {len(rows)} 行，当前展示 {showing_count} 行"
@@ -970,25 +1270,56 @@ def _table_view(
         # 只保留用户视图；原始机器列名在 markdown 表格预览(附录)里留证，HTML 不再
         # 叠一层「技术追溯」制造工程噪音(#12)。
         "user_columns": [
-            _column_view(column, tooltip_scope=tooltip_scope) for column in user_columns
+            _column_view(
+                column,
+                table_name=table_name,
+                tooltip_scope=tooltip_scope,
+            )
+            for column in user_columns
         ],
         "user_rows": [_row_cells(row, user_columns) for row in rows[:_MAX_TABLE_ROWS]],
     }
 
 
-def _column_view(column: str, *, tooltip_scope: str = "table") -> dict[str, str]:
+def user_table_columns(
+    table_name: str,
+    rows: list[dict[str, object]],
+) -> list[str]:
+    """Return the established merchant-facing column subset for a result table."""
+    all_columns = list(rows[0].keys()) if rows else []
+    preferred_columns = _USER_TABLE_COLUMNS.get(table_name, tuple(all_columns[:6]))
+    user_columns = [column for column in preferred_columns if column in all_columns]
+    if not user_columns:
+        user_columns = all_columns[:6]
+
+    shown = rows[:_MAX_TABLE_ROWS]
+    non_empty = [
+        column
+        for column in user_columns
+        if any(_display_cell(column, row.get(column)) not in _BLANK_CELLS for row in shown)
+    ]
+    return non_empty or user_columns
+
+
+def _column_view(
+    column: str,
+    *,
+    table_name: str | None = None,
+    tooltip_scope: str = "table",
+) -> dict[str, object]:
+    definition = tooltip_definition(column, table_name=table_name)
     return {
         "name": column,
         "label": _field_label(column),
-        "help": _field_help(column),
+        "help": definition.summary if definition is not None else None,
+        "details": _tooltip_details(definition),
         "tooltip_id": _field_tooltip_id(tooltip_scope, column),
     }
 
 
 def _field_tooltip_id(scope: str, field_name: str) -> str:
     """Return a deterministic, document-safe id without leaking raw field names."""
-    digest = hashlib.sha256(f"{scope}:{field_name}".encode("utf-8")).hexdigest()[:12]
-    return f"field-tip-{digest}"
+    return field_tooltip_id(scope, field_name)
 
 
 def _key_number_view(
@@ -999,7 +1330,7 @@ def _key_number_view(
     factbook: object | None,
     finding_path: str | None,
     fact_id_map: dict[tuple[str, str], str] | None,
-) -> dict[str, str]:
+) -> dict[str, object]:
     fact = _fact_for_key_number(
         factbook,
         finding_path=finding_path,
@@ -1009,12 +1340,28 @@ def _key_number_view(
     validated = _has_validated_metric_semantics(fact)
     label = getattr(fact, "display_name", None) if validated else _field_label(key)
     rendered = _fact_rendered_value(fact) if fact is not None else _display_cell(key, value)
+    metric_id = str(getattr(fact, "metric_id")) if validated else None
+    definition = (
+        tooltip_definition(key, metric_id=metric_id)
+        if fact is None or validated
+        else None
+    )
     return {
         "label": str(label),
-        "help": _field_help(key),
+        "help": definition.summary if definition is not None else None,
+        "details": _tooltip_details(definition),
         "value": rendered,
         "tooltip_id": _field_tooltip_id(tooltip_scope, key),
     }
+
+
+def _tooltip_details(definition: object | None) -> list[dict[str, str]]:
+    if definition is None:
+        return []
+    return [
+        {"label": detail.label, "value": detail.value}
+        for detail in getattr(definition, "details", ())
+    ]
 
 
 def _fact_for_key_number(

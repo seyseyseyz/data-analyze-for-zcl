@@ -1,3 +1,4 @@
+import hashlib
 import re
 from collections import defaultdict
 from pathlib import Path
@@ -36,6 +37,7 @@ AUX_TABLES = (
     "data_quality",
     "mapping_diagnostics",
     "mapping_audit",
+    "build_statistics",
 )
 _AUX_TABLES = AUX_TABLES
 _TABULAR_SUFFIXES = {".csv", *EXCEL_SUFFIXES}
@@ -64,13 +66,23 @@ def build_database(
         )
         conflicts: list[dict] = []
         manifest: list[dict] = []
+        statistics: list[dict] = []
         for table_type, tagged in grouped.items():
             conflicts.extend(_detect_conflicts(tagged, table_type))
             manifest.extend(_build_manifest_records(table_type, tagged))
-            merged = _combine_frames([frame for _, frame in tagged], table_type)
+            unique_frames = []
+            seen_hashes: set[str] = set()
+            for _name, frame, file_hash in tagged:
+                if file_hash in seen_hashes:
+                    continue
+                seen_hashes.add(file_hash)
+                unique_frames.append(frame)
+            merged = _combine_frames(unique_frames, table_type)
+            statistics.append(_build_statistics_record(table_type, tagged, merged))
             _create_table_from_frame(con, db_path, table_type, merged)
         _create_needs_data_table(con, db_path, needs_data)
         _create_build_manifest_table(con, db_path, manifest)
+        _create_build_statistics_table(con, db_path, statistics)
         _create_data_quality_table(con, db_path, conflicts)
         _create_mapping_diagnostics_table(con, db_path, diagnostics)
         _create_mapping_audit_table(con, db_path, mapping_audit)
@@ -88,8 +100,9 @@ def build_database(
 def _group_files_by_type(
     con, files: list[Path], overrides: dict[str, dict[str, set[str]]]
 ) -> tuple[dict[str, list], list[dict], list[dict], list[dict]]:
-    # Each grouped value is a list of ``(file_name, canonical_frame)`` pairs (provenance
-    # for build_manifest / data_quality). ``diagnostics`` is the flat per-column record
+    # Each grouped value is ``(file_name, canonical_frame, file_hash)`` (provenance
+    # for build_manifest / data_quality and exact-file deduplication). ``diagnostics``
+    # is the flat per-column record
     # list for the mapping_diagnostics table — the file name is attached HERE, where it
     # is known, since ColumnDiagnostic itself carries only table_type/required_column.
     grouped: dict[str, list] = defaultdict(list)
@@ -109,7 +122,7 @@ def _group_files_by_type(
         frame, file_diagnostics, file_decisions = _canonical_frame(
             con, file, profile, table_type, overrides
         )
-        grouped[table_type].append((file.name, frame))
+        grouped[table_type].append((file.name, frame, _sha256(file)))
         for diag in file_diagnostics:
             diagnostics.append(
                 {
@@ -158,6 +171,14 @@ def _needs_data_record(file: Path, reason: str, action: str) -> dict:
     return {"file": file.name, "domain": domain, "reason": reason, "action": action}
 
 
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def _create_needs_data_table(con, db_path: Path, needs_data: list[dict]) -> None:
     frame = pd.DataFrame(needs_data, columns=["file", "domain", "reason", "action"])
     _create_table_from_frame(con, db_path, "needs_data", frame)
@@ -166,14 +187,51 @@ def _create_needs_data_table(con, db_path: Path, needs_data: list[dict]) -> None
 def _build_manifest_records(table_type: str, tagged: list) -> list[dict]:
     """One provenance row per contributing file (spec §A.2)."""
     return [
-        {"table_name": table_type, "file": name, "row_count": int(len(frame))}
-        for name, frame in tagged
+        {
+            "table_name": table_type,
+            "file": name,
+            "row_count": int(len(frame)),
+            "sha256": file_hash,
+        }
+        for name, frame, file_hash in tagged
     ]
 
 
 def _create_build_manifest_table(con, db_path: Path, manifest: list[dict]) -> None:
-    frame = pd.DataFrame(manifest, columns=["table_name", "file", "row_count"])
+    frame = pd.DataFrame(
+        manifest,
+        columns=["table_name", "file", "row_count", "sha256"],
+    )
     _create_table_from_frame(con, db_path, "build_manifest", frame)
+
+
+def _build_statistics_record(table_type: str, tagged: list, merged) -> dict:
+    frames = [frame for _name, frame, _file_hash in tagged]
+    combined = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+    input_rows = int(len(combined))
+    exact_duplicates = int(combined.duplicated(keep="first").sum())
+    accepted_rows = int(len(merged))
+    return {
+        "table_name": table_type,
+        "input_rows": input_rows,
+        "accepted_rows": accepted_rows,
+        "exact_duplicate_rows": exact_duplicates,
+        "merged_rows": max(input_rows - exact_duplicates - accepted_rows, 0),
+    }
+
+
+def _create_build_statistics_table(con, db_path: Path, statistics: list[dict]) -> None:
+    frame = pd.DataFrame(
+        statistics,
+        columns=[
+            "table_name",
+            "input_rows",
+            "accepted_rows",
+            "exact_duplicate_rows",
+            "merged_rows",
+        ],
+    )
+    _create_table_from_frame(con, db_path, "build_statistics", frame)
 
 
 def _coerce_number(value: object) -> float | None:
@@ -214,11 +272,13 @@ def _detect_conflicts(tagged: list, table_type: str) -> list[dict]:
     keys = GRAIN_KEYS.get(table_type)
     if not keys or len(tagged) < 2:
         return []
-    key_cols = [key for key in keys if all(key in frame.columns for _, frame in tagged)]
+    key_cols = [
+        key for key in keys if all(key in frame.columns for _, frame, _hash in tagged)
+    ]
     if not key_cols:
         return []
     indexed: list[tuple[str, dict]] = []
-    for name, frame in tagged:
+    for name, frame, _file_hash in tagged:
         rows = {tuple(row[col] for col in key_cols): row for _, row in frame.iterrows()}
         indexed.append((name, rows))
     conflicts: list[dict] = []
