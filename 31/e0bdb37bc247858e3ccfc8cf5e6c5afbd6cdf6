@@ -1,0 +1,69 @@
+tests/test_report_charts.py
+  s_034c2f84038e38::t_0298b2143f57f5 164-165
+  s_034c2f84038e38::t_62f1f9206731e4 169-176
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/reporting/templates/report.html.j2
+  s_034c2f84038e38::t_97e207b03a7f6c 702,816
+xhs_ceramics_analytics/reporting/charts.py
+  s_034c2f84038e38::t_5c0418b7356342 40
+tests/reporting/test_chart_style.py
+  s_034c2f84038e38::t_0298b2143f57f5 73
+  s_034c2f84038e38::t_62f1f9206731e4 42-47,69
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/reporting/test_toc.py
+  s_14bc9c4eb093e4::t_bf66f481f60b67 81-88,162-171,191-192,252-259
+xhs_ceramics_analytics/reporting/templates/report.html.j2
+  s_034c2f84038e38::t_a50fbc5e3ce8fd 816
+  s_034c2f84038e38::t_48908de1f097a8 702
+xhs_ceramics_analytics/reporting/chart_style.py
+  s_034c2f84038e38::t_48908de1f097a8 45
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/reporting/test_chart_style.py
+  s_034c2f84038e38::t_97e207b03a7f6c 42-47,69,73
+tests/test_html_field_tooltips.py
+  s_034c2f84038e38::t_3f02dba0a52a47 171
+  s_034c2f84038e38::t_94051f19fa20b8 57-58
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/reporting/chart_style.py
+  s_034c2f84038e38::t_97e207b03a7f6c 45
+xhs_ceramics_analytics/reporting/toc.py
+  s_14bc9c4eb093e4::t_f4366b72038bf0 54,59
+  s_14bc9c4eb093e4::t_83b289a1a24154 36-41,49
+  s_1b32c46b5314ea::t_2717e24923f0c0 29,143
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_report_charts.py
+  s_034c2f84038e38::t_97e207b03a7f6c 164-165,169-176
+tests/reporting/test_toc.py
+  s_1b32c46b5314ea::t_33c50256222859 191
+  s_1b32c46b5314ea::t_adb31e8163b7e2 192
+  s_14bc9c4eb093e4::t_c9fe901a60a95b 81-88,162-171,252-259
+xhs_ceramics_analytics/reporting/field_tooltips.py
+  s_034c2f84038e38::t_5c0418b7356342 55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.39-trip",
+  "base_commit_sha": "31e0bdb37bc247858e3ccfc8cf5e6c5afbd6cdf6",
+  "prompts": {},
+  "sessions": {
+    "s_034c2f84038e38": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc3d5-699b-7671-b890-ed4143d8da33",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    },
+    "s_14bc9c4eb093e4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc3e5-fc9f-7b13-b34c-db8c20093f88",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    },
+    "s_1b32c46b5314ea": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc3e7-9b15-7e03-a6fc-1c72447b2388",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
