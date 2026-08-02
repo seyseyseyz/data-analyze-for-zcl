@@ -1,0 +1,21 @@
+docs/superpowers/specs/2026-08-02-narrative-workflow-reliability-design.md
+  s_32b381b78e43b0::t_fde64587bef4cc 3-6
+  s_32b381b78e43b0::t_f14e63f098a9e3 89,91-101,236
+  s_32b381b78e43b0::t_14fb7d3b197d0e 1-2,7-88,90,102-235,237-376
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.39-trip",
+  "base_commit_sha": "5be9d8b0a648370a71cba7a18f72143d579b74bf",
+  "prompts": {},
+  "sessions": {
+    "s_32b381b78e43b0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc121-8723-7d60-89aa-3bb67393fd32",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
