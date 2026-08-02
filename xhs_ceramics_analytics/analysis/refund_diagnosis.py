@@ -22,6 +22,17 @@ _LAYER_COLUMNS = {
     "post_ship": "post_ship_refund_amount",
     "return": "return_refund_amount",
 }
+_LAYER_ORDER_COLUMNS = {
+    "pre_ship": "pre_ship_refund_orders",
+    "post_ship": "post_ship_refund_orders",
+    "shipped_refundonly": "shipped_refundonly_orders",
+    "return": "return_refund_orders",
+}
+_LAYER_RATE_COLUMNS = {
+    "pre_ship": "pre_ship_refund_rate_pay",
+    "post_ship": "post_ship_refund_rate_pay",
+    "return": "return_refund_rate_pay",
+}
 _SHIP_STAGE_LAYERS = ("pre_ship", "post_ship")
 _LAYER_LEVERS = {
     "pre_ship": "发货前退款最高：退款主要卡在发货前。这周先翻发货前退款的订单备注，分清是催不发货、缺货还是价格波动；对上号的先补下单后拦截话术，再理顺库存与发货时效，价格波动就提前把预期说清。",
@@ -38,15 +49,20 @@ def run(db_path: Path) -> AnalysisResult:
         findings: list[Finding] = []
         limitations: list[str] = []
         tables: dict[str, list[dict]] = {}
+        cols = _table_columns(con, "refund_overview")
+        all_rows = _fetch_all(con, "refund_overview")
+        tables["refund_overview_by_period_account_carrier"] = [dict(row) for row in all_rows]
+        rows = _single_period_rows(all_rows, cols, limitations)
 
-        layer_finding, layer_rows = _layer_finding(con, limitations)
+        layer_finding, layer_rows = _layer_finding(con, limitations, rows)
         findings.append(layer_finding)
         tables["refund_layer_breakdown"] = layer_rows
 
-        carrier_finding, carrier_rows = _carrier_finding(con, limitations)
-        if carrier_finding is not None:
-            findings.append(carrier_finding)
-            tables["carrier_refund_comparison"] = carrier_rows
+        if rows is not None:
+            carrier_finding, carrier_rows = _carrier_finding(con, limitations, rows)
+            if carrier_finding is not None:
+                findings.append(carrier_finding)
+                tables["carrier_refund_comparison"] = carrier_rows
 
         trend_finding, trend_rows = _trend_finding(con, limitations)
         if trend_finding is not None:
@@ -62,6 +78,11 @@ def run(db_path: Path) -> AnalysisResult:
         if product_finding is not None:
             findings.append(product_finding)
             tables["product_refund_concentration"] = product_rows
+
+        reason_finding, reason_rows = _reason_finding(con, limitations)
+        if reason_finding is not None:
+            findings.append(reason_finding)
+            tables["refund_reason_breakdown"] = reason_rows
     finally:
         con.close()
     return AnalysisResult(
@@ -73,10 +94,93 @@ def run(db_path: Path) -> AnalysisResult:
     )
 
 
-def _layer_finding(con, limitations: list[str]) -> tuple[Finding, list[dict]]:
+def _reason_finding(con, limitations: list[str]) -> tuple[Finding | None, list[dict]]:
+    if not _table_exists(con, "refund_reasons"):
+        limitations.append("缺少 refund_reasons 手工录入表，跳过退款原因结构。")
+        return None, []
+    cols = _table_columns(con, "refund_reasons")
+    if "refund_reason" not in cols:
+        limitations.append("refund_reasons 缺少 refund_reason，跳过退款原因结构。")
+        return None, []
+    groups: dict[str, dict[str, float | None]] = {}
+    for row in _fetch_all(con, "refund_reasons"):
+        reason = str(row.get("refund_reason") or "未分类")
+        group = groups.setdefault(reason, {"refund_amount": None, "refund_orders": None})
+        for metric in ("refund_amount", "refund_orders"):
+            if metric not in cols or row.get(metric) is None:
+                continue
+            value = _num(row.get(metric))
+            group[metric] = (group[metric] or 0.0) + value
+    if not groups:
+        limitations.append("refund_reasons 没有可用原因记录，跳过退款原因结构。")
+        return None, []
+    total_amount = sum(group["refund_amount"] or 0.0 for group in groups.values())
+    total_orders = sum(group["refund_orders"] or 0.0 for group in groups.values())
+    rows = [
+        {
+            "refund_reason": reason,
+            "refund_amount": group["refund_amount"],
+            "refund_orders": group["refund_orders"],
+            "amount_share": (
+                group["refund_amount"] / total_amount
+                if total_amount and group["refund_amount"] is not None
+                else None
+            ),
+            "order_share": (
+                group["refund_orders"] / total_orders
+                if total_orders and group["refund_orders"] is not None
+                else None
+            ),
+        }
+        for reason, group in groups.items()
+    ]
+    rows.sort(
+        key=lambda row: (
+            row["refund_amount"] is not None,
+            row["refund_amount"] or 0,
+            row["refund_orders"] or 0,
+        ),
+        reverse=True,
+    )
+    top = rows[0]
+    sample_size = int(total_orders) if total_orders else len(rows)
+    return (
+        Finding(
+            title="退款原因结构",
+            conclusion=(
+                f"已整理 {qty(len(rows))} 类退款原因；首要原因为「{top['refund_reason']}」，"
+                f"涉及退款 {money(top['refund_amount'])}、{qty(top['refund_orders'])} 单。"
+            ),
+            evidence_strength=score_evidence(sample_size, has_controls=False, confounder_count=2),
+            descriptive_reliability=score_reliability(sample_size),
+            key_numbers={
+                "reason_count": len(rows),
+                "top_reason": top["refund_reason"],
+                "total_refund_amount": total_amount if "refund_amount" in cols else None,
+                "total_refund_orders": total_orders if "refund_orders" in cols else None,
+            },
+            caveats=[
+                "退款原因来自手工录入或 OCR，可能存在漏记、归类误差和多原因合并。",
+                "原因金额/订单只在本表内部计算占比，不与其他统计周期的退款快照相加。",
+                M.causal_disclaimer("商品销量结构和售后记录完整度不同"),
+            ],
+            evidence_reason="按退款原因汇总手工录入的金额和订单，两种占比分别计算。",
+            confounders=["原因记录完整度", "商品销量结构"],
+            recommended_action="先抽检首要原因对应订单与商品，再决定修改详情、包装、物流或客服流程。",
+        ),
+        rows,
+    )
+
+
+def _layer_finding(
+    con, limitations: list[str], rows: list[dict] | None = None
+) -> tuple[Finding, list[dict]]:
     cols = _table_columns(con, "refund_overview")
-    rows = _fetch_all(con, "refund_overview")
+    if rows is None:
+        return _multi_period_gap_finding(), []
     present = {name: col for name, col in _LAYER_COLUMNS.items() if col in cols}
+    if "shipped_refundonly_amount" in cols:
+        present["shipped_refundonly"] = "shipped_refundonly_amount"
     total = sum(_num(r.get("refund_amount_pay")) for r in rows)
     amounts = {layer: sum(_num(r.get(col)) for r in rows) for layer, col in present.items()}
     # pre_ship + post_ship partition the ship-stage axis (they sum to 100% of
@@ -92,13 +196,19 @@ def _layer_finding(con, limitations: list[str]) -> tuple[Finding, list[dict]]:
         else:
             axis, denom = "return_type", total
         layer_rows.append(
-            {
+            row := {
                 "layer": layer,
                 "axis": axis,
                 "refund_amount": amount,
                 "share": amount / denom if denom else None,
             }
         )
+        order_col = _LAYER_ORDER_COLUMNS.get(layer)
+        rate_col = _LAYER_RATE_COLUMNS.get(layer)
+        if order_col in cols:
+            row["refund_orders"] = sum(_num(r.get(order_col)) for r in rows)
+        if rate_col in cols:
+            row["refund_rate"] = _aggregate_rate(rows, order_col, rate_col)
     for missing in _LAYER_COLUMNS.keys() - present.keys():
         limitations.append(f"refund_overview 缺少 {_LAYER_COLUMNS[missing]}，跳过 {missing} 层。")
 
@@ -147,6 +257,9 @@ def _layer_finding(con, limitations: list[str]) -> tuple[Finding, list[dict]]:
             "ci_low": lo,
             "ci_high": hi,
             "total_refund_amount": total,
+            "total_refund_users": (
+                sum(_num(r.get("refund_users")) for r in rows) if "refund_users" in cols else None
+            ),
         },
         caveats=caveats,
         recommended_action=_LAYER_LEVERS.get(dominant_layer) if dominant_layer else None,
@@ -159,29 +272,69 @@ def _layer_finding(con, limitations: list[str]) -> tuple[Finding, list[dict]]:
     return finding, layer_rows
 
 
-def _carrier_finding(con, limitations: list[str]) -> tuple[Finding | None, list[dict]]:
+def _carrier_finding(
+    con, limitations: list[str], rows: list[dict] | None = None
+) -> tuple[Finding | None, list[dict]]:
     cols = _table_columns(con, "refund_overview")
     if "carrier" not in cols:
         limitations.append("refund_overview 缺少 carrier 列，跳过载体对比。")
         return None, []
-    rows = _fetch_all(con, "refund_overview")
-    by_carrier: list[dict] = []
+    if rows is None:
+        return None, []
+    grouped: dict[object, dict] = {}
     for r in rows:
         rate = _num(r.get("refund_rate_pay"))
         orders = _num(r.get("refund_orders_pay"))
-        n = round(orders / rate) if rate > 0 else 0
+        group = grouped.setdefault(
+            r.get("carrier"),
+            {
+                "refund_orders": 0.0,
+                "refund_orders_all": 0.0,
+                "n": 0.0,
+                "refund_amount": 0.0,
+                "refund_users": 0.0,
+                "rate_coverage_rows": 0,
+                "missing_rate_rows": 0,
+            },
+        )
+        group["refund_orders_all"] += orders
+        if (
+            r.get("refund_orders_pay") is not None
+            and r.get("refund_rate_pay") is not None
+            and rate > 0
+        ):
+            group["refund_orders"] += orders
+            group["n"] += orders / rate
+            group["rate_coverage_rows"] += 1
+        else:
+            group["missing_rate_rows"] += 1
+        if "refund_amount_pay" in cols:
+            group["refund_amount"] += _num(r.get("refund_amount_pay"))
+        if "refund_users" in cols:
+            group["refund_users"] += _num(r.get("refund_users"))
+    by_carrier = []
+    for carrier, group in grouped.items():
         by_carrier.append(
             {
-                "carrier": r.get("carrier"),
-                "refund_rate": rate,
-                "refund_orders": orders,
-                "n": n,
+                "carrier": carrier,
+                "refund_rate": (group["refund_orders"] / group["n"] if group["n"] else None),
+                "refund_orders": group["refund_orders"],
+                "refund_orders_all": group["refund_orders_all"],
+                "n": group["n"],
+                "refund_amount": group["refund_amount"] if "refund_amount_pay" in cols else None,
+                "refund_users": group["refund_users"] if "refund_users" in cols else None,
+                "rate_coverage_rows": group["rate_coverage_rows"],
+                "missing_rate_rows": group["missing_rate_rows"],
             }
         )
     if len({c["carrier"] for c in by_carrier}) < 2:
         limitations.append("refund_overview 只有单一载体，跳过载体对比。")
         return None, []
-    top2 = sorted(by_carrier, key=lambda c: c["refund_rate"], reverse=True)[:2]
+    valid = [row for row in by_carrier if row["refund_rate"] is not None]
+    if len(valid) < 2:
+        limitations.append("refund_overview 载体退款率有效组不足两组，跳过载体对比。")
+        return None, []
+    top2 = sorted(valid, key=lambda c: c["refund_rate"], reverse=True)[:2]
     a, b = top2[0], top2[1]
     test = two_proportion(a["refund_orders"], a["n"], b["refund_orders"], b["n"])
     sig = "显著" if test["significant"] else "不显著"
@@ -215,6 +368,52 @@ def _carrier_finding(con, limitations: list[str]) -> tuple[Finding | None, list[
     return finding, by_carrier
 
 
+def _single_period_rows(
+    rows: list[dict], cols: set[str], limitations: list[str]
+) -> list[dict] | None:
+    if "stat_period" not in cols:
+        return rows
+    periods = {row.get("stat_period") for row in rows if row.get("stat_period") is not None}
+    if len(periods) <= 1:
+        return rows
+    limitations.append("refund_overview 含多个统计周期，可能重叠，禁止跨周期叠加。")
+    return None
+
+
+def _aggregate_rate(rows: list[dict], order_col: str | None, rate_col: str) -> float | None:
+    if order_col is not None:
+        paired = [
+            row
+            for row in rows
+            if row.get(order_col) is not None
+            and row.get(rate_col) is not None
+            and _num(row.get(rate_col)) > 0
+        ]
+        orders = sum(_num(row.get(order_col)) for row in paired)
+        base = sum(_num(row.get(order_col)) / _num(row.get(rate_col)) for row in paired)
+        if base > 0:
+            return orders / base
+    rates = [_num(row.get(rate_col)) for row in rows if row.get(rate_col) is not None]
+    return sum(rates) / len(rates) if rates else None
+
+
+def _multi_period_gap_finding() -> Finding:
+    return Finding(
+        title="退款主漏点层级",
+        conclusion="退款概览包含多个统计周期，可能相互重叠，未跨周期汇总退款结构。",
+        evidence_strength=EvidenceStrength.NOT_JUDGABLE,
+        key_numbers={
+            "dominant_layer": None,
+            "dominant_share": None,
+            "overall_refund_rate": None,
+            "total_refund_amount": None,
+        },
+        caveats=["不同统计周期的聚合快照不可直接相加。"],
+        evidence_reason="保留原周期/账号/载体粒度，未对可能重叠的周期求和。",
+        confounders=["统计周期重叠"],
+    )
+
+
 def _trend_finding(con, limitations: list[str]) -> tuple[Finding | None, list[dict]]:
     if not _table_exists(con, "business_overview_daily"):
         limitations.append("缺少 business_overview_daily 表，跳过退款率时间趋势。")
@@ -239,8 +438,13 @@ def _trend_finding(con, limitations: list[str]) -> tuple[Finding | None, list[di
     # Per-period deltas belong in the table columns, not a stringified appendix.
     steps = mom_change(series)
     trend_rows = [
-        {"period": s["period"], "refund_rate": s["value"], "refund_rate_delta": s["delta"],
-         "pct": s["pct"], "direction": s["direction"]}
+        {
+            "period": s["period"],
+            "refund_rate": s["value"],
+            "refund_rate_delta": s["delta"],
+            "pct": s["pct"],
+            "direction": s["direction"],
+        }
         for s in steps
     ]
     # Direction from OLS slope over all periods — a noisy endpoint can't flip it.
@@ -295,8 +499,15 @@ def _note_finding(con, limitations: list[str]) -> tuple[Finding | None, list[dic
             WHERE n.note_refund_rate_pay IS NOT NULL
             """
         ).fetchall()
-        columns = ["note_id", "title", "rate", "paid",
-                   "composition_type", "scene_hint", "copy_angle"]
+        columns = [
+            "note_id",
+            "title",
+            "rate",
+            "paid",
+            "composition_type",
+            "scene_hint",
+            "copy_angle",
+        ]
     else:
         rows = con.sql(
             """
@@ -332,8 +543,7 @@ def _note_finding(con, limitations: list[str]) -> tuple[Finding | None, list[dic
 
     top_feature = _top_feature(high, _NOTE_FEATURES) if has_features else None
     caveats = [
-        M.causal_disclaimer("选品差异、定价和客群不同")
-        + "高退款笔记的共有特征仅供假设生成。"
+        M.causal_disclaimer("选品差异、定价和客群不同") + "高退款笔记的共有特征仅供假设生成。"
     ]
     if not has_features:
         caveats.append("缺少 content_features，仅列高退款笔记，无法归因特征。")
@@ -344,9 +554,7 @@ def _note_finding(con, limitations: list[str]) -> tuple[Finding | None, list[dic
     finding = Finding(
         title="笔记退款反思",
         conclusion=conclusion,
-        evidence_strength=score_evidence(
-            int(total_n), has_controls=False, confounder_count=1
-        ),
+        evidence_strength=score_evidence(int(total_n), has_controls=False, confounder_count=1),
         descriptive_reliability=score_reliability(int(total_n)),
         key_numbers={
             "high_refund_note_count": len(high),
@@ -414,13 +622,13 @@ def _product_finding(con, limitations: list[str]) -> tuple[Finding | None, list[
 
     total_refund = sum(_num(r["gmv"]) - _num(r["net_gmv"]) for r in records)
     total_k = (
-        sum(_num(r["rate"]) * _num(r["refund_orders"]) for r in records)
-        if has_orders
-        else 0.0
+        sum(_num(r["rate"]) * _num(r["refund_orders"]) for r in records) if has_orders else 0.0
     )
     total_n = sum(_num(r["refund_orders"]) for r in records) if has_orders else 0.0
-    baseline = (total_k / total_n) if total_n else (
-        sum(_num(r["rate"]) for r in records) / len(records) if records else 0.0
+    baseline = (
+        (total_k / total_n)
+        if total_n
+        else (sum(_num(r["rate"]) for r in records) / len(records) if records else 0.0)
     )
 
     product_rows: list[dict] = []
@@ -455,16 +663,14 @@ def _product_finding(con, limitations: list[str]) -> tuple[Finding | None, list[
     top_feature = _top_feature(high, _PRODUCT_FEATURES) if has_products else None
     top_share = sum(r["amount_share"] or 0 for r in product_rows[:3])
     caveats = [
-        M.causal_disclaimer("品类结构、定价带和上新周期不同")
-        + "高退款产品的共有特征仅供假设生成。"
+        M.causal_disclaimer("品类结构、定价带和上新周期不同") + "高退款产品的共有特征仅供假设生成。"
     ]
     if not has_products:
         caveats.append("缺少 products，仅列高退款产品，无法归因特征。")
     if not has_orders:
         caveats.append("缺少 refund_orders_pay，产品退款率未做订单量 Wilson 守卫。")
-    conclusion = (
-        f"高退款产品 {qty(len(high))} 个，退款金额前三占 {round(top_share * 100)}%。"
-        + (f" 高退款集中在 {top_feature}。" if top_feature else "")
+    conclusion = f"高退款产品 {qty(len(high))} 个，退款金额前三占 {round(top_share * 100)}%。" + (
+        f" 高退款集中在 {top_feature}。" if top_feature else ""
     )
     finding = Finding(
         title="产品退款反思",
@@ -474,9 +680,7 @@ def _product_finding(con, limitations: list[str]) -> tuple[Finding | None, list[
             has_controls=False,
             confounder_count=1,
         ),
-        descriptive_reliability=score_reliability(
-            int(total_n) if has_orders else len(records)
-        ),
+        descriptive_reliability=score_reliability(int(total_n) if has_orders else len(records)),
         key_numbers={
             "high_refund_product_count": len(high),
             "top_products_amount_share": top_share,

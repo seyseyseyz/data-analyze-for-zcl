@@ -24,11 +24,7 @@ def run(db_path: Path) -> AnalysisResult:
         con.close()
 
     ready_sections = [row for row in rows if row["status"] == "ready"]
-    limitations = [
-        f"{row['section']} 模块缺少源数据。"
-        for row in rows
-        if row["status"] != "ready"
-    ]
+    limitations = [f"{row['section']} 模块缺少源数据。" for row in rows if row["status"] != "ready"]
 
     # #5:过去无论多少子段有数据都折成一条"已汇总 N 个模块",读者看不到任何实质
     # 结论。改为每个有数据的子段各出一条结论;全空时才降级为单条 not_judgable。
@@ -51,9 +47,7 @@ def _section_finding(row: dict[str, object]) -> Finding:
     return Finding(
         title=f"本周复盘 · {zh}",
         conclusion=str(row["summary"]),
-        evidence_strength=score_evidence(
-            evidence_count, has_controls=False, confounder_count=2
-        ),
+        evidence_strength=score_evidence(evidence_count, has_controls=False, confounder_count=2),
         descriptive_reliability=score_reliability(evidence_count),
         key_numbers={"本周样本量": evidence_count},
         caveats=["这是本周的描述性汇总，只反映已经发生的数据；能看清现状，但不能据此断定因果。"],
@@ -208,16 +202,8 @@ def _product_opportunity_section(con) -> dict[str, object]:
         if join_clause
         else "CAST(d.sku_id AS VARCHAR)"
     )
-    units_expr = (
-        "SUM(CAST(d.units AS DOUBLE))"
-        if "units" in sales_columns
-        else "NULL"
-    )
-    gmv_expr = (
-        "SUM(CAST(d.gmv AS DOUBLE))"
-        if "gmv" in sales_columns
-        else "NULL"
-    )
+    units_expr = "SUM(CAST(d.units AS DOUBLE))" if "units" in sales_columns else "NULL"
+    gmv_expr = "SUM(CAST(d.gmv AS DOUBLE))" if "gmv" in sales_columns else "NULL"
     metric_predicates = []
     if "units" in sales_columns:
         metric_predicates.append("d.units IS NOT NULL")
@@ -280,9 +266,7 @@ def _table_counts(con) -> list[dict[str, object]]:
     for (table_name,) in con.sql("SHOW TABLES").fetchall():
         if table_name in AUX_TABLES:  # internal build scaffolding, not merchant data
             continue
-        row_count = con.sql(
-            f"SELECT COUNT(*) FROM {_quote_identifier(table_name)}"
-        ).fetchone()[0]
+        row_count = con.sql(f"SELECT COUNT(*) FROM {_quote_identifier(table_name)}").fetchone()[0]
         rows.append({"table": table_name, "rows": int(row_count)})
     return rows
 

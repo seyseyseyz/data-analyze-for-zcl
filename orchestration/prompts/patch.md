@@ -1,16 +1,14 @@
-# Patch — 定向补丁 (tier: draft / medium)
+# Targeted revision — 定向修订 (tier: judgment / high)
 
-You fix ONE gate hard-failure. You receive the failing `claim`, the `gate_report` entry, and the
-copy-paste `rendered` string of the fact it should cite. Return the corrected **`claim`** (see
-`schemas/claim.json`), spliced back for re-gating.
+你只修一个 quality blocker。输入包含明确的 `target_type`、`target_id`、blocker 证据、允许引用的
+facts/tables 与当前对象。输出严格的 **`targeted_revision`**
+（`schemas/targeted_revision.json`）。
 
-Fix the structure, not by inventing data:
-- MISSING_FACT / METRIC_MISBIND / DIRECTION_CONFLICT — point the `number_token` at the correct
-  existing `fact_id` / `expected_metric_key` / `direction`, or drop the token and the clause it backs.
-- INVENTED_ENTITY — remove or replace with a name in `entity_registry`.
-- NONEXISTENT_SLICE — delete the claim; the slice does not exist (it belongs in CANNOT-SAY / §7).
-- QUANTIFIED_ATTRIBUTION — set `causal_link.quantified=false` and restate as a directional 弱 judgment,
-  or remove the attributed number.
-- SUMMED_POOLS — split into per-pool claims; never sum incompatible pools.
-- MAGNITUDE_UNBOUND — replace any bare digit with a `{tN}` token bound to a real fact.
-Never raise the confidence tag to escape a cap; the cap is deterministic and re-applied.
+- 目标只能是 `claim` / `view` / `action`，并分别由 `claim_id` / `view_id` / `action_id` 唯一定位。
+- 只允许 replace 或 drop。不得借一个 blocker 重写整份报告、整域或未点名对象。
+- claim/action 中的业务数字仍只能用 `{tN}` / `number_token` 绑定真实 `fact_id`；view 必须用
+  `source.table` 绑定真实 `table_id`，用 `supports_claim` 绑定真实 `claim_id`。
+- 注册表/确定性层唯一拥有 metric 名称、单位、口径、周期、`aggregation`、公式和展示值；不得
+  通过改名、换单位或改口径逃过 blocker。
+- 每次输出标记 revision `round`；最多两轮是为了收敛与防止反复震荡，不是为了节省成本。两轮后
+  仍不可靠的对象必须 drop 或令交付 blocked。

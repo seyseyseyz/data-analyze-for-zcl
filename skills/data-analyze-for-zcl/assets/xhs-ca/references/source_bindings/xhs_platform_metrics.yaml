@@ -1,0 +1,201 @@
+version: 1
+platform: xiaohongshu_qianfan
+runtime_consumed: true
+runtime_mode: observe
+runtime_scopes: [agent_context]
+bindings:
+  - platform_metric_id: 20
+    module: 交易数据/成交分析
+    canonical_table: business_overview_daily
+    canonical_field: gmv
+    status: accepted
+    match_basis: exact_existing_alias
+    confidence: high
+    grain: shop_day
+    time_basis: payment_time
+    unit: cny
+    value_encoding: decimal
+    aggregation: direct
+    approved_definition_sha256: 5049d02b826e596052f9507b7a37d90098631bf5da5c55a12f13c8030b7d1b3d
+  - platform_metric_id: 20
+    module: 数据总览
+    canonical_table: business_overview_daily
+    canonical_field: gmv
+    status: accepted
+    match_basis: exact_existing_alias
+    confidence: high
+    grain: shop_day
+    time_basis: payment_time
+    unit: cny
+    value_encoding: decimal
+    aggregation: direct
+    approved_definition_sha256: 5049d02b826e596052f9507b7a37d90098631bf5da5c55a12f13c8030b7d1b3d
+  - platform_metric_id: 37
+    module: 交易数据/成交分析
+    canonical_table: business_overview_daily
+    canonical_field: paid_orders
+    status: accepted
+    match_basis: exact_existing_alias
+    confidence: high
+    grain: shop_day
+    time_basis: payment_time
+    unit: count
+    value_encoding: integer
+    aggregation: direct
+    approved_definition_sha256: 4bd8b824bbd6a3528328d40f195b0da3df28c80445cebe4623d26ef3fd395939
+  - platform_metric_id: 37
+    module: 数据总览
+    canonical_table: business_overview_daily
+    canonical_field: paid_orders
+    status: accepted
+    match_basis: exact_existing_alias
+    confidence: high
+    grain: shop_day
+    time_basis: payment_time
+    unit: count
+    value_encoding: integer
+    aggregation: direct
+    approved_definition_sha256: 4bd8b824bbd6a3528328d40f195b0da3df28c80445cebe4623d26ef3fd395939
+  - platform_metric_id: 41
+    module: 交易数据/成交分析
+    canonical_table: business_overview_daily
+    canonical_field: refund_amount_refundtime
+    status: accepted
+    match_basis: exact_existing_alias
+    confidence: high
+    grain: shop_day
+    time_basis: refund_completion_time
+    unit: cny
+    value_encoding: decimal
+    aggregation: direct
+    approved_definition_sha256: 8bcd349058a3c0ccc9aaddf7640c950fe180f374cb4ab01b1c5439327cb1c2b3
+  - platform_metric_id: 41
+    module: 数据总览
+    canonical_table: business_overview_daily
+    canonical_field: refund_amount_refundtime
+    status: accepted
+    match_basis: exact_existing_alias
+    confidence: high
+    grain: shop_day
+    time_basis: refund_completion_time
+    unit: cny
+    value_encoding: decimal
+    aggregation: direct
+    approved_definition_sha256: 8bcd349058a3c0ccc9aaddf7640c950fe180f374cb4ab01b1c5439327cb1c2b3
+  - platform_metric_id: 370
+    module: 数据总览
+    canonical_table: business_overview_daily
+    canonical_field: note_gmv
+    status: accepted
+    match_basis: exact_existing_alias
+    confidence: high
+    grain: shop_day
+    time_basis: analysis_window
+    unit: cny
+    value_encoding: decimal
+    aggregation: direct
+    approved_definition_sha256: c9ad213338c88772309a05675e437b1c27c883af96d3092ded15d54050e91e7c
+  - platform_metric_id: 1774
+    module: 交易数据/成交分析
+    canonical_table: business_overview_daily
+    canonical_field: refund_amount_pay
+    status: accepted
+    match_basis: exact_existing_alias
+    confidence: high
+    grain: shop_day
+    time_basis: payment_time
+    unit: cny
+    value_encoding: decimal
+    aggregation: direct
+    approved_definition_sha256: 5d3109793e7d162b925ac8fed52fb5f14d0cfc2034fc14d7e8ffdcbae135267c
+  - platform_metric_id: 1774
+    module: 数据总览
+    canonical_table: business_overview_daily
+    canonical_field: refund_amount_pay
+    status: accepted
+    match_basis: exact_existing_alias
+    confidence: high
+    grain: shop_day
+    time_basis: payment_time
+    unit: cny
+    value_encoding: decimal
+    aggregation: direct
+    approved_definition_sha256: 5d3109793e7d162b925ac8fed52fb5f14d0cfc2034fc14d7e8ffdcbae135267c
+  - platform_metric_id: 1775
+    module: 交易数据/成交分析
+    canonical_table: business_overview_daily
+    canonical_field: net_gmv_pay
+    status: accepted
+    match_basis: exact_existing_alias
+    confidence: high
+    grain: shop_day
+    time_basis: payment_time
+    unit: cny
+    value_encoding: decimal
+    aggregation: direct
+    approved_definition_sha256: f5877c81f756e80b835a27a94a481d3a4b9e1ac5dc9d21c22a7c85274ef11431
+  - platform_metric_id: 1775
+    module: 数据总览
+    canonical_table: business_overview_daily
+    canonical_field: net_gmv_pay
+    status: accepted
+    match_basis: exact_existing_alias
+    confidence: high
+    grain: shop_day
+    time_basis: payment_time
+    unit: cny
+    value_encoding: decimal
+    aggregation: direct
+    approved_definition_sha256: f5877c81f756e80b835a27a94a481d3a4b9e1ac5dc9d21c22a7c85274ef11431
+  - platform_metric_id: 1776
+    module: 交易数据/成交分析
+    canonical_table: business_overview_daily
+    canonical_field: refund_rate_pay
+    status: accepted
+    match_basis: exact_existing_alias
+    confidence: high
+    grain: shop_day
+    time_basis: payment_time
+    unit: percent
+    value_encoding: ratio_0_1
+    aggregation: direct
+    approved_definition_sha256: f4f0d8ddb998c7e2e34c027f49ef6bc638ff2cc007d5acc07c99bcbe5b4b3c27
+  - platform_metric_id: 1776
+    module: 数据总览
+    canonical_table: business_overview_daily
+    canonical_field: refund_rate_pay
+    status: accepted
+    match_basis: exact_existing_alias
+    confidence: high
+    grain: shop_day
+    time_basis: payment_time
+    unit: percent
+    value_encoding: ratio_0_1
+    aggregation: direct
+    approved_definition_sha256: f4f0d8ddb998c7e2e34c027f49ef6bc638ff2cc007d5acc07c99bcbe5b4b3c27
+  - platform_metric_id: 1777
+    module: 交易数据/成交分析
+    canonical_table: business_overview_daily
+    canonical_field: refund_orders_pay
+    status: accepted
+    match_basis: exact_existing_alias
+    confidence: high
+    grain: shop_day
+    time_basis: payment_time
+    unit: count
+    value_encoding: integer
+    aggregation: direct
+    approved_definition_sha256: 41b93d84ae8604bc6a5423892651405e09b1d01d565b87d40bc90522699e23e4
+  - platform_metric_id: 1777
+    module: 数据总览
+    canonical_table: business_overview_daily
+    canonical_field: refund_orders_pay
+    status: accepted
+    match_basis: exact_existing_alias
+    confidence: high
+    grain: shop_day
+    time_basis: payment_time
+    unit: count
+    value_encoding: integer
+    aggregation: direct
+    approved_definition_sha256: 41b93d84ae8604bc6a5423892651405e09b1d01d565b87d40bc90522699e23e4

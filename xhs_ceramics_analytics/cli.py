@@ -1,5 +1,6 @@
 import json as _json
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Annotated
 
 import typer
@@ -24,39 +25,143 @@ narrative_app = typer.Typer(help="Drive the file-based narrative workflow.")
 app.add_typer(narrative_app, name="narrative")
 
 
-def _write_narrative_results(results, blocked_modules, project_root, block_reasons=None) -> None:
-    """Emit results.json (the narrative `--results` input) beside facts.json.
+def _write_sidecar_status(project_root, payload: dict) -> None:
+    target_dir = state_dir(project_root)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target = target_dir / "sidecar_status.json"
+    temp_path: Path | None = None
+    try:
+        with NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=target_dir,
+            prefix=".sidecar_status.json.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            _json.dump(payload, handle, ensure_ascii=False, indent=2, sort_keys=True)
+            handle.write("\n")
+            temp_path = Path(handle.name)
+        temp_path.replace(target)
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
 
-    Like the facts.json / HTML paths, this is a sidecar: a failure here must never
-    abort an already-produced fact layer — it degrades to a warning. results.json is
-    the domain-sliced document `xhs-ca narrative prepare --results` consumes; facts.json
-    cannot serve that role (its ``domain_slices`` is an always-empty cache dict).
 
-    ``block_reasons`` (slug → why-blocked, from coverage) enriches ``blocked_modules``
-    so the deterministic skeleton can explain what data unlocks each blocked module.
-    When absent (curated multi-slug runs, where coverage was not swept), reasons are
-    empty and the skeleton still lists the bare slugs.
-    """
+def _invalidate_fact_sidecars(project_root, error: BaseException) -> None:
+    target_dir = state_dir(project_root)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    for filename in ("facts.json", "results.json"):
+        (target_dir / filename).unlink(missing_ok=True)
+    _write_sidecar_status(
+        project_root,
+        {
+            "status": "unavailable",
+            "error": str(error),
+        },
+    )
+
+
+def _build_and_publish_fact_sidecars(
+    results,
+    blocked_modules,
+    project_root,
+    block_reasons=None,
+    *,
+    factbook=None,
+):
+    """Build one FactBook and publish facts.json/results.json as one snapshot."""
+    from xhs_ceramics_analytics.reporting.facts_export import (
+        build_factbook,
+        factbook_to_json,
+    )
     from xhs_ceramics_analytics.reporting.narrative_results import build_narrative_results
 
     block_reasons = block_reasons or {}
     blocked = [{"slug": s, "reason": block_reasons.get(s, "")} for s in blocked_modules]
-    out = state_dir(project_root) / "results.json"
+    factbook = factbook or build_factbook(results, blocked_modules=tuple(blocked_modules))
+    facts_text = factbook_to_json(factbook)
+    results_doc = build_narrative_results(
+        results,
+        blocked_modules=blocked,
+        factbook=factbook,
+    )
+    facts_doc = _json.loads(facts_text)
+    for field in ("canonical_version", "facts_hash", "registry_hash", "metric_mapping"):
+        if results_doc.get(field) != facts_doc.get(field):
+            raise ValueError(f"sidecar metric snapshot mismatch: {field}")
+
+    results_text = _json.dumps(
+        results_doc,
+        ensure_ascii=False,
+        indent=2,
+        sort_keys=True,
+    )
+    target_dir = state_dir(project_root)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    targets = tuple(target_dir / filename for filename in ("facts.json", "results.json"))
+    temp_paths: list[Path] = []
     try:
-        out.write_text(
-            _json.dumps(
-                build_narrative_results(results, blocked_modules=blocked),
-                ensure_ascii=False,
-                indent=2,
-            ),
-            encoding="utf-8",
+        for filename, content in (
+            ("facts.json", facts_text),
+            ("results.json", results_text),
+        ):
+            with NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=target_dir,
+                prefix=f".{filename}.",
+                suffix=".tmp",
+                delete=False,
+            ) as handle:
+                handle.write(content)
+                temp_paths.append(Path(handle.name))
+        _write_sidecar_status(
+            project_root,
+            {
+                "status": "building",
+                "facts_hash": facts_doc["facts_hash"],
+                "registry_hash": facts_doc.get("registry_hash"),
+            },
         )
-        typer.echo(f"Wrote narrative results: {out}")
-    except Exception as exc:
-        typer.echo(
-            f"results.json build failed; kept the fact layer and skipped the narrative sidecar: {exc}",
-            err=True,
+        for temp_path, target in zip(temp_paths, targets):
+            temp_path.replace(target)
+        _write_sidecar_status(
+            project_root,
+            {
+                "status": "ready",
+                "facts_hash": facts_doc["facts_hash"],
+                "registry_hash": facts_doc.get("registry_hash"),
+            },
         )
+        typer.echo(f"Wrote facts: {target_dir / 'facts.json'}")
+        typer.echo(f"Wrote narrative results: {target_dir / 'results.json'}")
+    finally:
+        for temp_path in temp_paths:
+            temp_path.unlink(missing_ok=True)
+    return factbook
+
+
+def _write_fact_sidecars(
+    results,
+    blocked_modules,
+    project_root,
+    block_reasons=None,
+    *,
+    factbook=None,
+):
+    """Build and publish one snapshot, invalidating the active pair on interruption."""
+    try:
+        return _build_and_publish_fact_sidecars(
+            results,
+            blocked_modules,
+            project_root,
+            block_reasons,
+            factbook=factbook,
+        )
+    except BaseException as sidecar_error:
+        _invalidate_fact_sidecars(project_root, sidecar_error)
+        raise
 
 
 @app.command()
@@ -215,33 +320,37 @@ def run(
     markdown_out.write_text(render_markdown(results, title=report_title), encoding="utf-8")
     typer.echo(f"Wrote report: {markdown_out}")
 
-    from xhs_ceramics_analytics.reporting.facts_export import (
-        build_factbook as _build_factbook,
-        factbook_to_json as _factbook_to_json,
-    )
-
     # facts.json is the cache-key + writer-handoff sidecar, NOT a deliverable — it lives in
     # the state dir beside analytics.duckdb / mapping_overrides.yaml / report_runs.jsonl, so
     # outputs/ stays a pure two-file (md+html) delivery surface. Its build must never abort an
-    # already-written report: like the HTML path below, a sidecar failure degrades to a warning.
+    # already-written report. A failed build invalidates the active pair so a later narrative
+    # run cannot accidentally consume a stale snapshot from an earlier report.
     blocked = tuple(t for t in TASKS if t not in task_ids)
-    facts_out = state_dir(project_root) / "facts.json"
+    factbook = None
     try:
-        facts_out.write_text(
-            _factbook_to_json(_build_factbook(results, blocked_modules=blocked)), encoding="utf-8"
+        factbook = _write_fact_sidecars(
+            results,
+            blocked,
+            project_root,
+            block_reasons,
         )
-        typer.echo(f"Wrote facts: {facts_out}")
     except Exception as exc:
+        _invalidate_fact_sidecars(project_root, exc)
         typer.echo(
-            f"facts.json build failed; kept report and skipped the sidecar: {exc}",
+            f"sidecar build failed; kept report and invalidated the active pair: {exc}",
             err=True,
         )
-    _write_narrative_results(results, blocked, project_root, block_reasons)
     if html_out.exists():
         html_out.unlink()
     try:
         html_out.write_text(
-            render_html(results, title=report_title, assistant=assistant), encoding="utf-8"
+            render_html(
+                results,
+                title=report_title,
+                assistant=assistant,
+                factbook=factbook,
+            ),
+            encoding="utf-8",
         )
     except Exception as exc:
         errors_out.write_text(
@@ -272,11 +381,7 @@ def facts(
     """Build the deterministic FactBook and write facts.json into the state dir (0 agents)."""
     from xhs_ceramics_analytics.analysis.coverage import assess_coverage
     from xhs_ceramics_analytics.analysis.registry import TASKS, run_task
-    from xhs_ceramics_analytics.reporting.facts_export import (
-        build_factbook,
-        facts_hash,
-        factbook_to_json,
-    )
+    from xhs_ceramics_analytics.reporting.facts_export import facts_hash
 
     db_path = db or state_dir(project_root) / "analytics.duckdb"
     requested = list(tasks) if tasks else ["auto"]
@@ -294,11 +399,16 @@ def facts(
         task_ids = [t for t in requested if t in TASKS]
     results = [run_task(task_id, db_path) for task_id in task_ids]
     blocked = tuple(t for t in TASKS if t not in task_ids)
-    book = build_factbook(results, blocked_modules=blocked)
-    out = state_dir(project_root) / "facts.json"
-    out.write_text(factbook_to_json(book), encoding="utf-8")
-    typer.echo(f"Wrote facts: {out}")
-    _write_narrative_results(results, blocked, project_root, block_reasons)
+    try:
+        book = _write_fact_sidecars(
+            results,
+            blocked,
+            project_root,
+            block_reasons,
+        )
+    except Exception as exc:
+        _invalidate_fact_sidecars(project_root, exc)
+        raise
     typer.echo(f"facts_hash: {facts_hash(book)}")
 
 
@@ -357,6 +467,13 @@ def render_draft_command(
 def finalize(
     bundle: Annotated[Path, typer.Argument(help="narrative_bundle.json.")],
     facts: Annotated[Path, typer.Argument(help="facts.json.")],
+    results: Annotated[
+        Path,
+        typer.Option(
+            "--results",
+            help="results.json used to build the workflow-compatible cache key.",
+        ),
+    ],
     edits: Annotated[Path | None, typer.Option("--edits", help="continuity_edits.json (list).")]
     = None,
     out: Annotated[Path | None, typer.Option("--out", help="Where to write frozen_narrative.json.")]
@@ -366,7 +483,7 @@ def finalize(
     import json as _json
 
     from xhs_ceramics_analytics.reporting.factcheck_gate import run_gate
-    from xhs_ceramics_analytics.reporting.frozen_narrative import write_frozen
+    from xhs_ceramics_analytics.reporting.frozen_narrative import payload_hash, write_frozen
     from xhs_ceramics_analytics.reporting.narrative_render import (
         apply_continuity_edits,
         render_draft,
@@ -374,7 +491,22 @@ def finalize(
 
     bundle_data = _json.loads(Path(bundle).read_text(encoding="utf-8"))
     facts_data = _json.loads(Path(facts).read_text(encoding="utf-8"))
-    report = run_gate(bundle_data, facts_data)
+    results_data = _json.loads(Path(results).read_text(encoding="utf-8"))
+    try:
+        _nw._validate_sidecar_snapshot(results_data, facts_data)
+    except ValueError as exc:
+        typer.echo(f"sidecar snapshot rejected: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    result_tables = results_data.get("result_tables")
+    if not isinstance(result_tables, dict):
+        result_tables = (
+            results_data.get("tables") if isinstance(results_data.get("tables"), dict) else {}
+        )
+    report = (
+        run_gate(bundle_data, facts_data, result_tables)
+        if result_tables
+        else run_gate(bundle_data, facts_data)
+    )
     if report.status != "PASS":
         typer.echo(f"gate FAIL — cannot finalize: {report.hard_failures}", err=True)
         raise typer.Exit(code=1)
@@ -387,7 +519,13 @@ def finalize(
             typer.echo(f"continuity edit rejected: {exc}", err=True)
             raise typer.Exit(code=1) from exc
     target = out or (state_dir(None) / "frozen_narrative.json")
-    write_frozen(target, facts_data.get("facts_hash", ""), drafted)
+    write_frozen(
+        target,
+        facts_data.get("facts_hash", ""),
+        drafted,
+        results_hash=payload_hash(results_data),
+        result_tables=result_tables,
+    )
     typer.echo(f"Wrote frozen narrative: {target}")
 
 
@@ -398,24 +536,39 @@ def render_frozen_command(
     name: Annotated[Path | None, typer.Option("--name", "-n", help="Output basename (no suffix).")]
     = None,
 ) -> None:
-    """Render md+html from a frozen narrative; re-gates and checks facts_hash (tamper evidence)."""
+    """Render exactly one final HTML artifact from a current cache."""
     import json as _json
 
+    from xhs_ceramics_analytics.reporting.frozen_narrative import (
+        is_cache_hit,
+        load_frozen,
+    )
     from xhs_ceramics_analytics.reporting.narrative_render import render_frozen
 
-    frozen_data = _json.loads(Path(frozen).read_text(encoding="utf-8"))
     facts_data = _json.loads(Path(facts).read_text(encoding="utf-8"))
     try:
-        md, html = render_frozen(frozen_data, facts_data)
+        frozen_data = load_frozen(frozen)
     except ValueError as exc:
         typer.echo(f"render-frozen refused: {exc}", err=True)
         raise typer.Exit(code=1) from exc
+    if not is_cache_hit(
+        frozen_data,
+        facts_data.get("facts_hash", ""),
+        results_hash=(frozen_data or {}).get("results_hash", ""),
+        result_tables=(frozen_data or {}).get("result_tables"),
+    ):
+        typer.echo("render-frozen refused: stale or incompatible cache", err=True)
+        raise typer.Exit(code=1)
     # An explicit --name is an operator-chosen path base (dev tool), used verbatim; the
     # default lands in a timestamped production folder like every other deliverable.
     base = name or (run_output_dir("经营诊断报告", run_timestamp(), None) / "经营诊断报告")
-    Path(f"{base}.md").write_text(md, encoding="utf-8")
+    title = Path(base).name.replace("_", " ").strip()
+    try:
+        _markdown, html = render_frozen(frozen_data, facts_data, title=title)
+    except ValueError as exc:
+        typer.echo(f"render-frozen refused: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
     Path(f"{base}.html").write_text(html, encoding="utf-8")
-    typer.echo(f"Wrote report: {base}.md")
     typer.echo(f"Wrote report: {base}.html")
 
     from xhs_ceramics_analytics.reporting.report_telemetry import (
@@ -525,6 +678,39 @@ def _read_json_input(path: Path, label: str) -> dict:
         raise typer.BadParameter(f"{label} file is not valid JSON: {exc}") from exc
 
 
+def _validate_active_sidecar_status(
+    results_path: Path,
+    facts_path: Path,
+    results_doc: dict,
+    facts_doc: dict,
+) -> None:
+    results_parent = results_path.resolve().parent
+    facts_parent = facts_path.resolve().parent
+    if results_parent != facts_parent:
+        raise typer.BadParameter(
+            "results.json and facts.json must come from the same directory"
+        )
+    status_path = facts_parent / "sidecar_status.json"
+    if not status_path.exists():
+        raise typer.BadParameter(
+            f"sidecar_status.json is required for this sidecar pair: {status_path}"
+        )
+    status = _read_json_input(status_path, "sidecar_status.json")
+    if status.get("status") != "ready":
+        raise typer.BadParameter(
+            "sidecar_status.json is not ready: "
+            f"{status.get('status', 'unknown')}"
+        )
+    expected_hash = status.get("facts_hash")
+    if not expected_hash or any(
+        document.get("facts_hash") != expected_hash
+        for document in (facts_doc, results_doc)
+    ):
+        raise typer.BadParameter(
+            "sidecar_status.json facts_hash does not match facts.json/results.json"
+        )
+
+
 @narrative_app.command("prepare")
 def narrative_prepare(
     run_dir: Annotated[Path, typer.Option("--run-dir")],
@@ -533,16 +719,41 @@ def narrative_prepare(
     name: Annotated[str, typer.Option("--name")],
     project_root: Annotated[Path | None, typer.Option("--project-root")] = None,
     force: Annotated[bool, typer.Option("--force")] = False,
+    multi_agent_authorized: Annotated[
+        bool,
+        typer.Option(
+            "--multi-agent-authorized",
+            help="Confirm the user explicitly authorized the quality multi-agent workflow.",
+        ),
+    ] = False,
+    multi_agent_declined: Annotated[
+        bool,
+        typer.Option(
+            "--multi-agent-declined",
+            help="Confirm the user explicitly declined the quality multi-agent workflow.",
+        ),
+    ] = False,
+    multi_agent_unavailable: Annotated[
+        bool,
+        typer.Option(
+            "--multi-agent-unavailable",
+            help="Confirm this host has no sub-agent facility and use deterministic-only delivery.",
+        ),
+    ] = False,
 ) -> None:
     """Initialize a run directory from results.json + facts.json."""
     results_doc = _read_json_input(results, "results")
     facts_doc = _read_json_input(facts, "facts")
+    _validate_active_sidecar_status(results, facts, results_doc, facts_doc)
     try:
         state = _nw.prepare_run(
             run_dir, results=results_doc, facts_json=facts_doc,
             report_name=name, project_root=project_root, force=force,
+            multi_agent_authorized=multi_agent_authorized,
+            multi_agent_declined=multi_agent_declined,
+            multi_agent_unavailable=multi_agent_unavailable,
         )
-    except FileExistsError as exc:
+    except (FileExistsError, ValueError) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
     typer.echo(f"prepared: stage={state['stage']} merged={state['merged_sections']}")
@@ -571,12 +782,19 @@ def narrative_ingest(
     stage: Annotated[str, typer.Option("--stage")],
     source: Annotated[Path | None, typer.Option("--source")] = None,
     section_id: Annotated[str | None, typer.Option("--section-id")] = None,
+    task_id: Annotated[str | None, typer.Option("--task-id")] = None,
 ) -> None:
     """Ingest a sub-agent's JSON output for the given stage."""
     if source is not None and not source.exists():
         raise typer.BadParameter(f"source file not found: {source}")
     try:
-        state = _nw.ingest_output(run_dir, stage=stage, source=source, section_id=section_id)
+        state = _nw.ingest_output(
+            run_dir,
+            stage=stage,
+            source=source,
+            section_id=section_id,
+            task_id=task_id,
+        )
     except (ValueError, FileNotFoundError) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
@@ -591,7 +809,7 @@ def narrative_advance(
     """Advance the run one step through the stage machine."""
     try:
         state = _nw.advance_run(run_dir, project_root=project_root)
-    except FileNotFoundError as exc:
+    except (FileNotFoundError, ValueError, RuntimeError) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
     typer.echo(f"stage={state['stage']}")
@@ -606,7 +824,7 @@ def narrative_finalize_deterministic(
     """Deliver the deterministic skeleton fallback report and mark the run blocked."""
     try:
         state = _nw.finalize_deterministic(run_dir, project_root=project_root, reason=reason)
-    except FileNotFoundError as exc:
+    except (FileNotFoundError, ValueError, RuntimeError) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
     typer.echo(f"stage={state['stage']} reason={state['degradation_reason']}")

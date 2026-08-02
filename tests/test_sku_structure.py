@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from xhs_ceramics_analytics.analysis.sku_structure import run
 from xhs_ceramics_analytics.db.duck import connect
 
@@ -114,15 +116,110 @@ def test_full_sku_rows_produce_weak_findings(tmp_path):
     assert ("高退款 SKU 识别" in other_titles) or ("加购转化与客单价结构" in other_titles)
 
 
+def test_sku_net_value_intent_and_product_rollup(tmp_path):
+    con, db_path = _con(tmp_path)
+    con.execute(
+        """
+        CREATE TABLE sku_performance (
+          sku_id VARCHAR,
+          sku_name VARCHAR,
+          product_id VARCHAR,
+          product_name VARCHAR,
+          brand VARCHAR,
+          is_channel_product BOOLEAN,
+          gmv DOUBLE,
+          refund_amount_pay DOUBLE,
+          net_gmv_pay DOUBLE,
+          refund_rate_pay DOUBLE,
+          wishlist_users DOUBLE,
+          add_to_cart_users DOUBLE,
+          add_to_cart_units DOUBLE,
+          paid_buyers DOUBLE,
+          paid_units DOUBLE
+        )
+        """
+    )
+    con.executemany(
+        "INSERT INTO sku_performance VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [
+            (
+                "s1",
+                "青釉杯大号",
+                "p1",
+                "青釉杯",
+                "自有",
+                True,
+                1000,
+                200,
+                800,
+                0.2,
+                200,
+                100,
+                120,
+                40,
+                45,
+            ),
+            (
+                "s2",
+                "青釉杯小号",
+                "p1",
+                "青釉杯",
+                "自有",
+                True,
+                600,
+                30,
+                570,
+                0.05,
+                100,
+                60,
+                70,
+                35,
+                38,
+            ),
+        ],
+    )
+    con.close()
+
+    result = run(db_path)
+
+    net = result.tables["sku_net_value_fact"]
+    intent = result.tables["sku_intent_funnel"]
+    product = result.tables["product_net_value"]
+    assert net[0]["sku_id"] == "s1"
+    assert net[0]["net_retention_rate"] == pytest.approx(0.8)
+    assert intent[0]["wishlist_to_cart"] == pytest.approx(0.5)
+    assert intent[0]["cart_to_pay"] == pytest.approx(0.4)
+    assert product[0]["product_id"] == "p1"
+    assert product[0]["gmv"] == 1600
+    assert product[0]["net_gmv_pay"] == 1370
+    assert product[0]["brand"] == "自有"
+    assert product[0]["is_channel_product"] is True
+    assert any(f.title == "SKU 净价值与意向承接" for f in result.findings)
+
+
 def test_pareto_reports_gini_and_hhi_single_values(tmp_path):
     con, db_path = _con(tmp_path)
     # 12 SKUs with a steep GMV gradient → concentrated → gini well above 0.
     rows = [
         (
-            f"sku_{i:02d}", f"陶瓷杯-{i:02d}", "prod_1", "陶瓷杯系列", False,
-            "杯具", "马克杯", "自有品牌",
-            100.0 + i * 5, 20000.0 - i * 1200.0, 40.0 + i, 50.0 + i, 55.0 + i,
-            300.0 + i * 20, 5.0 + i * 1.5, 2.0 + i * 0.5, 2.0, 3.0 + i * 0.5,
+            f"sku_{i:02d}",
+            f"陶瓷杯-{i:02d}",
+            "prod_1",
+            "陶瓷杯系列",
+            False,
+            "杯具",
+            "马克杯",
+            "自有品牌",
+            100.0 + i * 5,
+            20000.0 - i * 1200.0,
+            40.0 + i,
+            50.0 + i,
+            55.0 + i,
+            300.0 + i * 20,
+            5.0 + i * 1.5,
+            2.0 + i * 0.5,
+            2.0,
+            3.0 + i * 0.5,
             (20000.0 - i * 1200.0) * 0.9,
         )
         for i in range(12)
@@ -144,10 +241,24 @@ def test_price_band_distribution_uses_shared_caliber(tmp_path):
     # 12 SKUs spread across a wide AOV range → 4 quantile price bands.
     rows = [
         (
-            f"sku_{i:02d}", f"陶瓷杯-{i:02d}", "prod_1", "陶瓷杯系列", False,
-            "杯具", "马克杯", "自有品牌",
-            100.0 + i * 5, 2000.0 + i * 800.0, 40.0 + i, 50.0 + i, 55.0 + i,
-            50.0 + i * 60.0, 5.0, 2.0, 2.0, 3.0,
+            f"sku_{i:02d}",
+            f"陶瓷杯-{i:02d}",
+            "prod_1",
+            "陶瓷杯系列",
+            False,
+            "杯具",
+            "马克杯",
+            "自有品牌",
+            100.0 + i * 5,
+            2000.0 + i * 800.0,
+            40.0 + i,
+            50.0 + i,
+            55.0 + i,
+            50.0 + i * 60.0,
+            5.0,
+            2.0,
+            2.0,
+            3.0,
             (2000.0 + i * 800.0) * 0.9,
         )
         for i in range(12)
@@ -191,17 +302,24 @@ def test_price_sweet_spot_flags_high_conversion_low_refund_band(tmp_path):
         top = i >= 9
         rows.append(
             (
-                f"sku_{i:02d}", f"陶瓷杯-{i:02d}", "prod_1", "陶瓷杯系列", False,
-                "杯具", "马克杯", "自有品牌",
-                100.0,                       # add_to_cart_users
-                5000.0,                      # gmv
-                60.0 if top else 20.0,       # paid_buyers → conversion
-                70.0 if top else 25.0,       # paid_orders
-                30.0,                        # paid_units
-                50.0 + i * 60.0,             # aov → price band
-                0.05 if top else 0.20,       # refund_rate_pay
-                3.5 if top else 5.0,         # refund_orders_pay → refund rate
-                2.0, 3.0,
+                f"sku_{i:02d}",
+                f"陶瓷杯-{i:02d}",
+                "prod_1",
+                "陶瓷杯系列",
+                False,
+                "杯具",
+                "马克杯",
+                "自有品牌",
+                100.0,  # add_to_cart_users
+                5000.0,  # gmv
+                60.0 if top else 20.0,  # paid_buyers → conversion
+                70.0 if top else 25.0,  # paid_orders
+                30.0,  # paid_units
+                50.0 + i * 60.0,  # aov → price band
+                0.05 if top else 0.20,  # refund_rate_pay
+                3.5 if top else 5.0,  # refund_orders_pay → refund rate
+                2.0,
+                3.0,
                 4500.0,
             )
         )
@@ -209,9 +327,7 @@ def test_price_sweet_spot_flags_high_conversion_low_refund_band(tmp_path):
     con.close()
     result = run(db_path)
 
-    finding = next(
-        f for f in result.findings if f.title == "价格甜点（价格带 × 转化 × 退款）"
-    )
+    finding = next(f for f in result.findings if f.title == "价格甜点（价格带 × 转化 × 退款）")
     assert finding.key_numbers["sweet_spot_band"] == "高价位"
     rows_t = result.tables["sku_price_sweet_spot"]
     assert len(rows_t) == 4
@@ -251,9 +367,25 @@ def test_price_sweet_spot_degrades_without_refund_column(tmp_path):
 
 def _sku(i, orders, rate, refund_orders):
     return (
-        f"sku_{i}", f"name_{i}", "p", "prod", False, "杯具", "马克杯", "brand",
-        100.0, 5000.0, orders, orders, orders, 100.0,
-        rate, refund_orders, 0.0, 0.0, 4500.0,
+        f"sku_{i}",
+        f"name_{i}",
+        "p",
+        "prod",
+        False,
+        "杯具",
+        "马克杯",
+        "brand",
+        100.0,
+        5000.0,
+        orders,
+        orders,
+        orders,
+        100.0,
+        rate,
+        refund_orders,
+        0.0,
+        0.0,
+        4500.0,
     )
 
 
@@ -261,7 +393,7 @@ def test_refund_fdr_flags_only_strong_outliers(tmp_path):
     con, db_path = _con(tmp_path)
     rows = [_sku(i, 100.0, 0.10, 10.0) for i in range(10)]  # baseline drivers
     rows.append(_sku(100, 200.0, 0.50, 100.0))  # genuinely high refund
-    rows.append(_sku(101, 15.0, 0.20, 3.0))     # borderline, tiny sample
+    rows.append(_sku(101, 15.0, 0.20, 3.0))  # borderline, tiny sample
     _make_full_table(con, rows)
     con.close()
 
@@ -283,9 +415,25 @@ def test_refund_fdr_flags_only_strong_outliers(tmp_path):
 
 def _sku_universe(sku_id, cart, gmv, buyers):
     return (
-        sku_id, f"name_{sku_id}", "p", "prod", False, "杯具", "马克杯", "brand",
-        cart, gmv, buyers, buyers, buyers, 100.0,
-        0.05, 1.0, 0.0, 0.0, gmv * 0.9,
+        sku_id,
+        f"name_{sku_id}",
+        "p",
+        "prod",
+        False,
+        "杯具",
+        "马克杯",
+        "brand",
+        cart,
+        gmv,
+        buyers,
+        buyers,
+        buyers,
+        100.0,
+        0.05,
+        1.0,
+        0.0,
+        0.0,
+        gmv * 0.9,
     )
 
 
@@ -296,7 +444,7 @@ def test_conversion_universe_reconciles_with_gmv_universe(tmp_path):
         con,
         [
             _sku_universe("s1", cart=10.0, gmv=1000.0, buyers=5.0),
-            _sku_universe("s2", cart=8.0, gmv=0.0, buyers=0.0),   # cart, no gmv
+            _sku_universe("s2", cart=8.0, gmv=0.0, buyers=0.0),  # cart, no gmv
             _sku_universe("s3", cart=0.0, gmv=500.0, buyers=3.0),  # gmv, no cart
             _sku_universe("s4", cart=0.0, gmv=300.0, buyers=2.0),  # gmv, no cart
         ],
@@ -308,10 +456,7 @@ def test_conversion_universe_reconciles_with_gmv_universe(tmp_path):
     assert conv.key_numbers["conversion_universe"] == 2
     assert conv.key_numbers["gmv_universe"] == 3
     # a caveat names both filters so the two SKU counts are reconciled explicitly
-    assert any(
-        "加购人数>0" in c and "GMV>0" in c and "2" in c and "3" in c
-        for c in conv.caveats
-    )
+    assert any("加购人数>0" in c and "GMV>0" in c and "2" in c and "3" in c for c in conv.caveats)
 
 
 # ---- Partial columns gate out refund/conversion findings ---------------------
@@ -339,9 +484,25 @@ def test_partial_columns_skip_gated_findings(tmp_path):
 
 def _sku_l2(sku_id, l2, gmv, orders, refund_orders, rate):
     return (
-        sku_id, f"name_{sku_id}", "p", "prod", False, "陶瓷", l2, "brand",
-        100.0, gmv, orders, orders, orders, 100.0,
-        rate, refund_orders, 0.0, 0.0, gmv * 0.9,
+        sku_id,
+        f"name_{sku_id}",
+        "p",
+        "prod",
+        False,
+        "陶瓷",
+        l2,
+        "brand",
+        100.0,
+        gmv,
+        orders,
+        orders,
+        orders,
+        100.0,
+        rate,
+        refund_orders,
+        0.0,
+        0.0,
+        gmv * 0.9,
     )
 
 

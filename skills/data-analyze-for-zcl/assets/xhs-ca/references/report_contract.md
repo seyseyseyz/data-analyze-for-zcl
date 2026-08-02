@@ -23,4 +23,25 @@ Tone:
 - no statistics jargon unless necessary,
 - concrete next actions.
 
-Every delivered report must include a Markdown report and a single-file HTML report. Built-in `xhs-ca run <task>` reports write both files automatically. If the agent creates a custom integrated Markdown report outside the built-in task registry, it must run `xhs-ca render-html <report.md>` before delivery and verify the HTML file exists. If HTML rendering fails, the skill must keep the Markdown report, report the rendering error, and keep all generated tables in reproducible output files.
+Every default delivery contains exactly one user-facing single-file HTML report. Markdown,
+`facts.json`, `results.json`, and deterministic inspection outputs are internal source and
+audit state unless the user explicitly requests them. Built-in workflows use `xhs-ca facts`
+to build the deterministic evidence layer without creating a fact-layer HTML, then finalize
+the merchant report through the narrative workflow. Custom integrated Markdown must be
+rendered with `xhs-ca render-html <report.md>` before delivery. If HTML rendering fails, keep
+the internal Markdown, report the rendering error, and retain reproducible tables. Field
+definitions remain hidden until hover/focus; do not render the HAR/platform field catalog as
+reader-facing content.
+
+## Decision compiler contract (2026-07-10)
+
+Authoritative design: `docs/superpowers/specs/2026-07-10-decision-compiler-architecture-design.md`.
+
+Reports are compiled from a **DecisionBrief**, not from a flat module dump:
+
+1. Narrative HTML = the single user-facing DecisionBrief view (spine, levers, action cards, few visuals).
+2. FactBook sidecars = internal evidence packs + full signals/tables for audit; a fact-layer HTML is optional only when the user explicitly requests an audit artifact.
+3. A number may claim a `metric_id` only after its fact id, owner, unit, caliber, aggregation, grain, and dynamic-dimension requirements pass registry validation. Unmapped facts keep producer labels and values rather than receiving a guessed metric identity.
+4. Every claim/action binds an analysis (and comparison/baseline when used) window.
+5. Reader labels are only: 描述置信 (高/中/低/暂不下定论) + 行动许可 (可执行/可试点/仅观察/先补数据).
+6. Top actions require ActionCard fields: owner_role, steps, primary_metric, stop_rule, license.

@@ -42,6 +42,9 @@ PERCENT_FIELDS = {
     "audience_diff",
     "avg_pay_conversion",
     "avg_pay_conversion_delta",
+    "avg_daily_cart_to_pay",
+    "avg_daily_pay_conversion",
+    "avg_daily_wishlist_to_cart",
     "baseline_conversion",
     "baseline_effectiveness",
     "card_conversion",
@@ -78,7 +81,6 @@ PERCENT_FIELDS = {
     "share",
     "sweet_net_margin",  # 甜点带 net_margin (same ratio caliber)
     "top_conversion",
-    "wishlist_to_cart_ratio",
     "wilson_high",
     "wilson_low",
 }
@@ -146,6 +148,15 @@ COUNT_FIELDS = {
     "avg_collects",
     "avg_likes",
     "avg_comments",
+    "add_to_cart_user_days",
+    "add_to_cart_observed_days",
+    "avg_daily_add_to_cart_users",
+    "avg_daily_new_wishlist_users",
+    "new_wishlist_user_days",
+    "paid_buyer_days",
+    "paid_buyer_observed_days",
+    "paired_ratio_observed_days",
+    "product_visitor_days",
 }
 # ``_count`` (note/sku/segment/... counts), ``_reads``/``_collects``/``_likes``/
 # ``_comments`` (engagement counts + their avg_), ``_orders``/``_buyers``/``_units``

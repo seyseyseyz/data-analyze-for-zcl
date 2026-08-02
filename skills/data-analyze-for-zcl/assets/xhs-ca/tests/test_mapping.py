@@ -23,9 +23,7 @@ def test_profile_csv_detects_columns(fixture_dir):
 def test_profile_csv_normalizes_missing_sample_values(tmp_path):
     csv_path = tmp_path / "missing_values.csv"
     csv_path.write_text(
-        "row_id,score,label\n"
-        "1,10,filled\n"
-        "2,,\n",
+        "row_id,score,label\n1,10,filled\n2,,\n",
         encoding="utf-8",
     )
 
@@ -262,9 +260,7 @@ def test_guess_field_mapping_maps_paid_traffic_headers(tmp_path):
 
 
 def _profile(columns):
-    return FileProfile(
-        path=None, table_name="t", columns=columns, row_count=1, sample_rows=[]
-    )
+    return FileProfile(path=None, table_name="t", columns=columns, row_count=1, sample_rows=[])
 
 
 def test_below_threshold_raises_plain_valueerror():
@@ -293,8 +289,17 @@ def test_partial_notes_file_still_classifies_as_notes():
 
 
 def test_classifies_business_overview_daily():
-    profile = _profile(["时间", "支付金额", "支付订单数", "支付买家数", "客单价",
-                        "退款后支付金额（支付时间）", "退款率（支付时间）"])
+    profile = _profile(
+        [
+            "时间",
+            "支付金额",
+            "支付订单数",
+            "支付买家数",
+            "客单价",
+            "退款后支付金额（支付时间）",
+            "退款率（支付时间）",
+        ]
+    )
     assert guess_table_type(profile) == "business_overview_daily"
     mapping = guess_field_mapping(profile, "business_overview_daily")
     assert mapping["date"] == "时间"
@@ -302,17 +307,94 @@ def test_classifies_business_overview_daily():
     assert mapping["refund_rate_pay"] == "退款率（支付时间）"
 
 
+def test_business_overview_daily_maps_demand_and_channel_fields():
+    profile = _profile(
+        [
+            "时间",
+            "支付金额",
+            "新增加入心愿单人数",
+            "笔记支付买家数",
+            "商卡支付买家数",
+            "笔记商品访客数",
+            "商卡商品访客数",
+            "笔记支付转化率",
+            "商卡支付转化率",
+            "笔记客单价",
+            "商卡客单价",
+            "笔记退款后支付金额（支付时间）",
+            "商卡退款后支付金额（支付时间）",
+            "笔记退款订单数（支付时间）",
+            "商卡退款订单数（支付时间）",
+            "笔记退款率（支付时间）",
+            "商卡退款率（支付时间）",
+            "笔记发货前退款率（支付时间）",
+            "商卡发货前退款率（支付时间）",
+            "笔记发货后退款率（支付时间）",
+            "商卡发货后退款率（支付时间）",
+        ]
+    )
+
+    mapping = guess_field_mapping(profile, "business_overview_daily")
+
+    assert mapping == {
+        "date": "时间",
+        "gmv": "支付金额",
+        "new_wishlist_users": "新增加入心愿单人数",
+        "note_paid_buyers": "笔记支付买家数",
+        "card_paid_buyers": "商卡支付买家数",
+        "note_product_visitors": "笔记商品访客数",
+        "card_product_visitors": "商卡商品访客数",
+        "note_pay_conversion": "笔记支付转化率",
+        "card_pay_conversion": "商卡支付转化率",
+        "note_aov": "笔记客单价",
+        "card_aov": "商卡客单价",
+        "note_net_gmv_pay": "笔记退款后支付金额（支付时间）",
+        "card_net_gmv_pay": "商卡退款后支付金额（支付时间）",
+        "note_refund_orders_pay": "笔记退款订单数（支付时间）",
+        "card_refund_orders_pay": "商卡退款订单数（支付时间）",
+        "note_refund_rate_pay": "笔记退款率（支付时间）",
+        "card_refund_rate_pay": "商卡退款率（支付时间）",
+        "note_pre_ship_refund_rate_pay": "笔记发货前退款率（支付时间）",
+        "card_pre_ship_refund_rate_pay": "商卡发货前退款率（支付时间）",
+        "note_post_ship_refund_rate_pay": "笔记发货后退款率（支付时间）",
+        "card_post_ship_refund_rate_pay": "商卡发货后退款率（支付时间）",
+    }
+
+
 def test_classifies_sku_performance_and_catalog_still_skus():
-    perf = _profile(["规格ID", "规格名称", "商品ID", "一级品类", "加购人数",
-                     "支付金额", "客单价", "退款后支付金额（支付时间）", "退款率（支付时间）"])
+    perf = _profile(
+        [
+            "规格ID",
+            "规格名称",
+            "商品ID",
+            "一级品类",
+            "加购人数",
+            "支付金额",
+            "客单价",
+            "退款后支付金额（支付时间）",
+            "退款率（支付时间）",
+        ]
+    )
     assert guess_table_type(perf) == "sku_performance"
     catalog = _profile(["规格ID", "商品ID", "规格名称", "销售价格"])
     assert guess_table_type(catalog) == "skus"
 
 
 def test_notes_enriched_commerce_aliases():
-    profile = _profile(["笔记id", "发布时间", "笔记标题", "阅读次数", "点赞数", "收藏数",
-                        "笔记类型", "笔记支付金额", "笔记商品点击次数", "笔记商品点击人数"])
+    profile = _profile(
+        [
+            "笔记id",
+            "发布时间",
+            "笔记标题",
+            "阅读次数",
+            "点赞数",
+            "收藏数",
+            "笔记类型",
+            "笔记支付金额",
+            "笔记商品点击次数",
+            "笔记商品点击人数",
+        ]
+    )
     assert guess_table_type(profile) == "notes"
     mapping = guess_field_mapping(profile, "notes")
     assert mapping["note_type"] == "笔记类型"
@@ -322,20 +404,62 @@ def test_notes_enriched_commerce_aliases():
 
 
 def test_classifies_search_overview_and_terms():
-    overview = _profile(["日期", "载体", "支付金额", "支付订单数", "支付买家数",
-                         "商卡曝光人数", "商品点击人数", "商品点击率", "支付转化率"])
+    overview = _profile(
+        [
+            "日期",
+            "载体",
+            "支付金额",
+            "支付订单数",
+            "支付买家数",
+            "商卡曝光人数",
+            "商品点击人数",
+            "商品点击率",
+            "支付转化率",
+        ]
+    )
     assert guess_table_type(overview) == "search_overview"
-    terms = _profile(["搜索词", "支付金额", "支付订单数", "支付买家数",
-                      "商卡曝光人数", "商品点击人数", "商品点击率", "支付转化率"])
+    terms = _profile(
+        [
+            "搜索词",
+            "支付金额",
+            "支付订单数",
+            "支付买家数",
+            "商卡曝光人数",
+            "商品点击人数",
+            "商品点击率",
+            "支付转化率",
+        ]
+    )
     assert guess_table_type(terms) == "search_terms"
 
 
 def test_classifies_shop_page_funnel_and_source():
-    funnel = _profile(["时间", "人群类型", "首购周期", "店铺页访问人数",
-                       "商品点击人数", "店铺页支付人数", "访问点击转化率", "点击支付率", "访问支付率"])
+    funnel = _profile(
+        [
+            "时间",
+            "人群类型",
+            "首购周期",
+            "店铺页访问人数",
+            "商品点击人数",
+            "店铺页支付人数",
+            "访问点击转化率",
+            "点击支付率",
+            "访问支付率",
+        ]
+    )
     assert guess_table_type(funnel) == "shop_page_funnel"
-    source = _profile(["时间", "人群类型", "首购周期", "来源页面",
-                       "店铺页支付金额", "店铺页访问人数", "进店支付转化率", "人均支付金额"])
+    source = _profile(
+        [
+            "时间",
+            "人群类型",
+            "首购周期",
+            "来源页面",
+            "店铺页支付金额",
+            "店铺页访问人数",
+            "进店支付转化率",
+            "人均支付金额",
+        ]
+    )
     assert guess_table_type(source) == "shop_page_source"
 
 
@@ -343,11 +467,90 @@ def test_classifies_refund_overview_and_traffic_source():
     # use the real export headers verbatim (incl. the （支付时间） caliber suffix on
     # 退款人数) so the alias mapping is actually exercised — a bare 退款人数 header
     # would silently pass classification while leaving refund_users un-canonicalized.
-    refund = _profile(["统计时间", "账号类型", "账号名称", "载体", "退款金额（支付时间）",
-                       "发货前退款金额（支付时间）", "退货退款金额（支付时间）", "退款人数（支付时间）"])
+    refund = _profile(
+        [
+            "统计时间",
+            "账号类型",
+            "账号名称",
+            "载体",
+            "退款金额（支付时间）",
+            "发货前退款金额（支付时间）",
+            "退货退款金额（支付时间）",
+            "退款人数（支付时间）",
+        ]
+    )
     assert guess_table_type(refund) == "refund_overview"
     # the required canonical refund_users column must map from the real header
     assert guess_field_mapping(refund, "refund_overview")["refund_users"] == "退款人数（支付时间）"
-    traffic = _profile(["小红书号", "账号名称", "渠道", "笔记类型", "支付金额",
-                        "支付订单数", "支付人数", "商品点击次数", "商品点击人数"])
+    traffic = _profile(
+        [
+            "小红书号",
+            "账号名称",
+            "渠道",
+            "笔记类型",
+            "支付金额",
+            "支付订单数",
+            "支付人数",
+            "商品点击次数",
+            "商品点击人数",
+        ]
+    )
     assert guess_table_type(traffic) == "traffic_source"
+
+
+def test_classifies_manual_note_sku_links_and_refund_reasons():
+    links = _profile(["笔记ID", "规格ID"])
+    assert guess_table_type(links) == "note_sku_links"
+    assert guess_field_mapping(links, "note_sku_links") == {
+        "note_id": "笔记ID",
+        "sku_id": "规格ID",
+    }
+
+    reasons = _profile(["退款原因", "退款金额", "退款订单数"])
+    assert guess_table_type(reasons) == "refund_reasons"
+    assert guess_field_mapping(reasons, "refund_reasons") == {
+        "refund_reason": "退款原因",
+        "refund_amount": "退款金额",
+        "refund_orders": "退款订单数",
+    }
+
+
+def test_refund_reason_table_requires_reason_field():
+    generic_refund_totals = _profile(["退款金额", "退款订单数"])
+    with pytest.raises(ValueError):
+        guess_table_type(generic_refund_totals)
+
+
+def test_classifies_chinese_calendar_events():
+    events = _profile(["日期", "事件类型", "事件名称", "影响等级", "关联商品ID", "关联规格ID"])
+    assert guess_table_type(events) == "calendar_events"
+    assert guess_field_mapping(events, "calendar_events") == {
+        "affected_product_id_optional": "关联商品ID",
+        "affected_sku_id_optional": "关联规格ID",
+        "date": "日期",
+        "event_name": "事件名称",
+        "event_type": "事件类型",
+        "severity": "影响等级",
+    }
+
+
+def test_classifies_chinese_comments_and_content_features():
+    comments = _profile(["笔记ID", "评论时间", "评论内容", "评论ID", "评论点赞数"])
+    assert guess_table_type(comments) == "comments"
+    assert guess_field_mapping(comments, "comments") == {
+        "comment_id": "评论ID",
+        "comment_like_count": "评论点赞数",
+        "comment_text": "评论内容",
+        "comment_time": "评论时间",
+        "note_id": "笔记ID",
+    }
+
+    features = _profile(["笔记ID", "封面构图", "场景提示", "文案角度", "购买动机"])
+    assert guess_table_type(features) == "content_features"
+    assert guess_field_mapping(features, "content_features") == {
+        "composition_type": "封面构图",
+        "copy_angle": "文案角度",
+        "note_id": "笔记ID",
+        "purchase_motive": "购买动机",
+        "scene_hint": "场景提示",
+    }

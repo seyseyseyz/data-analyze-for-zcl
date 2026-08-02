@@ -7,6 +7,7 @@ no causal attribution. Category and price-band scans additionally use
 ``multiplicity.py`` (one-sided binomial test + Benjamini-Hochberg) to control
 the false-discovery rate across many simultaneous "above baseline" checks.
 """
+
 from pathlib import Path
 
 from xhs_ceramics_analytics.analytics.numeric import to_finite_float
@@ -47,10 +48,12 @@ _SHIP_STAGE_ZH = {"pre_ship": "发货前", "post_ship": "发货后"}
 def run(db_path: Path) -> AnalysisResult:
     con = connect(db_path)
     try:
-        if not _table_exists(con, "sku_performance"):
-            return _missing_result("缺少 sku_performance 表。")
-        cols = _table_columns(con, "sku_performance")
-        rows = _fetch_all(con, "sku_performance")
+        has_sku = _table_exists(con, "sku_performance")
+        has_business_overview = _table_exists(con, "business_overview_daily")
+        if not has_sku and not has_business_overview:
+            return _missing_result("缺少 sku_performance 与 business_overview_daily 表。")
+        cols = _table_columns(con, "sku_performance") if has_sku else set()
+        rows = _fetch_all(con, "sku_performance") if has_sku else []
 
         findings: list[Finding] = []
         limitations: list[str] = []
@@ -60,15 +63,25 @@ def run(db_path: Path) -> AnalysisResult:
         findings.append(ship_finding)
         tables["refund_by_ship_stage"] = ship_rows
 
-        cat_finding, cat_rows = _category_finding(rows, cols, limitations)
-        if cat_finding is not None:
-            findings.append(cat_finding)
-            tables["refund_by_category"] = cat_rows
+        if has_sku:
+            paytime_rows = _sku_caliber_rows(rows, cols, "pay_time")
+            if paytime_rows:
+                tables["sku_refund_paytime"] = paytime_rows
+            refundtime_rows = _sku_caliber_rows(rows, cols, "refund_time")
+            if refundtime_rows:
+                tables["sku_refund_refundtime"] = refundtime_rows
 
-        band_finding, band_rows = _price_band_finding(rows, cols, limitations)
-        if band_finding is not None:
-            findings.append(band_finding)
-            tables["refund_by_price_band"] = band_rows
+            cat_finding, cat_rows = _category_finding(rows, cols, limitations)
+            if cat_finding is not None:
+                findings.append(cat_finding)
+                tables["refund_by_category"] = cat_rows
+
+            band_finding, band_rows = _price_band_finding(rows, cols, limitations)
+            if band_finding is not None:
+                findings.append(band_finding)
+                tables["refund_by_price_band"] = band_rows
+        else:
+            limitations.append("缺少 sku_performance 表，跳过品类与价格带退款分解。")
     finally:
         con.close()
     return AnalysisResult(
@@ -78,6 +91,46 @@ def run(db_path: Path) -> AnalysisResult:
         tables=tables,
         limitations=limitations,
     )
+
+
+_SKU_ID_COLUMNS = (
+    "sku_id",
+    "sku_name",
+    "product_id",
+    "product_name",
+    "category_l1",
+    "category_l2",
+)
+_PAYTIME_COLUMNS = (
+    "paid_orders",
+    "gmv",
+    "refund_amount_pay",
+    "refund_orders_pay",
+    "refund_rate_pay",
+    "pre_ship_refund_rate_pay",
+    "post_ship_refund_rate_pay",
+    "net_gmv_pay",
+)
+_REFUNDTIME_COLUMNS = (
+    "refund_amount_refundtime",
+    "refund_rate_refundtime",
+)
+
+
+def _sku_caliber_rows(rows: list[dict], cols: set[str], caliber: str) -> list[dict]:
+    metric_columns = _PAYTIME_COLUMNS if caliber == "pay_time" else _REFUNDTIME_COLUMNS
+    present_metrics = [column for column in metric_columns if column in cols]
+    if not present_metrics:
+        return []
+    identity_columns = [column for column in _SKU_ID_COLUMNS if column in cols]
+    return [
+        {
+            "caliber": caliber,
+            **{column: row.get(column) for column in identity_columns},
+            **{column: row.get(column) for column in present_metrics},
+        }
+        for row in rows
+    ]
 
 
 # --------------------------------------------------------------------------- #
@@ -152,12 +205,12 @@ def _ship_stage_finding(
         )
         recommended_action = _LEVER_PRE_SHIP if dominant_stage == "pre_ship" else _LEVER_POST_SHIP
     elif pre_rate is not None and post_rate is not None:
-        conclusion = (
-            f"发货前后退款率相近（发货前 {round(pre_rate * 100, 1)}% vs 发货后 {round(post_rate * 100, 1)}%），未见明显阶段集中。"
-        )
+        conclusion = f"发货前后退款率相近（发货前 {round(pre_rate * 100, 1)}% vs 发货后 {round(post_rate * 100, 1)}%），未见明显阶段集中。"
         recommended_action = None
     else:
-        limitations.append("发货前后退款分解可用列存在但样本 paid_orders 合计为 0，无法计算阶段占比。")
+        limitations.append(
+            "发货前后退款分解可用列存在但样本 paid_orders 合计为 0，无法计算阶段占比。"
+        )
         conclusion = "有发货前后的退款率，但对应的订单数是 0，看不出退款集中在哪个阶段。"
         recommended_action = None
 
@@ -254,7 +307,7 @@ def _category_finding(
     exp_fp = expected_false_positives(len(guarded), alpha=0.05)
 
     category_rows.sort(
-        key=lambda r: (r["refund_rate"] if r["refund_rate"] is not None else -1.0), reverse=True
+        key=lambda r: r["refund_rate"] if r["refund_rate"] is not None else -1.0, reverse=True
     )
     top = category_rows[0] if category_rows else None
 
@@ -325,9 +378,7 @@ def _price_band_finding(
         limitations.append("sku_performance 无有效 aov/paid_orders 样本，跳过价格带退款分解。")
         return None, []
 
-    gmv_positive_aovs = [
-        _num(r.get("aov")) for r in usable if has_gmv and _num(r.get("gmv")) > 0
-    ]
+    gmv_positive_aovs = [_num(r.get("aov")) for r in usable if has_gmv and _num(r.get("gmv")) > 0]
     # Price bands come from the shared caliber (analytics.distribution): quartile
     # left edges + left-closed band_of. sku_structure bands prices the same way, so
     # "中高价位" means the identical AOV window in both modules.
@@ -370,7 +421,9 @@ def _price_band_finding(
             }
         )
 
-    guarded = [r for r in band_rows if min_n_guard(r["paid_orders"]) and r["refund_rate"] is not None]
+    guarded = [
+        r for r in band_rows if min_n_guard(r["paid_orders"]) and r["refund_rate"] is not None
+    ]
     highest = max(guarded, key=lambda r: r["refund_rate"], default=None)
     highest_band = highest["band"] if highest else None
 

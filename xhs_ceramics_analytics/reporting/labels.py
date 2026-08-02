@@ -3,11 +3,11 @@
 Extracted from html.py so reporting.charts can reuse them without importing
 html.py (which imports charts -> would be circular).
 """
+
 from __future__ import annotations
 
 VALUE_LABELS = {
     "active": "进行中",
-    "candidate_first_sku": "候选首个 SKU 关联",
     "capacity": "容量/尺寸需求",
     "collect_rate": "收藏率",
     "copy_angle": "文案角度",
@@ -50,6 +50,8 @@ VALUE_LABELS = {
     "needs_data": "需要补数据",
     "needs_more_content_or_data": "需要更多内容或数据验证",
     "needs_sales_data": "需要销售数据",
+    "low_inventory_risk": "低库存风险",
+    "out_of_stock_risk": "缺货风险",
     "note_metrics": "笔记指标表",
     "notes": "笔记表",
     "orders": "订单表",

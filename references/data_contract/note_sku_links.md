@@ -12,13 +12,13 @@ Links notes to candidate products or SKUs.
 |--------|------|-------------|
 | `note_id` | str (non-empty, stripped) | Note identifier |
 | `sku_id` | str (non-empty, stripped) | SKU identifier |
-| `link_type` | Literal['explicit','manual','inferred'] | How the link was established |
-| `confidence` | float in [0.0, 1.0] | Link confidence score, bounded [0,1] |
 
 ## Optional Columns
 
 | Column | Type | Description |
 |--------|------|-------------|
+| `link_type` | Literal['explicit','manual','inferred'] | How the link was established |
+| `confidence` | float in [0.0, 1.0] | Link confidence score, bounded [0,1] |
 | `evidence` | str \| None | Free-text evidence/justification for the link |
 
 ## Allowed `link_type` values
@@ -34,7 +34,11 @@ Links notes to candidate products or SKUs.
 
 ## Chinese Aliases (from mapping.py FIELD_ALIASES)
 
-No dedicated aliases for `note_sku_links` in FIELD_ALIASES (this table is typically constructed programmatically or manually).
+- `note_id`: `笔记ID`, `笔记id`
+- `sku_id`: `规格ID`, `规格id`, `SKU ID`, `sku_id`
+
+A two-column manual CSV is sufficient for deterministic linking. `link_type`,
+`confidence`, and `evidence` remain optional metadata.
 
 ## Sample Row
 

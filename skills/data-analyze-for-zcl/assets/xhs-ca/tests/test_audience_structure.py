@@ -28,9 +28,7 @@ def _make_funnel_full(con, rows):
         """
     )
     if rows:
-        con.executemany(
-            "INSERT INTO shop_page_funnel VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", rows
-        )
+        con.executemany("INSERT INTO shop_page_funnel VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", rows)
 
 
 def _make_funnel_no_audience(con, rows):
@@ -44,9 +42,7 @@ def _make_funnel_no_audience(con, rows):
         )
         """
     )
-    con.executemany(
-        "INSERT INTO shop_page_funnel VALUES (?, ?, ?, ?)", rows
-    )
+    con.executemany("INSERT INTO shop_page_funnel VALUES (?, ?, ?, ?)", rows)
 
 
 def _make_source(con, rows):
@@ -62,9 +58,25 @@ def _make_source(con, rows):
         )
         """
     )
-    con.executemany(
-        "INSERT INTO shop_page_source VALUES (?, ?, ?, ?, ?, ?)", rows
+    con.executemany("INSERT INTO shop_page_source VALUES (?, ?, ?, ?, ?, ?)", rows)
+
+
+def _make_source_with_gmv_per_user(con, rows):
+    con.execute(
+        """
+        CREATE TABLE shop_page_source (
+          date DATE,
+          audience_type VARCHAR,
+          first_purchase_cycle VARCHAR,
+          source_page VARCHAR,
+          shop_visitors DOUBLE,
+          enter_pay_rate DOUBLE,
+          shop_gmv DOUBLE,
+          gmv_per_user DOUBLE
+        )
+        """
     )
+    con.executemany("INSERT INTO shop_page_source VALUES (?, ?, ?, ?, ?, ?, ?, ?)", rows)
 
 
 def _make_profile(con, rows):
@@ -114,6 +126,32 @@ def test_conversion_finding_compares_audiences(tmp_path):
     assert {r["audience_type"] for r in comp} == {"新客", "老客"}
     assert finding.confounders  # observational confounders present
     assert finding.recommended_action  # lever present
+
+
+def test_conversion_finding_emits_real_three_step_person_day_funnel(tmp_path):
+    con, db_path = _con(tmp_path)
+    _make_funnel_full(
+        con,
+        [
+            ("2026-06-01", "新客", "365天", 100.0, 10.0, 60.0, 0.6, 1 / 6, 0.1),
+            ("2026-06-02", "新客", "365天", 200.0, 30.0, 100.0, 0.5, 0.3, 0.15),
+            ("2026-06-01", "老客", "365天", 80.0, 20.0, 40.0, 0.5, 0.5, 0.25),
+        ],
+    )
+    con.close()
+
+    result = run_task(TASK, db_path)
+    rows = {r["audience_type"]: r for r in result.tables["audience_conversion_comparison"]}
+
+    assert rows["新客"]["visitors"] == 300.0
+    assert rows["新客"]["click_users"] == 160.0
+    assert rows["新客"]["payers"] == 40.0
+    assert rows["新客"]["visit_click_rate"] == 160.0 / 300.0
+    assert rows["新客"]["click_pay_rate"] == 40.0 / 160.0
+    assert rows["新客"]["visit_pay_rate"] == 40.0 / 300.0
+    assert rows["新客"]["count_unit"] == "person_day"
+    finding = next(f for f in result.findings if f.title == "人群转化对比")
+    assert any("person-day" in caveat for caveat in finding.caveats)
 
 
 def test_conversion_falls_back_without_audience_type(tmp_path):
@@ -265,6 +303,55 @@ def test_source_finding_ranks_sources(tmp_path):
     assert finding.key_numbers["top_source"] == "搜索"
 
 
+def test_source_finding_normalizes_rollups_cycles_and_uses_gmv_per_user(tmp_path):
+    con, db_path = _con(tmp_path)
+    _make_funnel_full(
+        con,
+        [("2026-06-01", "新客", "365天", 120.0, 12.0, 60.0, 0.5, 0.2, 0.1)],
+    )
+    _make_source_with_gmv_per_user(
+        con,
+        [
+            ("2026-06-01", "新客", "180天", "搜索", 100.0, 0.1, 1000.0, 10.0),
+            ("2026-06-01", "新客", "365天", "搜索", 120.0, 0.1, 2400.0, 20.0),
+            ("2026-06-01", "全部", "全部", "搜索", 220.0, 0.1, 3400.0, 15.45),
+            ("2026-06-01", "新客", "365天", "全部", 120.0, 0.1, 2400.0, 20.0),
+        ],
+    )
+    con.close()
+
+    result = run_task(TASK, db_path)
+    rows = result.tables["shop_source_structure"]
+
+    assert len(rows) == 1
+    assert rows[0]["source_page"] == "搜索"
+    assert rows[0]["visitors"] == 120.0
+    assert rows[0]["gmv_per_user"] == 20.0
+    assert any("365天" in limitation for limitation in result.limitations)
+
+
+def test_source_gmv_per_user_excludes_rows_without_value_coverage(tmp_path):
+    con, db_path = _con(tmp_path)
+    _make_funnel_full(
+        con,
+        [("2026-06-01", "新客", "365天", 1000.0, 100.0, 400.0, 0.4, 0.25, 0.1)],
+    )
+    _make_source_with_gmv_per_user(
+        con,
+        [
+            ("2026-06-01", "新客", "365天", "搜索", 100.0, 0.1, None, 10.0),
+            ("2026-06-02", "新客", "365天", "搜索", 900.0, 0.1, None, None),
+        ],
+    )
+    con.close()
+
+    result = run_task(TASK, db_path)
+    row = result.tables["shop_source_structure"][0]
+    assert row["gmv_per_user"] == 10
+    assert row["gmv_per_user_covered_visitors"] == 100
+    assert row["gmv_per_user_coverage_rows"] == 1
+
+
 def test_source_finding_skipped_without_table(tmp_path):
     con, db_path = _con(tmp_path)
     _make_funnel_full(
@@ -384,6 +471,7 @@ def test_composition_real_when_profile_present(tmp_path):
 
 # ---- Feature 5: multi-dimensional + share-primary PNG 画像 read ------------
 
+
 def _make_profile_multidim(con, rows):
     con.execute(
         """
@@ -400,9 +488,7 @@ def test_composition_multidim_share_primary(tmp_path):
     # per-bucket GMV. Transcribed into audience_profile(dimension, audience_segment, share),
     # it must produce a WEAK snapshot finding — one breakdown per dimension — not not_judgable.
     con, db_path = _con(tmp_path)
-    _make_funnel_full(
-        con, [("2026-06-01", "新客", "首购", 1000.0, 100.0, 400.0, 0.4, 0.25, 0.10)]
-    )
+    _make_funnel_full(con, [("2026-06-01", "新客", "首购", 1000.0, 100.0, 400.0, 0.4, 0.25, 0.10)])
     _make_profile_multidim(
         con,
         [
@@ -432,9 +518,7 @@ def test_composition_multidim_share_primary(tmp_path):
 def test_composition_share_only_single_dimension(tmp_path):
     # gmv is now optional — a share-only single-dimension profile still yields WEAK
     con, db_path = _con(tmp_path)
-    _make_funnel_full(
-        con, [("2026-06-01", "新客", "首购", 1000.0, 100.0, 400.0, 0.4, 0.25, 0.10)]
-    )
+    _make_funnel_full(con, [("2026-06-01", "新客", "首购", 1000.0, 100.0, 400.0, 0.4, 0.25, 0.10)])
     con.execute("CREATE TABLE audience_profile (audience_segment VARCHAR, share DOUBLE)")
     con.executemany(
         "INSERT INTO audience_profile VALUES (?, ?)",

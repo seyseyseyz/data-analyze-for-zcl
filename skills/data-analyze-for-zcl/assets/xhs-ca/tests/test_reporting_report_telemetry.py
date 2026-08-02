@@ -39,6 +39,26 @@ def test_build_run_record_carries_skeleton_reason():
     assert rec["hard_fail_counts"] == {"SUMMED_POOLS": 2}
 
 
+def test_build_run_record_carries_delivery_and_cache_outcome():
+    rec = rt.build_run_record(
+        mode="failed",
+        facts_hash="h",
+        cache_hit=False,
+        cache_status="invalid",
+        delivery_status="failed",
+        error_code="HTML_RENDER_FAILED",
+        task_counts={"completed": 12, "pending": 0},
+        quality_gates={"factcheck": "pass", "merchant_review": "fail"},
+    )
+
+    assert rec["mode"] == "failed"
+    assert rec["cache_status"] == "invalid"
+    assert rec["delivery_status"] == "failed"
+    assert rec["error_code"] == "HTML_RENDER_FAILED"
+    assert rec["task_counts"] == {"completed": 12, "pending": 0}
+    assert rec["quality_gates"]["merchant_review"] == "fail"
+
+
 def test_append_run_record_writes_one_jsonl_line(tmp_path):
     path = tmp_path / "sub" / "report_runs.jsonl"
     rt.append_run_record(path, rt.build_run_record(mode="frozen", facts_hash="h1", cache_hit=False))

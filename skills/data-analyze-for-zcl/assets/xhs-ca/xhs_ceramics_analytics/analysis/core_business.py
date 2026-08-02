@@ -6,6 +6,7 @@ direction and effect size, never causal claims.
 
 Design: docs/superpowers/specs/2026-07-03-core-business-diagnosis-design.md
 """
+
 from pathlib import Path
 
 from xhs_ceramics_analytics.analytics.numeric import to_finite_float
@@ -23,8 +24,6 @@ from xhs_ceramics_analytics.analytics.confidence import (
     wilson_interval,
 )
 from xhs_ceramics_analytics.analytics.benchmark import percentile_label, self_percentile
-from xhs_ceramics_analytics.analytics.decomposition import gmv_bridge
-from xhs_ceramics_analytics.analytics.periods import month_bounds, to_period_month
 from xhs_ceramics_analytics.analytics.timeseries import (
     anomaly_days,
     changepoints,
@@ -80,6 +79,10 @@ def run(db_path: Path) -> AnalysisResult:
         if trend_rows:
             tables["business_trend"] = trend_rows
 
+        quality_findings, quality_tables = _business_quality_findings(con, limitations)
+        findings.extend(quality_findings)
+        tables.update(quality_tables)
+
         benchmark_finding, benchmark_rows = _benchmark_finding(con, limitations)
         if benchmark_finding is not None:
             findings.append(benchmark_finding)
@@ -118,22 +121,31 @@ def run(db_path: Path) -> AnalysisResult:
 # --------------------------------------------------------------------------- #
 # Finding 1 — 整体经营快照 + 时间趋势 (always emitted)
 # --------------------------------------------------------------------------- #
-def _snapshot_finding(
-    con, limitations: list[str]
-) -> tuple[Finding, list[dict], list[dict]]:
+def _snapshot_finding(con, limitations: list[str]) -> tuple[Finding, list[dict], list[dict]]:
     cols = _table_columns(con, "business_overview_daily")
     rows = _fetch_all(con, "business_overview_daily")
 
+    def col_values(name: str) -> list[float]:
+        if name not in cols:
+            return []
+        return [_num(row.get(name)) for row in rows if row.get(name) is not None]
+
     def col_sum(name: str) -> float | None:
-        return sum(_num(r.get(name)) for r in rows) if name in cols else None
+        values = col_values(name)
+        return sum(values) if values else None
 
     total_gmv = col_sum("gmv")
     total_orders = col_sum("paid_orders")
-    total_buyers = col_sum("paid_buyers")
     total_units = col_sum("paid_units")
+    paid_buyer_values = col_values("paid_buyers")
+    product_visitor_values = col_values("product_visitors")
+    paid_buyer_days = sum(paid_buyer_values) if paid_buyer_values else None
+    product_visitor_days = sum(product_visitor_values) if product_visitor_values else None
+    avg_daily_paid_buyers = _mean(paid_buyer_values)
+    avg_daily_product_visitors = _mean(product_visitor_values)
 
-    aov, aov_source = _aov(cols, rows, total_gmv, total_buyers)
-    pay_conv, conv_source = _pay_conversion(cols, rows, total_buyers)
+    avg_daily_aov, aov_source = _avg_daily_aov(cols, rows)
+    avg_daily_pay_conversion, conv_source = _avg_daily_pay_conversion(cols, rows)
 
     trend_rows, direction, summary, decomp = _gmv_trend(cols, rows, limitations)
 
@@ -141,16 +153,24 @@ def _snapshot_finding(
         if missing not in cols:
             limitations.append(f"business_overview_daily 缺少 {missing}，快照用现有列估计。")
 
-    sample_size = int(total_orders or total_buyers or len(rows))
+    sample_size = len(rows)
     conclusion = _snapshot_conclusion(
-        total_gmv, total_buyers, aov, pay_conv, direction, decomp
+        total_gmv,
+        avg_daily_paid_buyers,
+        avg_daily_aov,
+        avg_daily_pay_conversion,
+        direction,
+        decomp,
     )
-    caveats = [M.causal_disclaimer("促销节奏、季节性、流量结构变化")]
+    caveats = [
+        M.causal_disclaimer("促销节奏、季节性、流量结构变化"),
+        "支付买家数和商品访客数均为逐日去重；跨日可能重复计入，paid_buyer_days/product_visitor_days 仅表示逐日去重人次之和，不是观察期唯一人数。",
+    ]
     method_notes: list[str] = [M.METHOD_OBSERVATIONAL]
-    if aov_source == "column":
-        caveats.append("客单价用 aov 列均值（paid_buyers 缺失或为零，无法反推）。")
-    if conv_source == "column":
-        caveats.append("支付转化率用 pay_conversion_uv 列均值（缺 product_visitors）。")
+    if aov_source == "daily_ratio_average":
+        caveats.append("日均客单价由每天 GMV/当天支付买家数分别计算后取均值。")
+    if conv_source == "daily_ratio_average":
+        caveats.append("日均支付转化率由每天支付买家数/商品访客数分别计算后取均值。")
     elif conv_source is None:
         caveats.append("缺 product_visitors 与 pay_conversion_uv，无法给出支付转化率。")
     if decomp.get("changepoint_date") or decomp.get("peak_dow"):
@@ -178,27 +198,31 @@ def _snapshot_finding(
     snapshot_row = {
         "gmv": total_gmv,
         "paid_orders": total_orders,
-        "paid_buyers": total_buyers,
+        "paid_buyer_days": paid_buyer_days,
+        "avg_daily_paid_buyers": avg_daily_paid_buyers,
+        "product_visitor_days": product_visitor_days,
+        "avg_daily_product_visitors": avg_daily_product_visitors,
         "paid_units": total_units,
-        "aov": aov,
+        "avg_daily_aov": avg_daily_aov,
         "aov_source": aov_source,
-        "pay_conversion": pay_conv,
+        "avg_daily_pay_conversion": avg_daily_pay_conversion,
         "pay_conversion_source": conv_source,
     }
     finding = Finding(
         title="整体经营快照与趋势",
         conclusion=conclusion,
-        evidence_strength=score_evidence(
-            sample_size, has_controls=False, confounder_count=1
-        ),
+        evidence_strength=score_evidence(sample_size, has_controls=False, confounder_count=1),
         descriptive_reliability=score_reliability(sample_size),
         key_numbers={
             "total_gmv": total_gmv,
             "total_paid_orders": total_orders,
-            "total_paid_buyers": total_buyers,
+            "paid_buyer_days": paid_buyer_days,
+            "avg_daily_paid_buyers": avg_daily_paid_buyers,
+            "product_visitor_days": product_visitor_days,
+            "avg_daily_product_visitors": avg_daily_product_visitors,
             "total_paid_units": total_units,
-            "aov": aov,
-            "pay_conversion": pay_conv,
+            "avg_daily_aov": avg_daily_aov,
+            "avg_daily_pay_conversion": avg_daily_pay_conversion,
             "trend_direction": direction,
             "wow_last_pct": decomp.get("wow_last_pct"),
             "peak_dow": decomp.get("peak_dow"),
@@ -221,30 +245,270 @@ def _snapshot_finding(
     return finding, [snapshot_row], trend_rows
 
 
-def _aov(cols, rows, total_gmv, total_buyers) -> tuple[float | None, str | None]:
-    if total_buyers and total_buyers > 0 and total_gmv is not None:
-        return total_gmv / total_buyers, "derived"
+def _business_quality_findings(
+    con, limitations: list[str]
+) -> tuple[list[Finding], dict[str, list[dict]]]:
+    cols = _table_columns(con, "business_overview_daily")
+    rows = _fetch_all(con, "business_overview_daily")
+    findings: list[Finding] = []
+    tables: dict[str, list[dict]] = {}
+
+    pay_fields = {"refund_amount_pay", "refund_rate_pay", "net_gmv_pay"}
+    if pay_fields & cols:
+        pay_rows = []
+        for row in rows:
+            gross = _optional_num(row, "gmv") if "gmv" in cols else None
+            refund = (
+                _optional_num(row, "refund_amount_pay") if "refund_amount_pay" in cols else None
+            )
+            net = _optional_num(row, "net_gmv_pay") if "net_gmv_pay" in cols else None
+            net_source = "reported"
+            if net is None and gross is not None and refund is not None:
+                net = gross - refund
+                net_source = "derived_gmv_minus_refund"
+            refund_rate = (
+                bounded_rate(row.get("refund_rate_pay")) if "refund_rate_pay" in cols else None
+            )
+            if refund_rate is None and gross and refund is not None:
+                refund_rate = refund / gross
+            pay_rows.append(
+                {
+                    "date": cn_date(row.get("date")),
+                    "gmv": gross,
+                    "refund_amount_pay": refund,
+                    "net_gmv_pay": net,
+                    "net_gmv_source": net_source if net is not None else None,
+                    "refund_rate_pay": refund_rate,
+                    "net_retention_rate": net / gross if gross and net is not None else None,
+                }
+            )
+        tables["business_net_revenue"] = pay_rows
+
+        common_pay_rows = [
+            item
+            for item in pay_rows
+            if all(item.get(key) is not None for key in ("gmv", "refund_amount_pay", "net_gmv_pay"))
+        ]
+        gross_total = _sum_present(item["gmv"] for item in common_pay_rows)
+        refund_total = _sum_present(item["refund_amount_pay"] for item in common_pay_rows)
+        net_total = _sum_present(item["net_gmv_pay"] for item in common_pay_rows)
+        aggregate_refund_rate = (
+            refund_total / gross_total
+            if gross_total and refund_total is not None
+            else _mean_present(item["refund_rate_pay"] for item in pay_rows)
+        )
+        findings.append(
+            Finding(
+                title="支付口径净收入与退款压力",
+                conclusion=(
+                    f"支付口径 GMV {money(gross_total)}，退款 {money(refund_total)}，"
+                    f"退款后支付金额 {money(net_total)}，退款率 {pp(aggregate_refund_rate)}。"
+                ),
+                evidence_strength=score_evidence(
+                    len(pay_rows), has_controls=False, confounder_count=2
+                ),
+                descriptive_reliability=score_reliability(len(pay_rows)),
+                key_numbers={
+                    "gmv": gross_total,
+                    "refund_amount_pay": refund_total,
+                    "net_gmv_pay": net_total,
+                    "refund_rate_pay": aggregate_refund_rate,
+                    "common_coverage_days": len(common_pay_rows),
+                },
+                caveats=[
+                    "GMV、退款金额和退款后支付金额均采用支付时间口径。",
+                    "退款时间口径只反映当期退款处理压力，不与支付时间口径相减或合并。",
+                    M.causal_disclaimer("促销、履约、商品结构和退款回流时滞"),
+                ],
+                evidence_reason="按日保留支付时间口径的毛收入、退款与净收入，只在三项同时存在的共同覆盖日内汇总。",
+                confounders=["退款回流时滞", "商品与活动结构"],
+                recommended_action="优先查看净收入留存走弱的日期，再下钻退款阶段、商品和渠道。",
+            )
+        )
+
+    refundtime_fields = {"refund_amount_refundtime", "refund_order_share_refundtime"}
+    if refundtime_fields & cols:
+        refund_rows = [
+            {
+                "date": cn_date(row.get("date")),
+                "refund_amount_refundtime": (
+                    _optional_num(row, "refund_amount_refundtime")
+                    if "refund_amount_refundtime" in cols
+                    else None
+                ),
+                "refund_order_share_refundtime": (
+                    bounded_rate(row.get("refund_order_share_refundtime"))
+                    if "refund_order_share_refundtime" in cols
+                    else None
+                ),
+            }
+            for row in rows
+        ]
+        tables["refund_time_pressure"] = refund_rows
+
+    traffic_fields = {
+        "total_visitors",
+        "total_pv",
+        "product_visitors",
+        "product_click_rate_pv",
+        "new_add_to_cart_users",
+    }
+    if traffic_fields & cols:
+        visitor_days = _column_sum_present(rows, "total_visitors", cols)
+        pv = _column_sum_present(rows, "total_pv", cols)
+        product_visitor_days = _column_sum_present(rows, "product_visitors", cols)
+        new_cart_user_days = _column_sum_present(rows, "new_add_to_cart_users", cols)
+        pv_visitors, pv_total, pv_visitor_common_days = _paired_sums(
+            rows, "total_visitors", "total_pv", cols
+        )
+        product_total_visitors, paired_product_visitors, product_visitor_common_days = _paired_sums(
+            rows, "total_visitors", "product_visitors", cols
+        )
+        paired_cart_product_visitors, paired_new_cart, cart_common_days = _paired_sums(
+            rows, "product_visitors", "new_add_to_cart_users", cols
+        )
+        click_rate_pv = _weighted_daily_rate(rows, "product_click_rate_pv", "total_pv", cols)
+        depth_row = {
+            "visitor_days": visitor_days,
+            "pv": pv,
+            "pv_per_visitor": (
+                pv_total / pv_visitors if pv_visitors and pv_total is not None else None
+            ),
+            "pv_visitor_common_days": pv_visitor_common_days,
+            "product_visitor_days": product_visitor_days,
+            "product_visitor_share": (
+                paired_product_visitors / product_total_visitors
+                if product_total_visitors and paired_product_visitors is not None
+                else None
+            ),
+            "product_visitor_common_days": product_visitor_common_days,
+            "product_click_rate_pv": click_rate_pv,
+            "new_cart_user_days": new_cart_user_days,
+            "product_visitor_to_new_cart": (
+                paired_new_cart / paired_cart_product_visitors
+                if paired_cart_product_visitors and paired_new_cart is not None
+                else None
+            ),
+            "cart_common_days": cart_common_days,
+        }
+        tables["business_traffic_depth"] = [depth_row]
+        findings.append(
+            Finding(
+                title="流量深度与加购承接",
+                conclusion=(
+                    f"人均浏览深度 {qty(depth_row['pv_per_visitor'])} 页，"
+                    f"商品点击率（PV）{pp(click_rate_pv)}，"
+                    f"新增加购 {qty(new_cart_user_days)} 人次。"
+                ),
+                evidence_strength=score_evidence(len(rows), has_controls=False, confounder_count=2),
+                descriptive_reliability=score_reliability(len(rows)),
+                key_numbers=depth_row,
+                caveats=[
+                    "访客、商品访客和新增加购均为日内去重后跨日求和的人次，不是周期唯一用户。",
+                    "商品点击率（PV）沿用平台口径；缺少真实点击次数时不反推点击量。",
+                    M.causal_disclaimer("流量来源、活动节奏和商品供给"),
+                ],
+                evidence_reason="流量规模使用同一日表汇总；每个比率只在分子分母同时存在的共同覆盖日内聚合。",
+                confounders=["流量来源结构", "活动与商品供给"],
+                recommended_action="先判断访客到商品浏览、商品浏览到加购哪一段更弱，再调整首页承接或商品详情。",
+            )
+        )
+    elif not (pay_fields & cols):
+        limitations.append("business_overview_daily 缺少净收入、退款和流量深度字段。")
+
+    return findings, tables
+
+
+def _optional_num(row: dict, key: str) -> float | None:
+    return _num(row.get(key)) if row.get(key) is not None else None
+
+
+def _sum_present(values) -> float | None:
+    present = [value for value in values if value is not None]
+    return sum(present) if present else None
+
+
+def _mean_present(values) -> float | None:
+    present = [value for value in values if value is not None]
+    return _mean(present) if present else None
+
+
+def _column_sum_present(rows: list[dict], key: str, cols: set[str]) -> float | None:
+    if key not in cols:
+        return None
+    return _sum_present(_optional_num(row, key) for row in rows)
+
+
+def _weighted_daily_rate(
+    rows: list[dict], rate_key: str, weight_key: str, cols: set[str]
+) -> float | None:
+    if rate_key not in cols:
+        return None
+    weighted = []
+    weights = []
+    for row in rows:
+        rate = bounded_rate(row.get(rate_key))
+        weight = _optional_num(row, weight_key) if weight_key in cols else None
+        if rate is None:
+            continue
+        if weight is not None and weight > 0:
+            weighted.append(rate * weight)
+            weights.append(weight)
+    if weights:
+        return sum(weighted) / sum(weights)
+    return _mean_present(bounded_rate(row.get(rate_key)) for row in rows)
+
+
+def _paired_sums(
+    rows: list[dict], left_key: str, right_key: str, cols: set[str]
+) -> tuple[float | None, float | None, int]:
+    if left_key not in cols or right_key not in cols:
+        return None, None, 0
+    pairs = [(_optional_num(row, left_key), _optional_num(row, right_key)) for row in rows]
+    complete = [(left, right) for left, right in pairs if left is not None and right is not None]
+    if not complete:
+        return None, None, 0
+    return (
+        sum(left for left, _ in complete),
+        sum(right for _, right in complete),
+        len(complete),
+    )
+
+
+def _avg_daily_aov(cols, rows) -> tuple[float | None, str | None]:
     if "aov" in cols:
         vals = [_num(r.get("aov")) for r in rows if r.get("aov") is not None]
-        return (sum(vals) / len(vals) if vals else None), "column"
+        if vals:
+            return _mean(vals), "daily_column_average"
+    if {"gmv", "paid_buyers"} <= cols:
+        vals = []
+        for row in rows:
+            buyers = _num(row.get("paid_buyers"))
+            if buyers > 0 and row.get("gmv") is not None:
+                vals.append(_num(row.get("gmv")) / buyers)
+        if vals:
+            return _mean(vals), "daily_ratio_average"
     return None, None
 
 
-def _pay_conversion(cols, rows, total_buyers) -> tuple[float | None, str | None]:
-    if "product_visitors" in cols and total_buyers is not None:
-        visitors = sum(_num(r.get("product_visitors")) for r in rows)
-        if visitors > 0:
-            return total_buyers / visitors, "real"
+def _avg_daily_pay_conversion(cols, rows) -> tuple[float | None, str | None]:
     if "pay_conversion_uv" in cols:
         vals = [bounded_rate(r.get("pay_conversion_uv")) for r in rows]
         vals = [v for v in vals if v is not None]
-        return (sum(vals) / len(vals) if vals else None), "column"
+        if vals:
+            return _mean(vals), "daily_column_average"
+    if {"product_visitors", "paid_buyers"} <= cols:
+        vals = []
+        for row in rows:
+            visitors = _num(row.get("product_visitors"))
+            if visitors > 0 and row.get("paid_buyers") is not None:
+                vals.append(_num(row.get("paid_buyers")) / visitors)
+        if vals:
+            return _mean(vals), "daily_ratio_average"
     return None, None
 
 
-def _gmv_trend(
-    cols, rows, limitations: list[str]
-) -> tuple[list[dict], str | None, dict, dict]:
+def _gmv_trend(cols, rows, limitations: list[str]) -> tuple[list[dict], str | None, dict, dict]:
     if "date" not in cols or "gmv" not in cols:
         limitations.append("business_overview_daily 缺少 date/gmv，跳过 GMV 趋势。")
         return [], None, [], {}
@@ -262,8 +526,13 @@ def _gmv_trend(
     # Per-period deltas live in the table columns (not a stringified appendix dump).
     steps = mom_change(series)
     trend_rows = [
-        {"date": s["period"], "gmv": s["value"], "gmv_delta": s["delta"],
-         "pct": s["pct"], "direction": s["direction"]}
+        {
+            "date": s["period"],
+            "gmv": s["value"],
+            "gmv_delta": s["delta"],
+            "pct": s["pct"],
+            "direction": s["direction"],
+        }
         for s in steps
     ]
     # Significance-gated direction: a near-zero slope buried in daily noise reads as
@@ -489,15 +758,17 @@ _EVENT_CONFOUNDERS = ["活动期降价/满减", "活动期投放加码", "季节
 
 
 def _event_lift_finding(con, limitations: list[str]):
-    """活动期 vs 平销期 的日均 GMV 与支付转化抬升（两比例检验 + 相对效应量）。
+    """活动期 vs 平销期的日均 GMV 与逐日支付转化描述。
 
     Splits every business day into event / baseline by matching ``calendar_events``
     dates against ``business_overview_daily`` on a shared day key (so mixed date
-    calibers still align). GMV lift is a descriptive daily-mean ratio (continuous,
-    no p-value); conversion lift carries a two-proportion significance flag. Degrades
-    to ``(None, [])`` without a calendar table, without a GMV column, or when either
-    side has fewer than ``_EVENT_MIN_DAYS`` days. Observational — a promotion-day GMV
-    bump largely reflects the promotion itself, never a clean causal lift.
+    calibers still align). GMV and conversion lift are descriptive daily-mean
+    comparisons with no p-value. Degrades to ``(None, [])`` without a calendar table,
+    without a GMV column, or when either side has fewer than ``_EVENT_MIN_DAYS`` days.
+    Observational — a promotion-day GMV bump largely reflects the promotion itself,
+    never a clean causal lift. Daily distinct users may repeat across dates, so
+    conversion is summarized from daily rates and never treated as a user-level
+    two-proportion test.
     """
     if not _table_exists(con, "calendar_events"):
         return None, []
@@ -507,15 +778,40 @@ def _event_lift_finding(con, limitations: list[str]):
     if "date" not in _table_columns(con, "calendar_events"):
         return None, []
 
-    event_dates = {iso_date(r.get("date")) for r in _fetch_all(con, "calendar_events")}
+    business_rows = _fetch_all(con, "business_overview_daily")
+    business_dates = {iso_date(row.get("date")) for row in business_rows}
+    business_dates.discard(None)
+    calendar_rows = [
+        row
+        for row in _fetch_all(con, "calendar_events")
+        if iso_date(row.get("date")) in business_dates
+    ]
+    event_dates = {iso_date(r.get("date")) for r in calendar_rows}
     event_dates.discard(None)
     if not event_dates:
         return None, []
 
+    calendar_cols = _table_columns(con, "calendar_events")
+    event_context = {
+        output_key: sorted(
+            {
+                str(row.get(source_key)).strip()
+                for row in calendar_rows
+                if row.get(source_key) is not None and str(row.get(source_key)).strip()
+            }
+        )
+        for source_key, output_key in (
+            ("event_type", "event_types"),
+            ("event_name", "event_names"),
+            ("severity", "event_severities"),
+        )
+        if source_key in calendar_cols
+    }
+
     has_conv = "product_visitors" in cols and "paid_buyers" in cols
-    ev = {"days": 0, "gmv": 0.0, "visitors": 0.0, "payers": 0.0}
-    base = {"days": 0, "gmv": 0.0, "visitors": 0.0, "payers": 0.0}
-    for r in _fetch_all(con, "business_overview_daily"):
+    ev = {"days": 0, "gmv": 0.0, "conversion_rates": []}
+    base = {"days": 0, "gmv": 0.0, "conversion_rates": []}
+    for r in business_rows:
         key = iso_date(r.get("date"))
         if key is None:
             continue
@@ -523,8 +819,9 @@ def _event_lift_finding(con, limitations: list[str]):
         bucket["days"] += 1
         bucket["gmv"] += _num(r.get("gmv"))
         if has_conv:
-            bucket["visitors"] += _num(r.get("product_visitors"))
-            bucket["payers"] += _num(r.get("paid_buyers"))
+            visitors = _num(r.get("product_visitors"))
+            if visitors > 0 and r.get("paid_buyers") is not None:
+                bucket["conversion_rates"].append(_num(r.get("paid_buyers")) / visitors)
 
     if ev["days"] < _EVENT_MIN_DAYS or base["days"] < _EVENT_MIN_DAYS:
         limitations.append("活动日或平销日不足 2 天，跳过活动抬升对比。")
@@ -541,31 +838,43 @@ def _event_lift_finding(con, limitations: list[str]):
             "baseline_value": round(base_gmv, 2),
             "lift_pct": round(gmv_lift * 100, 1) if gmv_lift is not None else None,
             "significance": "描述性",
+            **event_context,
         }
     )
 
     conv_significant = None
-    if has_conv and ev["visitors"] > 0 and base["visitors"] > 0:
-        tp = two_proportion(ev["payers"], ev["visitors"], base["payers"], base["visitors"])
-        rl = relative_lift(ev["payers"], ev["visitors"], base["payers"], base["visitors"])
-        conv_significant = tp["significant"]
+    has_conversion_comparison = (
+        len(ev["conversion_rates"]) >= _EVENT_MIN_DAYS
+        and len(base["conversion_rates"]) >= _EVENT_MIN_DAYS
+    )
+    if has_conversion_comparison:
+        ev_conversion = _mean(ev["conversion_rates"])
+        base_conversion = _mean(base["conversion_rates"])
+        conversion_lift = (
+            (ev_conversion - base_conversion) / base_conversion if base_conversion else None
+        )
         rows.append(
             {
-                "metric": "支付转化率",
-                "event_value": round(ev["payers"] / ev["visitors"], 4),
-                "baseline_value": round(base["payers"] / base["visitors"], 4),
-                "lift_pct": round(rl["lift"] * 100, 1) if rl["lift"] is not None else None,
-                "significance": "显著" if tp["significant"] else "不显著",
+                "metric": "日均支付转化率（每日UV）",
+                "event_value": round(ev_conversion, 4),
+                "baseline_value": round(base_conversion, 4),
+                "lift_pct": (
+                    round(conversion_lift * 100, 1) if conversion_lift is not None else None
+                ),
+                "significance": "描述性",
+                **event_context,
             }
         )
+    elif has_conv:
+        limitations.append("活动期或平销期有效转化日不足 2 天，仅保留日均 GMV 对比。")
 
     gmv_dir = "高" if (gmv_lift or 0) >= 0 else "低"
     conclusion = (
         f"活动期日均 GMV {money(ev_gmv)}，较平销期（{money(base_gmv)}）"
         f"{gmv_dir} {abs(round((gmv_lift or 0) * 100, 1))}%"
     )
-    if conv_significant is not None:
-        conclusion += f"；支付转化差异{'显著' if conv_significant else '不显著'}。"
+    if has_conversion_comparison:
+        conclusion += "；日均支付转化率仅作描述性对比。"
     else:
         conclusion += "。"
 
@@ -581,18 +890,20 @@ def _event_lift_finding(con, limitations: list[str]):
                 "baseline_days": base["days"],
                 "gmv_lift_pct": round(gmv_lift * 100, 1) if gmv_lift is not None else None,
                 "conversion_significant": conv_significant,
+                **event_context,
             },
             caveats=[
                 "活动期 GMV 抬升不能读作「活动很成功」的独立因果：它主要来自降价/满减与投放加码本身，本就是活动的组成部分。",
                 "活动日和平销日不是随机安排的（大促常压在周末、节假日），季节和流量结构的差别是主要的干扰因素。",
+                "支付买家和商品访客为逐日去重，跨日用户可能重复；没有用户级 ID，不能做用户级显著性检验。",
             ],
             recommended_action=(
                 "先把这次的抬升幅度和让利成本摆在一起算笔净账，再决定活动做多重、隔多久做一次；"
-                "如果转化差异不显著，先回头看承接页，别急着加大让利。"
+                "如果活动期日均转化没有同步改善，先回头看承接页，别急着加大让利。"
             ),
             evidence_reason=(
                 "按活动日历切分活动/平销两组，GMV 取日均相对差、"
-                "转化用两比例检验判显著；观察性对比、无随机对照。"
+                "转化取逐日 UV 转化率均值；观察性对比、无随机对照。"
             ),
             confounders=_EVENT_CONFOUNDERS,
         ),
@@ -610,9 +921,7 @@ def _decompose_gmv(series: list[tuple[str, float]], trend_rows: list[dict]) -> d
     the strongest is surfaced as the headline date and mirrored onto trend_rows.
     """
     weeks = week_over_week_calendar(series)
-    wow_last_pct = next(
-        (b["pct"] for b in reversed(weeks) if b["pct"] is not None), None
-    )
+    wow_last_pct = next((b["pct"] for b in reversed(weeks) if b["pct"] is not None), None)
     dow = dow_seasonality(series)
     peak_dow = dow.get("peak_dow")
     detrended_dow = dow.get("detrended", False)
@@ -620,11 +929,7 @@ def _decompose_gmv(series: list[tuple[str, float]], trend_rows: list[dict]) -> d
     # The strongest break (largest relative shift) is the headline; all detected
     # breaks flag their row so the trend table shows every structural move.
     strongest = max(cps, key=lambda c: abs(c["rel_shift"]), default=None)
-    cp_dates = {
-        series[c["index"]][0]
-        for c in cps
-        if 0 <= c["index"] < len(series)
-    }
+    cp_dates = {series[c["index"]][0] for c in cps if 0 <= c["index"] < len(series)}
     changepoint_date = (
         series[strongest["index"]][0]
         if strongest is not None and 0 <= strongest["index"] < len(series)
@@ -657,14 +962,21 @@ def _decompose_gmv(series: list[tuple[str, float]], trend_rows: list[dict]) -> d
     }
 
 
-def _snapshot_conclusion(total_gmv, total_buyers, aov, pay_conv, direction, decomp) -> str:
+def _snapshot_conclusion(
+    total_gmv,
+    avg_daily_buyers,
+    avg_daily_aov,
+    avg_daily_pay_conversion,
+    direction,
+    decomp,
+) -> str:
     parts = [f"累计 GMV {money(total_gmv)} 元"]
-    if total_buyers:
-        parts.append(f"支付买家 {qty(total_buyers)} 人")
-    if aov is not None:
-        parts.append(f"客单价 {money(aov)} 元")
-    if pay_conv is not None:
-        parts.append(f"支付转化率 {round(pay_conv * 100, 1)}%")
+    if avg_daily_buyers:
+        parts.append(f"日均支付买家 {qty(avg_daily_buyers)} 人（每日去重）")
+    if avg_daily_aov is not None:
+        parts.append(f"日均客单价 {money(avg_daily_aov)} 元")
+    if avg_daily_pay_conversion is not None:
+        parts.append(f"日均支付转化率 {round(avg_daily_pay_conversion * 100, 1)}%")
     if direction is None:
         tail = "，趋势数据不足。"
     elif direction == "趋势不明":
@@ -681,26 +993,16 @@ def _snapshot_conclusion(total_gmv, total_buyers, aov, pay_conv, direction, deco
 
 
 # --------------------------------------------------------------------------- #
-# Finding 1.5 — 增长归因 GMV 桥 (degrade-gated, ★highest value)
+# Finding 1.5 — 增长归因 GMV 桥 (requires period-unique UV)
 # --------------------------------------------------------------------------- #
-_BRIDGE_CONFOUNDERS = ["促销与活动", "流量结构变化", "品类结构变化"]
-_FACTOR_LEVER = {
-    "traffic": "GMV 变化主要由流量驱动：这周先守住现在跑量的流量来源，同时盯一下转化和客单有没有被悄悄稀释。",
-    "conversion": "GMV 变化主要由转化驱动：把已经见效的详情页/信任状/优惠打法，这周复制到更多商品上。",
-    "aov": "GMV 变化主要由客单价驱动：先弄清是价格结构、连带还是客群变化带来的，再判断这波能不能接着走。",
-}
-
-
 def _growth_attribution_finding(
     con, limitations: list[str]
 ) -> tuple[Finding | None, dict[str, list[dict]]]:
-    """Decompose the window's ΔGMV into traffic × conversion × AOV (LMDI bridge).
+    """Degrade until a period-unique visitor/buyer source exists.
 
-    Aggregates the dated series by calendar month, then runs :func:`gmv_bridge`
-    between the earliest and latest whole month. Needs product_visitors +
-    paid_buyers to reverse-derive conversion and AOV; missing either → degrade with
-    a limitation. Fewer than two calendar months also degrades. Deterministic
-    attribution, not causal.
+    ``business_overview_daily`` contains daily distinct counts. The same user may
+    appear on multiple days, so monthly sums cannot supply the unique visitors and
+    buyers required by a period-level traffic × conversion × AOV bridge.
     """
     cols = _table_columns(con, "business_overview_daily")
     if not {"date", "gmv", "paid_buyers", "product_visitors"} <= cols:
@@ -708,98 +1010,12 @@ def _growth_attribution_finding(
             "business_overview_daily 缺 product_visitors 或 paid_buyers，跳过增长归因（GMV 桥）。"
         )
         return None, {}
-    rows = _fetch_all(con, "business_overview_daily")
-    by_month: dict[str, dict] = {}
-    for r in rows:
-        month = to_period_month(r.get("date"))
-        if month is None:
-            continue
-        agg = by_month.setdefault(
-            month, {"gmv": 0.0, "visitors": 0.0, "buyers": 0.0, "min_day": None, "max_day": None}
-        )
-        agg["gmv"] += _num(r.get("gmv"))
-        agg["visitors"] += _num(r.get("product_visitors"))
-        agg["buyers"] += _num(r.get("paid_buyers"))
-        day = _to_yyyymmdd(r.get("date"))
-        if day is not None:
-            agg["min_day"] = day if agg["min_day"] is None else min(agg["min_day"], day)
-            agg["max_day"] = day if agg["max_day"] is None else max(agg["max_day"], day)
-    months = sorted(by_month)
-    if len(months) < 2:
-        limitations.append("business_overview_daily 不足两个日历月，跳过增长归因（GMV 桥）。")
-        return None, {}
-
-    # Prefer WHOLE calendar months at both endpoints: a boundary month that only
-    # covers part of its days (export started/ended mid-month) has a deflated GMV,
-    # which distorts the bridge and can even flip its direction. When two or more
-    # whole months exist we compare those and note any partial boundary we dropped;
-    # otherwise we keep the raw endpoints but say plainly the caliber isn't two
-    # full months.
-    def _is_whole_month(m: str) -> bool:
-        agg = by_month[m]
-        if agg["min_day"] is None or agg["max_day"] is None:
-            return False
-        start, end = month_bounds(m)
-        return agg["min_day"] <= start and agg["max_day"] >= end
-
-    whole_months = [m for m in months if _is_whole_month(m)]
-    if len(whole_months) >= 2:
-        first_month, last_month = whole_months[0], whole_months[-1]
-        dropped = [m for m in months if m < first_month or m > last_month]
-        both_whole = True
-    else:
-        first_month, last_month = months[0], months[-1]
-        dropped = []
-        both_whole = False
-    p0, p1 = by_month[first_month], by_month[last_month]
-    bridge = gmv_bridge(p0, p1)
-    bridge_rows = _bridge_rows(bridge)
-    factor_zh = bridge.get("dominant_factor_zh")
-
-    if both_whole:
-        caveats = [f"按日历月聚合，比较 {first_month} 与 {last_month} 两个完整日历月之间的变化。"]
-        if dropped:
-            caveats.append(
-                f"边界月 {'、'.join(dropped)} 数据不足整月，已排除以免口径失真。"
-            )
-    else:
-        caveats = [
-            f"按日历月聚合，比较 {first_month} 与 {last_month} 之间的变化；"
-            "这两个月的数据可能不足整月，变化幅度含边界残缺影响。"
-        ]
-    bridge_method_notes = [
-        "GMV = 访客数 × 支付转化率 × 客单价 的 LMDI 确定性分解，三项贡献之和≈ΔGMV，非因果。",
-    ]
-    if bridge.get("partial"):
-        caveats.append("有些数据缺了或不正常（比如某一段访客、买家为零），只能拆个大概。")
-        bridge_method_notes.append("未拆分部分计入残差。")
-
-    sample_size = int(p0["buyers"] + p1["buyers"])
-    finding = Finding(
-        title="增长归因（GMV 桥）",
-        conclusion=_bridge_conclusion(bridge, p0, p1, first_month, last_month),
-        evidence_strength=score_evidence(sample_size, has_controls=False, confounder_count=1),
-        descriptive_reliability=score_reliability(sample_size),
-        key_numbers={
-            "delta_gmv": bridge.get("delta_gmv"),
-            # 读者面只留中文枚举值（"流量"/"转化"/"客单价"），英文枚举仅在 bridge
-            # 内部作字典键；不再同时输出 dominant_factor + _zh 造成重复标签。
-            "dominant_factor": factor_zh,
-            "contrib_traffic": bridge.get("contrib_traffic"),
-            "contrib_conversion": bridge.get("contrib_conversion"),
-            "contrib_aov": bridge.get("contrib_aov"),
-            "residual": bridge.get("residual"),
-            "partial": bridge.get("partial"),
-        },
-        caveats=caveats,
-        recommended_action=_FACTOR_LEVER.get(bridge.get("dominant_factor")),
-        evidence_reason=M.methodology_note(
-            "用 LMDI 把 ΔGMV 完全可加地拆到流量/转化/客单三因子，确定性分解、观察性。",
-            *bridge_method_notes,
-        ),
-        confounders=_BRIDGE_CONFOUNDERS,
+    limitations.append(
+        "business_overview_daily 的 paid_buyers/product_visitors 是日级去重人数，"
+        "跨月相加只能得到人次、不能得到期间唯一人数；缺少期间去重 UV 或用户级 ID，"
+        "跳过增长归因（GMV 桥）。"
     )
-    return finding, {"gmv_bridge": bridge_rows}
+    return None, {}
 
 
 def _bridge_rows(bridge: dict) -> list[dict]:
@@ -841,9 +1057,7 @@ def _offsetting_factors_zh(bridge: dict, delta: float) -> str:
     return "、".join(names)
 
 
-def _bridge_conclusion(
-    bridge: dict, p0: dict, p1: dict, first_month: str, last_month: str
-) -> str:
+def _bridge_conclusion(bridge: dict, p0: dict, p1: dict, first_month: str, last_month: str) -> str:
     delta = bridge.get("delta_gmv")
     if delta is None:
         return _BRIDGE_CALIBER + "增长归因数据不足，无法分解 ΔGMV。"
@@ -861,8 +1075,7 @@ def _bridge_conclusion(
     # offset by the others — calling it the "driver" would misread the sign.
     if contrib is not None and delta != 0 and (contrib > 0) != (delta > 0):
         return head + (
-            f"，其中{zh}变动最大（贡献 {money(contrib)} 元，方向与净变化相反，"
-            "被其他因子抵消）。"
+            f"，其中{zh}变动最大（贡献 {money(contrib)} 元，方向与净变化相反，被其他因子抵消）。"
         )
     # Same direction as the net change, but its magnitude dwarfs the net move: the
     # push was real yet largely eaten by opposing factors — spell out which ones,
@@ -880,9 +1093,7 @@ def _bridge_conclusion(
 # --------------------------------------------------------------------------- #
 # Finding 2 — 载体 + 渠道结构拆解 (degrade-gated)
 # --------------------------------------------------------------------------- #
-def _structure_finding(
-    con, limitations: list[str]
-) -> tuple[Finding | None, dict[str, list[dict]]]:
+def _structure_finding(con, limitations: list[str]) -> tuple[Finding | None, dict[str, list[dict]]]:
     carrier_rows, carrier_dom = _carrier_structure(con, limitations)
     channel_rows, channel_test, channel_top = _channel_structure(con, limitations)
 
@@ -903,9 +1114,7 @@ def _structure_finding(
     if carrier_rows is not None:
         tables["carrier_structure"] = carrier_rows
         key_numbers["carrier_dominant"] = carrier_dom
-        share = next(
-            (r["gmv_share"] for r in carrier_rows if r["carrier"] == carrier_dom), None
-        )
+        share = next((r["gmv_share"] for r in carrier_rows if r["carrier"] == carrier_dom), None)
         parts.append(
             f"载体以 {_carrier_zh(carrier_dom)} 为主（GMV 占比 {round((share or 0) * 100)}%）"
         )
@@ -928,14 +1137,15 @@ def _structure_finding(
             sample_size = max(sample_size, n)
             verdict = _verdict(channel_test, diff)
             lift, mde, mde_caveat = _comparison_extras(
-                _num(a["paid_buyers"]), _num(a["click_users"]),
-                _num(b["paid_buyers"]), _num(b["click_users"]), channel_test,
+                _num(a["paid_buyers"]),
+                _num(a["click_users"]),
+                _num(b["paid_buyers"]),
+                _num(b["click_users"]),
+                channel_test,
             )
             key_numbers["channel_rel_lift"] = lift
             key_numbers["channel_mde"] = mde
-            parts.append(
-                f"{a['channel']} 与 {b['channel']} 支付转化率相差 {pp(diff)}（{verdict}）"
-            )
+            parts.append(f"{a['channel']} 与 {b['channel']} 支付转化率相差 {pp(diff)}（{verdict}）")
             structure_method_notes.append(M.METHOD_PROPORTION_TEST)
             if mde_caveat:
                 caveats.append(mde_caveat)
@@ -946,9 +1156,7 @@ def _structure_finding(
     finding = Finding(
         title="载体与渠道结构",
         conclusion="；".join(parts) + "。" if parts else "结构数据不足。",
-        evidence_strength=score_evidence(
-            sample_size, has_controls=False, confounder_count=1
-        ),
+        evidence_strength=score_evidence(sample_size, has_controls=False, confounder_count=1),
         descriptive_reliability=score_reliability(sample_size),
         key_numbers=key_numbers,
         caveats=caveats,
@@ -961,9 +1169,7 @@ def _structure_finding(
     return finding, tables
 
 
-def _carrier_structure(
-    con, limitations: list[str]
-) -> tuple[list[dict] | None, str | None]:
+def _carrier_structure(con, limitations: list[str]) -> tuple[list[dict] | None, str | None]:
     cols = _table_columns(con, "business_overview_daily")
     if "note_gmv" not in cols or "card_gmv" not in cols:
         limitations.append("business_overview_daily 缺 note_gmv/card_gmv，跳过载体拆解。")
@@ -984,9 +1190,7 @@ def _carrier_structure(
                 "gmv": gmv,
                 "gmv_share": gmv / total_gmv if total_gmv else None,
                 "paid_orders": orders,
-                "order_share": (
-                    (orders / total_o) if (has_orders and total_o) else None
-                ),
+                "order_share": ((orders / total_o) if (has_orders and total_o) else None),
             }
         )
     dominant = max(carrier_rows, key=lambda r: r["gmv"])["carrier"]
@@ -1028,8 +1232,10 @@ def _channel_structure(
         if len(valid) >= 2:
             a, b = sorted(valid, key=lambda d: d["click_users"], reverse=True)[:2]
             test = two_proportion(
-                _num(a["paid_buyers"]), _num(a["click_users"]),
-                _num(b["paid_buyers"]), _num(b["click_users"]),
+                _num(a["paid_buyers"]),
+                _num(a["click_users"]),
+                _num(b["paid_buyers"]),
+                _num(b["click_users"]),
             )
             top = (a, b)
         else:
@@ -1040,9 +1246,7 @@ def _channel_structure(
 # --------------------------------------------------------------------------- #
 # Finding 3 — 店铺页转化漏斗诊断 (degrade-gated)
 # --------------------------------------------------------------------------- #
-def _funnel_finding(
-    con, limitations: list[str]
-) -> tuple[Finding | None, dict[str, list[dict]]]:
+def _funnel_finding(con, limitations: list[str]) -> tuple[Finding | None, dict[str, list[dict]]]:
     if not _table_exists(con, "shop_page_funnel"):
         limitations.append("缺少 shop_page_funnel 表，跳过店铺页漏斗诊断。")
         return None, {}
@@ -1115,8 +1319,11 @@ def _funnel_finding(
         key_numbers["audience_significant"] = _sig_gated(aud_test, aud_test["diff"])
         key_numbers["audience_top2"] = [a["audience_type"], b["audience_type"]]
         lift, mde, mde_caveat = _comparison_extras(
-            _num(a["payers"]), _num(a["visitors"]),
-            _num(b["payers"]), _num(b["visitors"]), aud_test,
+            _num(a["payers"]),
+            _num(a["visitors"]),
+            _num(b["payers"]),
+            _num(b["visitors"]),
+            aud_test,
         )
         key_numbers["audience_rel_lift"] = lift
         key_numbers["audience_mde"] = mde
@@ -1128,9 +1335,7 @@ def _funnel_finding(
     finding = Finding(
         title="店铺页转化漏斗诊断",
         conclusion=_funnel_conclusion(weakest, stage_rates),
-        evidence_strength=score_evidence(
-            sample_size, has_controls=False, confounder_count=1
-        ),
+        evidence_strength=score_evidence(sample_size, has_controls=False, confounder_count=1),
         descriptive_reliability=score_reliability(sample_size),
         key_numbers=key_numbers,
         caveats=caveats,
@@ -1171,9 +1376,7 @@ def _stage_rows(stage_rates: dict, stage_denoms: dict) -> list[dict]:
 
 def _weakest_stage(stage_rates: dict) -> str | None:
     seq = {
-        k: v
-        for k, v in stage_rates.items()
-        if k in ("visit_click", "click_pay") and v is not None
+        k: v for k, v in stage_rates.items() if k in ("visit_click", "click_pay") and v is not None
     }
     if seq:
         return min(seq, key=seq.get)
@@ -1269,17 +1472,8 @@ def _num(value) -> float:
     return to_finite_float(value, 0.0)
 
 
-def _to_yyyymmdd(value) -> int | None:
-    """Normalise an export date cell (int YYYYMMDD or ISO string) to int YYYYMMDD."""
-    if value is None:
-        return None
-    text = str(value).strip()
-    if not text:
-        return None
-    digits = text.replace("-", "").replace("/", "")[:8]
-    if len(digits) == 8 and digits.isdigit():
-        return int(digits)
-    return None
+def _mean(values: list[float]) -> float | None:
+    return sum(values) / len(values) if values else None
 
 
 def _fetch_all(con, table: str) -> list[dict]:

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "visual_curation.json",
+  "title": "visual_curation",
+  "description": "Runtime visual-curation envelope merged into existing sections.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["sections"],
+  "properties": {
+    "sections": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["section_id", "curated_views"],
+        "properties": {
+          "section_id": {"type": "string", "minLength": 1},
+          "curated_views": {"type": "array", "items": {"$ref": "view_spec.json"}}
+        }
+      }
+    }
+  }
+}

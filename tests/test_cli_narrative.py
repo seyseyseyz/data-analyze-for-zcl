@@ -3,6 +3,7 @@ import json
 from typer.testing import CliRunner
 
 from xhs_ceramics_analytics.cli import app
+from xhs_ceramics_analytics.reporting import frozen_narrative as fn
 
 runner = CliRunner()
 
@@ -39,6 +40,16 @@ def _bundle_file(tmp_path):
     return p
 
 
+def _results_file(tmp_path):
+    results = {
+        "facts_hash": "h",
+        "result_tables": {"trend": [{"month": "2026-07", "gmv": 12.0}]},
+    }
+    p = tmp_path / "results.json"
+    p.write_text(json.dumps(results), encoding="utf-8")
+    return p
+
+
 def test_gate_command_passes_clean_bundle(tmp_path):
     out = tmp_path / "gate.json"
     result = runner.invoke(app, ["gate", str(_bundle_file(tmp_path)), str(_facts_file(tmp_path)),
@@ -70,7 +81,8 @@ def test_finalize_default_target_is_state_dir_not_outputs(tmp_path, monkeypatch)
     # frozen_narrative.json is a cache checkpoint, not a deliverable.
     monkeypatch.setenv("XHS_CA_PROJECT_ROOT", str(tmp_path))
     result = runner.invoke(app, ["finalize", str(_bundle_file(tmp_path)),
-                                 str(_facts_file(tmp_path))])
+                                 str(_facts_file(tmp_path)), "--results",
+                                 str(_results_file(tmp_path))])
     assert result.exit_code == 0, result.output
     state = tmp_path / ".xhs-ceramics-analytics"
     assert (state / "frozen_narrative.json").exists()
@@ -80,11 +92,77 @@ def test_finalize_default_target_is_state_dir_not_outputs(tmp_path, monkeypatch)
 def test_finalize_then_render_frozen(tmp_path):
     frozen = tmp_path / "frozen.json"
     r1 = runner.invoke(app, ["finalize", str(_bundle_file(tmp_path)), str(_facts_file(tmp_path)),
+                             "--results", str(_results_file(tmp_path)),
                              "--out", str(frozen)])
     assert r1.exit_code == 0, r1.output
     r2 = runner.invoke(app, ["render-frozen", str(frozen), str(_facts_file(tmp_path)),
                              "--name", str(tmp_path / "report")])
     assert r2.exit_code == 0, r2.output
-    assert (tmp_path / "report.md").exists()
+    assert not (tmp_path / "report.md").exists()
     assert (tmp_path / "report.html").exists()
-    assert "人均产出 ¥8.7。" in (tmp_path / "report.md").read_text()
+    assert "人均产出 ¥8.7。" in (tmp_path / "report.html").read_text()
+
+
+def test_finalize_writes_a_workflow_compatible_cache(tmp_path):
+    frozen = tmp_path / "frozen.json"
+    facts_path = _facts_file(tmp_path)
+    results_path = _results_file(tmp_path)
+    finalized = runner.invoke(
+        app,
+        [
+            "finalize",
+            str(_bundle_file(tmp_path)),
+            str(facts_path),
+            "--results",
+            str(results_path),
+            "--out",
+            str(frozen),
+        ],
+    )
+
+    assert finalized.exit_code == 0, finalized.output
+    facts = json.loads(facts_path.read_text(encoding="utf-8"))
+    results = json.loads(results_path.read_text(encoding="utf-8"))
+    cached = fn.load_frozen(frozen)
+    assert fn.is_cache_hit(
+        cached,
+        facts["facts_hash"],
+        results_hash=fn.payload_hash(results),
+        result_tables=results["result_tables"],
+    )
+
+
+def test_render_frozen_rejects_stale_contract_version(tmp_path):
+    frozen = tmp_path / "frozen.json"
+    finalized = runner.invoke(
+        app,
+        [
+            "finalize",
+            str(_bundle_file(tmp_path)),
+            str(_facts_file(tmp_path)),
+            "--results",
+            str(_results_file(tmp_path)),
+            "--out",
+            str(frozen),
+        ],
+    )
+    assert finalized.exit_code == 0, finalized.output
+
+    payload = json.loads(frozen.read_text(encoding="utf-8"))
+    payload["schema_version"] = "stale"
+    frozen.write_text(json.dumps(payload), encoding="utf-8")
+
+    rendered = runner.invoke(
+        app,
+        [
+            "render-frozen",
+            str(frozen),
+            str(_facts_file(tmp_path)),
+            "--name",
+            str(tmp_path / "stale-report"),
+        ],
+    )
+
+    assert rendered.exit_code == 1
+    assert "stale or incompatible" in rendered.stderr
+    assert not (tmp_path / "stale-report.html").exists()

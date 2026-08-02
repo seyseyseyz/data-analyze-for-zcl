@@ -118,6 +118,69 @@ def test_map_columns_overrides_resolve_missing_column():
     assert all(d.required_column != "refund_users" for d in result.diagnostics)
 
 
+def test_fuzzy_mapping_is_quarantined_instead_of_silently_applied():
+    columns = [c for c in _REFUND_FULL if c != "退款人数（支付时间）"] + ["refund_user"]
+
+    result = map_columns(_profile(columns), "refund_overview")
+
+    assert "refund_users" not in result.mapping
+    decision = next(d for d in result.decisions if d.canonical_column == "refund_users")
+    assert decision.source_column == "refund_user"
+    assert decision.match_method == "fuzzy"
+    assert decision.semantic_status == "review_required"
+    assert decision.applied is False
+    diagnostic = next(
+        d for d in result.diagnostics if d.required_column == "refund_users"
+    )
+    assert diagnostic.status == "review_required"
+    assert diagnostic.candidate_sources == ("refund_user",)
+    assert diagnostic.match_method == "fuzzy"
+
+
+def test_operator_override_explicitly_releases_quarantined_mapping():
+    columns = [c for c in _REFUND_FULL if c != "退款人数（支付时间）"] + ["refund_user"]
+    overrides = {"refund_overview": {"refund_users": {"refund_user"}}}
+
+    result = map_columns(_profile(columns), "refund_overview", overrides=overrides)
+
+    assert result.mapping["refund_users"] == "refund_user"
+    decision = next(d for d in result.decisions if d.canonical_column == "refund_users")
+    assert decision.match_method == "operator_override"
+    assert decision.semantic_status == "operator_confirmed"
+    assert decision.applied is True
+    assert all(d.required_column != "refund_users" for d in result.diagnostics)
+
+
+def test_platform_catalog_marks_verified_and_reference_only_mappings():
+    result = map_columns(
+        _profile(["时间", "支付金额", "商品访客数"]),
+        "business_overview_daily",
+    )
+    decisions = {decision.canonical_column: decision for decision in result.decisions}
+
+    assert decisions["gmv"].semantic_status == "verified"
+    assert decisions["gmv"].platform_metric_ids == (20,)
+    assert decisions["product_visitors"].semantic_status == "reference_only"
+    assert decisions["product_visitors"].platform_metric_ids == (14,)
+    assert "no_approved_binding" in decisions["product_visitors"].reason
+    assert decisions["product_visitors"].applied is True
+
+
+def test_platform_catalog_does_not_overstate_non_official_alias_as_verified():
+    result = map_columns(
+        _profile(["时间", "gmv"]),
+        "business_overview_daily",
+    )
+    decision = next(
+        item for item in result.decisions if item.canonical_column == "gmv"
+    )
+
+    assert result.mapping["gmv"] == "gmv"
+    assert decision.semantic_status == "no_platform_reference"
+    assert decision.platform_metric_ids == ()
+    assert decision.applied is True
+
+
 def test_guess_field_mapping_is_wrapper_over_map_columns():
     profile = _profile(_REFUND_FULL)
     assert guess_field_mapping(profile, "refund_overview") == map_columns(

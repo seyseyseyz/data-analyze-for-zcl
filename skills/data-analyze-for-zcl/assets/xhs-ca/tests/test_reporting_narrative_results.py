@@ -6,9 +6,9 @@ facts.json 里的 ``domain_slices`` 是缓存键用的 dict 且恒空,不能当 
 生产者把同一批 AnalysisResult 经 group_by_domain 落成叙事真正能起步的切片列表。
 """
 
-from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
+from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding, Subsection
 from xhs_ceramics_analytics.evidence import EvidenceStrength
-from xhs_ceramics_analytics.reporting.facts_export import build_factbook
+from xhs_ceramics_analytics.reporting.facts_export import build_factbook, facts_hash
 from xhs_ceramics_analytics.reporting.narrative_results import build_narrative_results
 
 
@@ -31,9 +31,20 @@ def test_returns_domain_slices_blocked_modules_and_result_tables_keys():
     doc = build_narrative_results([], blocked_modules=("note_funnel",))
     # result_tables joins the contract: it is the numeric-trust source the curated-view
     # engine fills from + the gate polices against. Empty analysis → empty tables.
-    assert set(doc) == {"domain_slices", "blocked_modules", "result_tables"}
+    assert set(doc) == {
+        "canonical_version",
+        "facts_hash",
+        "registry_hash",
+        "metric_mapping",
+        "platform_semantics",
+        "domain_slices",
+        "blocked_modules",
+        "result_tables",
+    }
     assert doc["domain_slices"] == []
     assert doc["result_tables"] == {}
+    assert doc["platform_semantics"]["status"] == "observe"
+    assert doc["platform_semantics"]["runtime_scopes"] == ["agent_context"]
     # blocked_modules is normalized to {slug, reason} dicts so the skeleton can
     # explain what is missing; a bare string gets an empty reason.
     assert doc["blocked_modules"] == [{"slug": "note_funnel", "reason": ""}]
@@ -103,6 +114,74 @@ def test_numeric_slice_facts_carry_factbook_fact_id():
     assert slice_fact["rendered"] == canonical.rendered  # 同一渲染,零漂移
 
 
+def test_repeated_metric_keys_reuse_the_factbooks_scoped_fact_ids():
+    results = [
+        AnalysisResult(
+            task_id="core_business_diagnosis",
+            title="整体经营",
+            findings=[
+                Finding(
+                    title="本期",
+                    conclusion="c1",
+                    evidence_strength=EvidenceStrength.MEDIUM,
+                    key_numbers={"sample_count": 11},
+                ),
+                Finding(
+                    title="基线",
+                    conclusion="c2",
+                    evidence_strength=EvidenceStrength.MEDIUM,
+                    key_numbers={"sample_count": 1272},
+                ),
+            ],
+            subsections=[
+                Subsection(
+                    title="补充",
+                    findings=[
+                        Finding(
+                            title="补充样本",
+                            conclusion="c3",
+                            evidence_strength=EvidenceStrength.MEDIUM,
+                            key_numbers={"sample_count": 8},
+                        )
+                    ],
+                )
+            ],
+        )
+    ]
+    book = build_factbook(results)
+
+    doc = build_narrative_results(results, factbook=book)
+    slice_facts = doc["domain_slices"][0]["facts"]
+
+    assert [fact["fact_id"] for fact in slice_facts] == [
+        "core_business_diagnosis.finding_00.sample_count",
+        "core_business_diagnosis.finding_01.sample_count",
+        "core_business_diagnosis.subsection_00.finding_00.sample_count",
+    ]
+    assert [fact["value"] for fact in slice_facts] == [11, 1272, 8]
+    assert all(fact["fact_id"] in book.facts for fact in slice_facts)
+
+
+def test_narrative_results_reuses_factbook_metric_annotation_and_hash():
+    results = [
+        _result(
+            "core_business_diagnosis",
+            title="支付转化",
+            conclusion="c",
+            key_numbers={"click_pay_rate": 0.12},
+        )
+    ]
+    book = build_factbook(results)
+
+    doc = build_narrative_results(results, factbook=book)
+
+    slice_fact = doc["domain_slices"][0]["facts"][0]
+    assert slice_fact["metric_id"] == "shop.click_pay_rate"
+    assert doc["facts_hash"] == facts_hash(book)
+    assert doc["registry_hash"] == book.metric_mapping.registry_hash
+    assert doc["canonical_version"] == 3
+
+
 def test_non_numeric_slice_fact_has_no_fact_id():
     # 非数值 key_number(如 SKU 名称)不是 facts.json 里的 fact,绝不能带 fact_id,
     # 否则 claim 绑上去会指向一个 FactBook 中不存在的键 -> MISSING_FACT。
@@ -131,7 +210,15 @@ def test_multiple_domains_are_separate_slices_in_registry_order():
 
 def test_never_raises_on_empty_and_defaults_blocked_empty():
     doc = build_narrative_results([])
-    assert doc == {"domain_slices": [], "blocked_modules": [], "result_tables": {}}
+    assert doc["domain_slices"] == []
+    assert doc["blocked_modules"] == []
+    assert doc["result_tables"] == {}
+    assert doc["canonical_version"] == 3
+    assert len(doc["facts_hash"]) == 64
+    assert doc["registry_hash"]
+    assert doc["platform_semantics"]["accepted_references"]
+    assert doc["metric_mapping"]["mapped_count"] == 0
+    assert doc["metric_mapping"]["unmapped_count"] == 0
 
 
 # ---- result_tables: the numeric-trust source for curated views ------------

@@ -34,3 +34,18 @@ def test_never_empties_the_table():
     view = _table_view("whatever", rows)
     names = [c["name"] for c in view["user_columns"]]
     assert names  # not empty
+
+
+def test_all_blank_rendered_column_is_dropped():
+    # A column whose RAW values are non-None but RENDER to a blank token (empty string,
+    # a "—" placeholder) still tells the reader nothing — drop it like an all-None one.
+    # The old raw `is not None` check kept these because "" / "—" are not None.
+    rows = [
+        {"sku": "A", "gmv": 1000.0, "note": "", "flag": "—"},
+        {"sku": "B", "gmv": 800.0, "note": "", "flag": "—"},
+    ]
+    view = _table_view("uncurated_table", rows)
+    names = [c["name"] for c in view["user_columns"]]
+    assert "note" not in names
+    assert "flag" not in names
+    assert "sku" in names and "gmv" in names

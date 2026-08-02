@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "number_token.json",
+  "title": "number_token",
+  "description": "Opaque numeric binding. The deterministic layer resolves the fact and renders registry-validated name, value, unit, caliber, period and aggregation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["token_id", "fact_id", "expected_metric_key"],
+  "properties": {
+    "token_id": {"type": "string", "pattern": "^t\\d+$"},
+    "fact_id": {"type": "string", "minLength": 1},
+    "expected_metric_key": {"type": "string", "minLength": 1},
+    "direction": {"enum": ["up", "down", "flat", null]}
+  }
+}

@@ -8,24 +8,34 @@ from xhs_ceramics_analytics.evidence import EvidenceStrength
 def run(db_path: Path) -> AnalysisResult:
     con = connect(db_path)
     try:
-        rows, limitations = _fetch_interactions(con)
+        has_explicit_links = _has_explicit_links(con)
+        rows, limitations = _fetch_interactions(con, has_explicit_links)
     finally:
         con.close()
+
+    if has_explicit_links:
+        title = "商品与内容交互"
+        conclusion = "已对封面构图与文案角度组合做初步交互对比。"
+        caveats = ["显式 note-SKU 关联存在；当前结果仍需受控实验验证。"]
+    else:
+        title = "内容特征组合假设"
+        conclusion = "已对封面构图与文案角度组合做初步对比，尚不能形成归因结论。"
+        caveats = ["缺少显式 note-SKU 关联，结果仅是内容特征组合假设，不是商品交互证据。"]
 
     return AnalysisResult(
         task_id="product_content_interaction",
         title="商品与内容交互",
         findings=[
             Finding(
-                title="内容组合已排序",
-                conclusion="已对封面构图与文案角度组合做初步交互对比。",
+                title=title,
+                conclusion=conclusion,
                 evidence_strength=(
                     EvidenceStrength.WEAK
                     if rows and _has_metric_evidence(rows)
                     else EvidenceStrength.NOT_JUDGABLE
                 ),
                 key_numbers={"combinations": len(rows)},
-                caveats=["需要显式 note-SKU 关联后，商品交互证据才会更强。"],
+                caveats=caveats,
             )
         ],
         tables={"product_interactions": rows},
@@ -33,7 +43,7 @@ def run(db_path: Path) -> AnalysisResult:
     )
 
 
-def _fetch_interactions(con) -> tuple[list[dict[str, object]], list[str]]:
+def _fetch_interactions(con, has_explicit_links: bool) -> tuple[list[dict[str, object]], list[str]]:
     if not _table_exists(con, "content_features"):
         return [], ["缺少 content_features 表。"]
 
@@ -67,12 +77,18 @@ def _fetch_interactions(con) -> tuple[list[dict[str, object]], list[str]]:
 
     note_columns = _table_columns(con, "notes")
     avg_reads = "AVG(CAST(n.reads AS DOUBLE))" if "reads" in note_columns else "NULL"
-    avg_collects = (
-        "AVG(CAST(n.collects AS DOUBLE))" if "collects" in note_columns else "NULL"
+    avg_collects = "AVG(CAST(n.collects AS DOUBLE))" if "collects" in note_columns else "NULL"
+    sku_select = "CAST(l.sku_id AS VARCHAR) AS sku_id," if has_explicit_links else ""
+    link_join = (
+        "INNER JOIN note_sku_links l ON CAST(f.note_id AS VARCHAR) = CAST(l.note_id AS VARCHAR)"
+        if has_explicit_links
+        else ""
     )
+    sku_group = ", 3" if has_explicit_links else ""
     result = con.sql(
         f"""
         SELECT
+          {sku_select}
           COALESCE(NULLIF(TRIM(CAST(f.composition_type AS VARCHAR)), ''), 'unknown')
             AS composition_type,
           COALESCE(NULLIF(TRIM(CAST(f.copy_angle AS VARCHAR)), ''), 'unknown')
@@ -81,8 +97,9 @@ def _fetch_interactions(con) -> tuple[list[dict[str, object]], list[str]]:
           {avg_reads} AS avg_reads,
           {avg_collects} AS avg_collects
         FROM content_features f
+        {link_join}
         LEFT JOIN notes n ON CAST(f.note_id AS VARCHAR) = CAST(n.note_id AS VARCHAR)
-        GROUP BY 1, 2
+        GROUP BY 1, 2{sku_group}
         ORDER BY avg_reads DESC NULLS LAST, notes DESC, composition_type, copy_angle
         """
     )
@@ -102,8 +119,28 @@ def _rows(result) -> list[dict[str, object]]:
 
 def _has_metric_evidence(rows: list[dict[str, object]]) -> bool:
     return any(
-        row.get("avg_reads") is not None or row.get("avg_collects") is not None
-        for row in rows
+        row.get("avg_reads") is not None or row.get("avg_collects") is not None for row in rows
+    )
+
+
+def _has_explicit_links(con) -> bool:
+    if not _table_exists(con, "note_sku_links"):
+        return False
+    columns = _table_columns(con, "note_sku_links")
+    if not {"note_id", "sku_id"}.issubset(columns):
+        return False
+    return (
+        con.sql(
+            """
+        SELECT 1
+        FROM note_sku_links AS links
+        INNER JOIN content_features AS features
+          ON CAST(links.note_id AS VARCHAR) = CAST(features.note_id AS VARCHAR)
+        WHERE links.note_id IS NOT NULL AND links.sku_id IS NOT NULL
+        LIMIT 1
+        """
+        ).fetchone()
+        is not None
     )
 
 

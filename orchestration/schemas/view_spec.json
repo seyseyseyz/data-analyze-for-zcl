@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "view_spec.json",
+  "title": "view_spec",
+  "description": "Runtime-compatible declarative view. supports_claim holds a claim_id and source.table holds a deterministic table_id; no data value or metric label is agent-authored.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "view_id",
+    "section_id",
+    "supports_claim",
+    "template",
+    "source",
+    "columns",
+    "title",
+    "how_to_read",
+    "why_it_matters"
+  ],
+  "properties": {
+    "view_id": {"type": "string", "minLength": 1},
+    "section_id": {"type": "string", "minLength": 1},
+    "supports_claim": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Existing claim_id supported by this view."
+    },
+    "template": {
+      "enum": [
+        "comparison_table",
+        "ranking_table",
+        "trend_line",
+        "breakdown_waterfall",
+        "share_bar",
+        "horizontal_bar"
+      ]
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["table"],
+      "properties": {
+        "task_id": {"type": "string"},
+        "table": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Existing deterministic table_id, named table for runtime compatibility."
+        }
+      }
+    },
+    "columns": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string"}
+    },
+    "rows": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "sort_by": {"type": ["string", "null"]},
+        "order": {"enum": ["asc", "desc", null]},
+        "top_n": {"type": ["integer", "null"], "minimum": 1},
+        "highlight": {
+          "type": ["object", "null"],
+          "description": "Existing categorical row selector only; numeric thresholds are forbidden.",
+          "additionalProperties": {"type": ["string", "number", "boolean", "null"]}
+        }
+      }
+    },
+    "chart": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "x": {"type": ["string", "null"]},
+        "y": {"type": ["string", "null"]}
+      }
+    },
+    "title": {"type": "string", "minLength": 1},
+    "how_to_read": {"type": "string", "minLength": 1},
+    "why_it_matters": {"type": "string", "minLength": 1}
+  }
+}

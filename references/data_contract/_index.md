@@ -19,6 +19,7 @@ All tables used by the ceramics analytics pipeline. Each file documents required
 | `hypotheses` | [hypotheses.md](hypotheses.md) | Persistent knowledge base of tested hypotheses |
 | `ad_performance_daily` | [ad_performance_daily.md](ad_performance_daily.md) | Paid traffic performance at available grain |
 | `business_overview_daily` | [business_overview_daily.md](business_overview_daily.md) | One row per day: whole-shop GMV, orders, buyers, AOV, refund/pay-conversion splits (merged from `1.核心数据汇总` + `成交/经营概览-all`) |
+| `business_overview_monthly` | [business_overview_monthly.md](business_overview_monthly.md) | Derived calendar-month totals plus explicitly named daily-distinct person-days and daily averages; no period-unique buyers/visitors |
 | `sku_performance` | [sku_performance.md](sku_performance.md) | One row per SKU, whole-period aggregate: commerce + add-to-cart + refund (from `2.规格明细`) |
 | `search_overview` | [search_overview.md](search_overview.md) | One row per day per search carrier (载体): impressions, click rate, pay conversion (from `7.搜索总览`) |
 | `search_terms` | [search_terms.md](search_terms.md) | One row per search term, whole-period aggregate: impressions, click rate, pay conversion (from `7.搜索词`) |

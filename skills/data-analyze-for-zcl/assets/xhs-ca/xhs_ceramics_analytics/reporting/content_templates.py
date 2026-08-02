@@ -11,6 +11,7 @@ Distilled from the recurring content playbook a手作陶瓷店 needs — 上新�
 买前确认、搜索承接、退款预期修正、老客复购 — generalized to placeholders so they apply to
 any series/器型 rather than hardcoding this season's names.
 """
+
 from typing import NamedTuple
 
 

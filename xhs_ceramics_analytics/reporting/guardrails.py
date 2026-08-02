@@ -4,6 +4,7 @@ The hint line is ALWAYS labelled as a policy/experience line, never an industry
 benchmark (the data cannot support cross-shop benchmarking). Only measurement
 metrics should be passed in. Never raises.
 """
+
 from xhs_ceramics_analytics.analytics.numeric import to_finite_float
 
 

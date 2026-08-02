@@ -6,6 +6,7 @@ double-count with no ground truth for the overlap. This ledger lists them
 side by side, sorted by size, with a controllability column and a banner that
 states the sum is not meaningful. ``net_total`` is always ``None`` by contract.
 """
+
 from xhs_ceramics_analytics.analytics.numeric import to_finite_float
 
 _BANNER = "各池口径不同，不可相加为单一净额"

@@ -2,30 +2,38 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "claim.json",
   "title": "claim",
-  "description": "The atom. Sentence carries opaque {tN} tokens ONLY — no digits. Gate-validated.",
+  "description": "Gate-validated narrative atom. Sentences carry opaque {tN} tokens only; metric semantics remain deterministic.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["claim_id", "section_id", "claim_kind", "sentence", "number_tokens", "entity_refs", "confidence"],
+  "required": [
+    "claim_id",
+    "section_id",
+    "claim_kind",
+    "sentence",
+    "number_tokens",
+    "entity_refs",
+    "confidence",
+    "causal_link"
+  ],
   "properties": {
-    "claim_id": {"type": "string"},
-    "section_id": {"type": "string"},
+    "claim_id": {"type": "string", "minLength": 1},
+    "section_id": {"type": "string", "minLength": 1},
     "claim_kind": {"enum": ["measurement", "mechanism", "sizing"]},
-    "sentence": {"type": "string", "description": "Opaque {tN} placeholders; NO digits anywhere."},
+    "sentence": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Opaque {tN} placeholders only; no authored business magnitude."
+    },
     "number_tokens": {
       "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["token_id", "fact_id", "expected_metric_key"],
-        "properties": {
-          "token_id": {"type": "string", "pattern": "^t\\d+$"},
-          "fact_id": {"type": "string"},
-          "expected_metric_key": {"type": "string"},
-          "direction": {"enum": ["up", "down", "flat", null]}
-        }
-      }
+      "items": {"$ref": "number_token.json"}
     },
-    "entity_refs": {"type": "array", "items": {"type": "string"}, "description": "MUST ⊆ entity_registry."},
+    "entity_refs": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string"},
+      "description": "Must be a subset of the deterministic entity registry."
+    },
     "confidence": {"enum": ["强", "中", "弱"]},
     "causal_link": {
       "type": ["object", "null"],
@@ -34,7 +42,10 @@
       "properties": {
         "from_entity_type": {"type": "string"},
         "to_entity_type": {"type": "string"},
-        "quantified": {"type": "boolean", "description": "true on an absent link → hard fail."}
+        "quantified": {
+          "type": "boolean",
+          "description": "True without a deterministic causal license is a hard failure."
+        }
       }
     },
     "next_test": {"type": ["string", "null"]},

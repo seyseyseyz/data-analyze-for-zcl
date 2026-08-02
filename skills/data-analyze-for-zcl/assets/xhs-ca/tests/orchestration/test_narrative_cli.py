@@ -8,13 +8,17 @@ runner = CliRunner()
 
 
 def _write_inputs(tmp_path):
-    results = {"domain_slices": [
+    results = {"facts_hash": "h", "domain_slices": [
         {"title": "生意大盘", "facts": [{"metric": "GMV", "value": 100}],
          "reading": {"conclusion": "平稳", "caveats": ["口径：支付时间"]}},
     ]}
     facts = {"facts_hash": "h", "numbers": {"GMV": 100}}
     (tmp_path / "results.json").write_text(json.dumps(results), encoding="utf-8")
     (tmp_path / "facts.json").write_text(json.dumps(facts), encoding="utf-8")
+    (tmp_path / "sidecar_status.json").write_text(
+        json.dumps({"status": "ready", "facts_hash": "h"}),
+        encoding="utf-8",
+    )
 
 
 def test_prepare_and_status_json(tmp_path):

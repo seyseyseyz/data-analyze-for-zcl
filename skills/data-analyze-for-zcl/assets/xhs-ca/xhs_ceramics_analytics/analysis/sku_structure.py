@@ -5,6 +5,7 @@ degradation, ``_table_exists``/``_table_columns``/``_fetch_all``/``_num`` helper
 per-Finding confounders + observational caveats. Observational only — no causal
 attribution (SKU-level GMV/退款/转化 mix reflects品类、价格带与流量结构等多重因素叠加).
 """
+
 import math
 from pathlib import Path
 
@@ -74,6 +75,11 @@ def run(db_path: Path) -> AnalysisResult:
         tables["sku_gmv_pareto"] = pareto_rows
         if category_rows is not None:
             tables["sku_category_mix"] = category_rows
+
+        value_finding, value_tables = _net_value_and_intent_finding(rows, cols)
+        if value_finding is not None:
+            findings.append(value_finding)
+            tables.update(value_tables)
 
         refund_finding, refund_rows = _refund_finding(rows, cols, limitations)
         if refund_finding is not None:
@@ -226,6 +232,179 @@ def _pareto_finding(
     return finding, pareto_rows, category_rows
 
 
+def _net_value_and_intent_finding(
+    rows: list[dict], cols: set[str]
+) -> tuple[Finding | None, dict[str, list[dict]]]:
+    has_value = "gmv" in cols and ({"net_gmv_pay", "refund_amount_pay"} & cols)
+    intent_fields = {
+        "wishlist_users",
+        "add_to_cart_users",
+        "add_to_cart_units",
+        "paid_buyers",
+        "paid_units",
+    }
+    has_intent = bool(intent_fields & cols)
+    if not has_value and not has_intent:
+        return None, {}
+
+    tables: dict[str, list[dict]] = {}
+    net_rows: list[dict] = []
+    if has_value:
+        for row in rows:
+            gross = _maybe_num(row.get("gmv"))
+            refund = _maybe_num(row.get("refund_amount_pay"))
+            net = _maybe_num(row.get("net_gmv_pay"))
+            if net is None and gross is not None and refund is not None:
+                net = gross - refund
+            if refund is None and gross is not None and net is not None:
+                refund = gross - net
+            if gross is None and refund is None and net is None:
+                continue
+            net_rows.append(
+                {
+                    "sku_id": row.get("sku_id"),
+                    "sku_name": row.get("sku_name") or row.get("sku_id"),
+                    "product_id": row.get("product_id"),
+                    "product_name": row.get("product_name"),
+                    "brand": row.get("brand"),
+                    "is_channel_product": row.get("is_channel_product"),
+                    "gmv": gross,
+                    "refund_amount_pay": refund,
+                    "net_gmv_pay": net,
+                    "refund_rate_pay": bounded_rate(row.get("refund_rate_pay")),
+                    "net_retention_rate": net / gross if gross and net is not None else None,
+                }
+            )
+        net_rows.sort(
+            key=lambda item: (item["net_gmv_pay"] is not None, item["net_gmv_pay"] or 0),
+            reverse=True,
+        )
+        tables["sku_net_value_fact"] = net_rows
+
+        if "product_id" in cols:
+            product_groups: dict[tuple, list[dict]] = {}
+            for row in net_rows:
+                key = (row.get("product_id"), row.get("product_name"), row.get("brand"))
+                product_groups.setdefault(key, []).append(row)
+            product_rows = []
+            for (product_id, product_name, brand), group in product_groups.items():
+                gross = _sum_present(item.get("gmv") for item in group)
+                refund = _sum_present(item.get("refund_amount_pay") for item in group)
+                net = _sum_present(item.get("net_gmv_pay") for item in group)
+                channel_values = {
+                    item.get("is_channel_product")
+                    for item in group
+                    if item.get("is_channel_product") is not None
+                }
+                product_rows.append(
+                    {
+                        "product_id": product_id,
+                        "product_name": product_name,
+                        "brand": brand,
+                        "is_channel_product": (
+                            next(iter(channel_values)) if len(channel_values) == 1 else None
+                        ),
+                        "sku_count": len(group),
+                        "gmv": gross,
+                        "refund_amount_pay": refund,
+                        "net_gmv_pay": net,
+                        "net_retention_rate": net / gross if gross and net is not None else None,
+                    }
+                )
+            product_rows.sort(
+                key=lambda item: (
+                    item["net_gmv_pay"] is not None,
+                    item["net_gmv_pay"] or 0,
+                ),
+                reverse=True,
+            )
+            tables["product_net_value"] = product_rows
+
+    intent_rows: list[dict] = []
+    if has_intent:
+        for row in rows:
+            wishlist = _maybe_num(row.get("wishlist_users"))
+            cart_users = _maybe_num(row.get("add_to_cart_users"))
+            cart_units = _maybe_num(row.get("add_to_cart_units"))
+            buyers = _maybe_num(row.get("paid_buyers"))
+            paid_units = _maybe_num(row.get("paid_units"))
+            if all(
+                value is None for value in (wishlist, cart_users, cart_units, buyers, paid_units)
+            ):
+                continue
+            intent_rows.append(
+                {
+                    "sku_id": row.get("sku_id"),
+                    "sku_name": row.get("sku_name") or row.get("sku_id"),
+                    "wishlist_users": wishlist,
+                    "add_to_cart_users": cart_users,
+                    "add_to_cart_units": cart_units,
+                    "paid_buyers": buyers,
+                    "paid_units": paid_units,
+                    "wishlist_to_cart": (
+                        cart_users / wishlist if wishlist and cart_users is not None else None
+                    ),
+                    "cart_to_pay": (
+                        buyers / cart_users if cart_users and buyers is not None else None
+                    ),
+                    "cart_units_to_paid_units": (
+                        paid_units / cart_units if cart_units and paid_units is not None else None
+                    ),
+                }
+            )
+        intent_rows.sort(
+            key=lambda item: (
+                item["add_to_cart_users"] is not None,
+                item["add_to_cart_users"] or 0,
+            ),
+            reverse=True,
+        )
+        tables["sku_intent_funnel"] = intent_rows
+
+    total_gross = _sum_present(item.get("gmv") for item in net_rows)
+    total_net = _sum_present(item.get("net_gmv_pay") for item in net_rows)
+    total_wishlist = _sum_present(item.get("wishlist_users") for item in intent_rows)
+    total_cart = _sum_present(item.get("add_to_cart_users") for item in intent_rows)
+    total_buyers = _sum_present(item.get("paid_buyers") for item in intent_rows)
+    finding = Finding(
+        title="SKU 净价值与意向承接",
+        conclusion=(
+            f"SKU 支付金额 {money(total_gross)}，退款后支付金额 {money(total_net)}；"
+            f"心愿 {qty(total_wishlist)} 人、加购 {qty(total_cart)} 人、支付 {qty(total_buyers)} 人。"
+        ),
+        evidence_strength=score_evidence(
+            max(len(net_rows), len(intent_rows)), has_controls=False, confounder_count=3
+        ),
+        descriptive_reliability=score_reliability(max(len(net_rows), len(intent_rows))),
+        key_numbers={
+            "sku_count": max(len(net_rows), len(intent_rows)),
+            "gmv": total_gross,
+            "net_gmv_pay": total_net,
+            "wishlist_users": total_wishlist,
+            "add_to_cart_users": total_cart,
+            "paid_buyers": total_buyers,
+        },
+        caveats=[
+            "净价值只在支付时间口径内比较 GMV、退款与退款后支付金额。",
+            "心愿、加购、支付来自汇总阶段计数，不是同一批用户的严格 cohort 漏斗；阶段率仅用于发现承接缺口。",
+            M.causal_disclaimer("流量、价格、活动和库存状态不同"),
+        ],
+        evidence_reason="SKU 净价值按真实支付与退款字段计算，意向承接保留人数和件数两套口径。",
+        confounders=["流量分配", "价格与活动", "库存与履约"],
+        recommended_action="优先保供净收入高且承接稳定的 SKU；对高心愿/加购低支付 SKU 先排查库存、价格和详情页。",
+    )
+    return finding, tables
+
+
+def _maybe_num(value) -> float | None:
+    return to_finite_float(value, None) if value is not None else None
+
+
+def _sum_present(values) -> float | None:
+    present = [value for value in values if value is not None]
+    return sum(present) if present else None
+
+
 # --------------------------------------------------------------------------- #
 # Finding 2 — 高退款 SKU 识别 (degrade-gated)
 # --------------------------------------------------------------------------- #
@@ -233,7 +412,9 @@ def _refund_finding(
     rows: list[dict], cols: set[str], limitations: list[str]
 ) -> tuple[Finding | None, list[dict]]:
     if not {"refund_rate_pay", "paid_orders"} <= cols:
-        limitations.append("sku_performance 缺少 refund_rate_pay/paid_orders 列，跳过高退款 SKU 识别。")
+        limitations.append(
+            "sku_performance 缺少 refund_rate_pay/paid_orders 列，跳过高退款 SKU 识别。"
+        )
         return None, []
 
     has_name = "sku_name" in cols
@@ -264,9 +445,7 @@ def _refund_finding(
         if rate is None or baseline is None:
             continue
         if rate > baseline and orders >= _MIN_ORDERS_GUARD:
-            refund_orders = (
-                _num(r.get("refund_orders_pay")) if has_refund_orders else rate * orders
-            )
+            refund_orders = _num(r.get("refund_orders_pay")) if has_refund_orders else rate * orders
             row = {
                 "sku_name": r.get("sku_name") if has_name else r.get("sku_id"),
                 "paid_orders": orders,
@@ -283,8 +462,7 @@ def _refund_finding(
     # clear the bar by chance. Benjamini-Hochberg over one-sided binomial p-values
     # caps the expected false-discovery rate among the flagged SKUs.
     pvals = [
-        one_sided_binomial_p(r["refund_orders_pay"], r["paid_orders"], baseline)
-        for r in outliers
+        one_sided_binomial_p(r["refund_orders_pay"], r["paid_orders"], baseline) for r in outliers
     ]
     survived = benjamini_hochberg(pvals, alpha=0.05)
     for r, p, s in zip(outliers, pvals, survived):
@@ -375,7 +553,7 @@ def _price_band_distribution_finding(
             }
         )
 
-    top_band = max(band_rows, key=lambda r: (r["gmv_share"] or 0.0))
+    top_band = max(band_rows, key=lambda r: r["gmv_share"] or 0.0)
     conclusion = (
         f"共 {qty(len(usable))} 个有效 SKU，按客单价高低分成 4 个价位带。"
         f"GMV 最集中于{top_band['band']}"
@@ -442,8 +620,7 @@ def _price_sweet_spot_finding(
     # actually report it, so a SKU missing carts still contributes to refund.
     has_refund_orders = "refund_orders_pay" in cols
     bands: dict[int, dict] = {
-        i: {"skus": 0, "cart": 0.0, "pay": 0.0, "orders": 0.0, "refunds": 0.0}
-        for i in range(4)
+        i: {"skus": 0, "cart": 0.0, "pay": 0.0, "orders": 0.0, "refunds": 0.0} for i in range(4)
     }
     for r in usable:
         idx = band_of(_num(r.get("aov")), edges)
@@ -599,9 +776,8 @@ def _conversion_finding(
         conv_rows.append(row)
     conv_rows.sort(key=lambda r: r["add_to_cart_users"], reverse=True)
 
-    conclusion = (
-        f"整体加购转化率约 {round((overall_cart_to_pay or 0) * 100, 1)}%。"
-        + (f" 客单价中位数约 {money(median_aov)}。" if median_aov else "")
+    conclusion = f"整体加购转化率约 {round((overall_cart_to_pay or 0) * 100, 1)}%。" + (
+        f" 客单价中位数约 {money(median_aov)}。" if median_aov else ""
     )
 
     finding = Finding(

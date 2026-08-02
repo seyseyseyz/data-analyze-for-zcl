@@ -5,6 +5,7 @@ never-raise degradation discipline. Observational only — no causal attribution
 Every finding is gated on real columns via ``_table_columns`` (read_csv_auto
 builds may omit any of them) and every division is guarded.
 """
+
 import math
 from pathlib import Path
 
@@ -36,8 +37,12 @@ _TOP_DECILE_FRACTION = 0.1
 _CONFOUNDERS = ["笔记曝光结构差异", "商品与内容混合", "发布时间与活动节奏"]
 
 _LEVER_PARETO = "太依赖头部笔记了：把头部笔记的选题/形式复制过来，再挑腰部笔记加大投放试试。"
-_LEVER_CONV = "曝光高但成交少的笔记，可以优化封面/标题、把商品详情页承接做好，或者少投点先试试新选题。"
-_LEVER_REFUND = "退款高的笔记，检查一下商品描述跟买家实际收到的对不对得上，必要时把关联的商品链接下掉。"
+_LEVER_CONV = (
+    "曝光高但成交少的笔记，可以优化封面/标题、把商品详情页承接做好，或者少投点先试试新选题。"
+)
+_LEVER_REFUND = (
+    "退款高的笔记，检查一下商品描述跟买家实际收到的对不对得上，必要时把关联的商品链接下掉。"
+)
 _LEVER_REFERRAL = (
     "笔记站外引流成交显著：评估重拍/加投时，把引流贡献计入内容价值，"
     "并优化店铺主页（选品陈列、活动位）承接这部分外溢流量。"
@@ -46,8 +51,8 @@ _LEVER_REFERRAL = (
 # 笔记引流去向：每条 = (次数列, 支付金额列, 中文渠道名)。缺列即跳过该渠道，
 # 金额恒为 0 的渠道（如本店无直播）在结论中自动省略，不硬报“0 元”。
 _REFERRAL_CHANNELS = (
-    ("引流店铺主页次数", "引流店铺主页支付金额", "店铺主页"),
-    ("引流直播间次数", "引流直播间支付金额", "直播间"),
+    ("to_shop_home_count", "to_shop_home_gmv", "店铺主页"),
+    ("to_live_count", "to_live_gmv", "直播间"),
 )
 
 _OBS_CAVEAT = M.causal_disclaimer("笔记之间的曝光结构、选品和发布节奏不同")
@@ -242,17 +247,15 @@ def _conversion_finding(con, limitations: list[str]) -> tuple[Finding | None, li
     # share and judge low performers against a positive, traffic-weighted baseline.
     notes_with_reads = [r for r in records if r["reads"] > 0]
     notes_with_orders = sum(1 for r in records if r["paid"] > 0)
-    converting_share = (
-        notes_with_orders / len(notes_with_reads) if notes_with_reads else None
-    )
+    converting_share = notes_with_orders / len(notes_with_reads) if notes_with_reads else None
     total_reads = sum(r["reads"] for r in records)
     total_paid = sum(r["paid"] for r in records)
     baseline = (total_paid / total_reads) if total_reads > 0 else None
 
     quartile_n = max(1, math.ceil(len(records) * 0.25))
-    top_reads_idx = sorted(
-        range(len(records)), key=lambda i: records[i]["reads"], reverse=True
-    )[:quartile_n]
+    top_reads_idx = sorted(range(len(records)), key=lambda i: records[i]["reads"], reverse=True)[
+        :quartile_n
+    ]
     # High-traffic-low-conversion: among the top-read quartile, keep only notes
     # whose Wilson upper bound is confidently below the baseline (guards against
     # small-sample false alarms — a low-read note has a wide CI and won't flag).
@@ -347,9 +350,7 @@ def _refund_finding(con, limitations: list[str]) -> tuple[Finding | None, list[d
             continue
         if paid_orders >= _MIN_PAID_ORDERS_FOR_REFUND_FLAG and rate > baseline:
             refund_orders = (
-                _num(r.get("note_refund_orders_pay"))
-                if has_refund_orders
-                else rate * paid_orders
+                _num(r.get("note_refund_orders_pay")) if has_refund_orders else rate * paid_orders
             )
             high_refund_rows.append(
                 {
@@ -428,7 +429,7 @@ def _referral_finding(con, limitations: list[str]) -> tuple[Finding | None, list
     present = [c for c in _REFERRAL_CHANNELS if c[0] in cols or c[1] in cols]
     if not present:
         limitations.append(
-            "notes 缺少 引流店铺主页/直播间 次数与支付金额列，跳过笔记站外引流成交。"
+            "notes 缺少已映射的 to_shop_home/to_live 引流字段，跳过笔记站外引流成交。"
         )
         return None, []
 
@@ -445,8 +446,13 @@ def _referral_finding(con, limitations: list[str]) -> tuple[Finding | None, list
         gmv = sum(_num(r.get(gmv_col)) for r in rows)
         orders = sum(_num(r.get(count_col)) for r in rows)
         channel_totals.append(
-            {"channel": zh, "gmv_col": gmv_col, "count_col": count_col,
-             "referral_gmv": gmv, "referral_count": orders}
+            {
+                "channel": zh,
+                "gmv_col": gmv_col,
+                "count_col": count_col,
+                "referral_gmv": gmv,
+                "referral_count": orders,
+            }
         )
     active = [c for c in channel_totals if c["referral_gmv"] > 0]
     total_referral = sum(c["referral_gmv"] for c in channel_totals)
@@ -455,9 +461,7 @@ def _referral_finding(con, limitations: list[str]) -> tuple[Finding | None, list
     live = next((c for c in channel_totals if c["channel"] == "直播间"), None)
     shop_gmv = shop["referral_gmv"] if shop else 0.0
     live_gmv = live["referral_gmv"] if live else 0.0
-    shop_share = (
-        (shop_gmv / direct_gmv) if (has_gmv and direct_gmv and direct_gmv > 0) else None
-    )
+    shop_share = (shop_gmv / direct_gmv) if (has_gmv and direct_gmv and direct_gmv > 0) else None
 
     # Rank notes by the dominant channel's referral GMV (店铺主页 if present, else
     # the first active channel) so the table names the notes worth crediting.
@@ -512,7 +516,7 @@ def _referral_finding(con, limitations: list[str]) -> tuple[Finding | None, list
         ],
         recommended_action=recommended_action,
         evidence_reason=(
-            "汇总 notes 的 引流店铺主页/直播间 支付金额，与 note_gmv 直接口径并列展示；"
+            "汇总 notes 的 to_shop_home/to_live 已映射引流金额，与 note_gmv 直接口径并列展示；"
             "占比=店铺主页引流金额/直接成交 GMV，观察性描述。"
         ),
         confounders=list(_CONFOUNDERS),

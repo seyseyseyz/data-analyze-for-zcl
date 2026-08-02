@@ -40,7 +40,15 @@ One row per date/event.
 
 ## Chinese Aliases (from mapping.py FIELD_ALIASES)
 
-No dedicated aliases for `calendar_events` in FIELD_ALIASES (the table signature uses English column names: date, event_type, event_name, severity).
+| Canonical field | Supported aliases |
+|---|---|
+| `date` | 日期、事件日期 |
+| `event_type` | 事件类型、活动类型 |
+| `event_name` | 事件名称、活动名称 |
+| `severity` | 影响等级、严重程度、事件等级 |
+| `affected_product_id_optional` | 关联商品ID、影响商品ID |
+| `affected_sku_id_optional` | 关联规格ID、关联SKU ID、影响规格ID |
+| `notes` | 备注、事件备注 |
 
 ## Sample Row
 

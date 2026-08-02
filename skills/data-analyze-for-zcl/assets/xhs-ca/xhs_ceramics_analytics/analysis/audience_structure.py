@@ -7,6 +7,7 @@ Real counts available: ``shop_page_funnel`` carries genuine ``shop_visitors``
 and ``shop_payers``, so audience/cycle conversion uses ``k = Σ shop_payers`` and
 ``n = Σ shop_visitors`` directly — no reverse derivation.
 """
+
 from pathlib import Path
 
 from xhs_ceramics_analytics.analytics.numeric import to_finite_float
@@ -43,10 +44,13 @@ _MIN_MEANINGFUL_DIFF = 0.02
 # ``shop_page_funnel`` scope (rollup drop + cumulative-window collapse) is defined
 # once in ``funnel_scope``; ``_ROLLUP`` above is imported from there.
 _DEDUP_CAVEAT = (
-    "漏斗按天记录，跨天汇总的访客/支付人数可能把回访的人重复算进去，份额只是个大概。"
+    "漏斗按天记录，跨天汇总人数是 person-day（人次日）口径，不是跨日去重人数；"
+    "回访用户可能重复计入，份额只是个大概。"
 )
 
-_LEVER_AUDIENCE = "低转化人群先别急着扩量：这周针对该人群定制承接内容与利益点，用人群包 + 定向笔记先小范围试。"
+_LEVER_AUDIENCE = (
+    "低转化人群先别急着扩量：这周针对该人群定制承接内容与利益点，用人群包 + 定向笔记先小范围试。"
+)
 _LEVER_CYCLE = "薄弱首购周期分头承接：首购人群补券 + 加信任状（晒单、好评），复购人群做召回与复购提醒，这周先挑最弱那档动手。"
 _LEVER_SOURCE = "高流量低转化来源：这周先改该来源的承接页——让首屏和标题对上访客真正想要的，把相关性和首屏转化补上来。"
 _LEVER_COMPOSITION = (
@@ -118,9 +122,7 @@ def run(db_path: Path) -> AnalysisResult:
 def _conversion_finding(con, limitations: list[str]) -> tuple[Finding, list[dict]]:
     cols = _table_columns(con, "shop_page_funnel")
     if "shop_visitors" not in cols or "shop_payers" not in cols:
-        limitations.append(
-            "shop_page_funnel 缺少 shop_visitors/shop_payers 列，无法计算人群转化。"
-        )
+        limitations.append("shop_page_funnel 缺少 shop_visitors/shop_payers 列，无法计算人群转化。")
         finding = Finding(
             title="人群转化对比",
             conclusion="无法计算人群转化：shop_page_funnel 缺少访客/支付人数列，需补充真实计数列。",
@@ -135,6 +137,7 @@ def _conversion_finding(con, limitations: list[str]) -> tuple[Finding, list[dict
     rows = _fetch_all(con, "shop_page_funnel")
     has_audience = "audience_type" in cols
     has_cycle = "first_purchase_cycle" in cols
+    has_clicks = "product_click_users" in cols
 
     # Split the platform ``全部`` rollup from the real audience segments, and fix a
     # single canonical first-purchase window so 180天/365天 do not double-count.
@@ -158,17 +161,26 @@ def _conversion_finding(con, limitations: list[str]) -> tuple[Finding, list[dict
         groups: dict = {}
         for r in segment_rows:
             key = r.get("audience_type")
-            g = groups.setdefault(key, {"n": 0.0, "k": 0.0})
+            g = groups.setdefault(key, {"n": 0.0, "clicks": 0.0, "k": 0.0})
             g["n"] += _num(r.get("shop_visitors"))
+            if has_clicks:
+                g["clicks"] += _num(r.get("product_click_users"))
             g["k"] += _num(r.get("shop_payers"))
         for key, g in groups.items():
             conv = g["k"] / g["n"] if g["n"] else None
+            visit_click = g["clicks"] / g["n"] if has_clicks and g["n"] else None
+            click_pay = g["k"] / g["clicks"] if has_clicks and g["clicks"] else None
             comparison_rows.append(
                 {
                     "audience_type": key,
                     "visitors": g["n"],
+                    "click_users": g["clicks"] if has_clicks else None,
                     "payers": g["k"],
                     "conversion": conv,
+                    "visit_click_rate": visit_click,
+                    "click_pay_rate": click_pay,
+                    "visit_pay_rate": conv,
+                    "count_unit": "person_day",
                 }
             )
 
@@ -213,8 +225,7 @@ def _conversion_finding(con, limitations: list[str]) -> tuple[Finding, list[dict
             f"{a['audience_type']} 转化 {round((a['conversion'] or 0) * 100)}% vs "
             f"{b['audience_type']} {round((b['conversion'] or 0) * 100)}%，"
             f"差异 {pp(diff)}（{sig_zh}）。"
-            f"整体进店转化 {round((overall or 0) * 100)}%。"
-            + retention_note
+            f"整体进店转化 {round((overall or 0) * 100)}%。" + retention_note
         )
         key_numbers = {
             "group_count": len(valid),
@@ -254,12 +265,27 @@ def _conversion_finding(con, limitations: list[str]) -> tuple[Finding, list[dict
             {
                 "audience_type": "整体",
                 "visitors": total_n,
+                "click_users": (
+                    sum(_num(r.get("product_click_users")) for r in overall_source)
+                    if has_clicks
+                    else None
+                ),
                 "payers": total_k,
                 "conversion": overall,
+                "visit_click_rate": None,
+                "click_pay_rate": None,
+                "visit_pay_rate": overall,
+                "count_unit": "person_day",
             }
         ]
+        if has_clicks:
+            click_users = comparison_rows[0]["click_users"]
+            comparison_rows[0]["visit_click_rate"] = click_users / total_n if total_n else None
+            comparison_rows[0]["click_pay_rate"] = total_k / click_users if click_users else None
 
-    evidence_reason = "转化率用真实 shop_payers/shop_visitors 计数，人群差异为观察性两样本比例检验。"
+    evidence_reason = (
+        "转化率用真实 shop_payers/shop_visitors 计数，人群差异为观察性两样本比例检验。"
+    )
     if conv_methodology:
         evidence_reason = M.methodology_note(
             evidence_reason, M.METHOD_PROPORTION_TEST, M.METHOD_WILSON
@@ -294,14 +320,13 @@ def _collapse_identical_cycles(rows: list[dict]) -> list[dict]:
     merged: list[dict] = []
     for r in rows:
         if merged and (
-            merged[-1]["visitors"] == r["visitors"]
-            and merged[-1]["payers"] == r["payers"]
+            merged[-1]["visitors"] == r["visitors"] and merged[-1]["payers"] == r["payers"]
         ):
             last = merged[-1]
             merged[-1] = {
                 **last,
                 "first_purchase_cycle": (
-                    f'{last["first_purchase_cycle"]}/{r["first_purchase_cycle"]}'
+                    f"{last['first_purchase_cycle']}/{r['first_purchase_cycle']}"
                 ),
             }
         else:
@@ -312,9 +337,7 @@ def _collapse_identical_cycles(rows: list[dict]) -> list[dict]:
 def _cycle_finding(con, limitations: list[str]) -> tuple[Finding | None, list[dict]]:
     cols = _table_columns(con, "shop_page_funnel")
     if not {"first_purchase_cycle", "shop_visitors", "shop_payers"} <= cols:
-        limitations.append(
-            "shop_page_funnel 缺少 first_purchase_cycle/计数列，跳过首购周期漏斗。"
-        )
+        limitations.append("shop_page_funnel 缺少 first_purchase_cycle/计数列，跳过首购周期漏斗。")
         return None, []
     rows = _fetch_all(con, "shop_page_funnel")
     groups: dict = {}
@@ -418,18 +441,47 @@ def _source_finding(con, limitations: list[str]) -> tuple[Finding | None, list[d
         )
         return None, []
     has_gmv = "shop_gmv" in cols
+    has_gmv_per_user = "gmv_per_user" in cols
     rows = _fetch_all(con, "shop_page_source")
+    rows, _rollup_rows, canonical_cycle = normalize_funnel_rows(
+        rows,
+        "audience_type" in cols,
+        "first_purchase_cycle" in cols,
+    )
+    rows = [r for r in rows if r.get("source_page") != _ROLLUP]
+    if canonical_cycle is not None:
+        limitations.append(
+            f"进店来源结构固定取首购窗口 {canonical_cycle}，避免累计窗口与汇总行重复计数。"
+        )
 
     groups: dict = {}
     for r in rows:
         key = r.get("source_page")
         visitors = _num(r.get("shop_visitors"))
         rate = bounded_rate(r.get("enter_pay_rate")) or 0.0
-        g = groups.setdefault(key, {"n": 0.0, "k": 0.0, "gmv": 0.0})
+        g = groups.setdefault(
+            key,
+            {
+                "n": 0.0,
+                "k": 0.0,
+                "gmv": 0.0,
+                "gmv_covered_visitors": 0.0,
+                "gmv_coverage_rows": 0,
+                "gmv_per_user_weighted": 0.0,
+                "gmv_per_user_covered_visitors": 0.0,
+                "gmv_per_user_coverage_rows": 0,
+            },
+        )
         g["n"] += visitors
         g["k"] += round(visitors * rate)
-        if has_gmv:
+        if has_gmv and r.get("shop_gmv") is not None:
             g["gmv"] += _num(r.get("shop_gmv"))
+            g["gmv_covered_visitors"] += visitors
+            g["gmv_coverage_rows"] += 1
+        if has_gmv_per_user and r.get("gmv_per_user") is not None:
+            g["gmv_per_user_weighted"] += visitors * _num(r.get("gmv_per_user"))
+            g["gmv_per_user_covered_visitors"] += visitors
+            g["gmv_per_user_coverage_rows"] += 1
     if not groups:
         limitations.append("shop_page_source 无来源数据，跳过进店来源结构。")
         return None, []
@@ -442,6 +494,12 @@ def _source_finding(con, limitations: list[str]) -> tuple[Finding | None, list[d
     source_rows: list[dict] = []
     for key, g in groups.items():
         pay_rate = g["k"] / g["n"] if g["n"] else None
+        if has_gmv and g["gmv_covered_visitors"]:
+            gmv_per_user = g["gmv"] / g["gmv_covered_visitors"]
+        elif has_gmv_per_user and g["gmv_per_user_covered_visitors"]:
+            gmv_per_user = g["gmv_per_user_weighted"] / g["gmv_per_user_covered_visitors"]
+        else:
+            gmv_per_user = None
         lo, hi = wilson_interval(g["k"], g["n"]) if min_n_guard(g["n"]) else (None, None)
         source_rows.append(
             {
@@ -451,6 +509,12 @@ def _source_finding(con, limitations: list[str]) -> tuple[Finding | None, list[d
                 "visitor_share": (g["n"] / total_n) if total_n else None,
                 "pay_rate": pay_rate,
                 "gmv_share": (g["gmv"] / total_gmv) if (has_gmv and total_gmv) else None,
+                "gmv_per_user": gmv_per_user,
+                "gmv_covered_visitors": g["gmv_covered_visitors"],
+                "gmv_coverage_rows": g["gmv_coverage_rows"],
+                "gmv_per_user_covered_visitors": g["gmv_per_user_covered_visitors"],
+                "gmv_per_user_coverage_rows": g["gmv_per_user_coverage_rows"],
+                "count_unit": "person_day",
                 "ci_low": lo,
                 "ci_high": hi,
             }
@@ -470,7 +534,11 @@ def _source_finding(con, limitations: list[str]) -> tuple[Finding | None, list[d
     conclusion = (
         f"共 {len(source_rows)} 个进店来源，最大流量来源为 {top_source}"
         f"（访客占比 {round((source_rows[0]['visitor_share'] or 0) * 100)}%）。"
-        + (f" 该优化承接的来源：{optimize_source}（流量大但转化低于整体）。" if optimize_source else "")
+        + (
+            f" 该优化承接的来源：{optimize_source}（流量大但转化低于整体）。"
+            if optimize_source
+            else ""
+        )
     )
     finding = Finding(
         title="进店来源结构",
@@ -576,8 +644,7 @@ def _customer_value_finding(con, limitations: list[str]) -> tuple[Finding | None
         sample_n = len(segment_rows)
 
     conclusion = (
-        f"GMV 贡献最高的人群为「{top['audience_type']}」"
-        f"（占 {round(top['gmv_share'] * 100)}%）。"
+        f"GMV 贡献最高的人群为「{top['audience_type']}」（占 {round(top['gmv_share'] * 100)}%）。"
     )
     if repeat_gmv_share is not None and repeat_types:
         conclusion += f" 复购人群贡献 GMV {round(repeat_gmv_share * 100)}%。"
@@ -636,9 +703,7 @@ def _composition_finding(con, limitations: list[str]) -> tuple[Finding, list[dic
     cols = _table_columns(con, "audience_profile")
     # share-primary: 只强制 audience_segment + share；gmv、dimension 皆为可选（PNG 画像通常只有份额）。
     if not {"audience_segment", "share"} <= cols:
-        limitations.append(
-            "audience_profile 缺少 audience_segment/share 列，人群构成需手工补齐。"
-        )
+        limitations.append("audience_profile 缺少 audience_segment/share 列，人群构成需手工补齐。")
         return _composition_gap_finding(gap_conclusion), []
 
     rows = _fetch_all(con, "audience_profile")

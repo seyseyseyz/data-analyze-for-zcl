@@ -72,14 +72,10 @@ def run(db_path: Path) -> AnalysisResult:
                 f"目前手上有 {qty(sample_size)} 篇笔记，分布在 "
                 f"{qty(len(daily_posts))} 个发过内容的日子里。"
             ),
-            evidence_strength=score_evidence(
-                sample_size, has_controls=False, confounder_count=1
-            ),
+            evidence_strength=score_evidence(sample_size, has_controls=False, confounder_count=1),
             descriptive_reliability=score_reliability(sample_size),
             key_numbers={"posts": sample_size, "active_days": len(daily_posts)},
-            caveats=[
-                "这个基线只能做描述性判断：样本量和对照上下文都有限。"
-            ],
+            caveats=["这个基线只能做描述性判断：样本量和对照上下文都有限。"],
         )
     ]
     tables = {"daily_posts": daily_posts}
@@ -121,9 +117,7 @@ def _posting_window_finding(con, columns: set[str]):
         for rec in records
         if rec["weekday"] is not None and rec["slot"] is not None
     ]
-    windows = posting_windows(
-        observations, min_n=_MIN_POSTS_PER_WINDOW, detrend=True
-    )
+    windows = posting_windows(observations, min_n=_MIN_POSTS_PER_WINDOW, detrend=True)
     if not windows:
         return None, []
 
@@ -154,9 +148,7 @@ def _posting_window_finding(con, columns: set[str]):
         Finding(
             title="最优发布窗口",
             conclusion=conclusion,
-            evidence_strength=score_evidence(
-                n_posts, has_controls=False, confounder_count=2
-            ),
+            evidence_strength=score_evidence(n_posts, has_controls=False, confounder_count=2),
             descriptive_reliability=score_reliability(n_posts),
             key_numbers={
                 "best_window": best["publish_window"],
@@ -279,7 +271,7 @@ def _missing_result(reason: str) -> AnalysisResult:
                 evidence_strength=EvidenceStrength.NOT_JUDGABLE,
                 key_numbers={"posts": 0, "active_days": 0},
                 caveats=["没有基线数据，多半是导入的时候漏掉了。"],
-                recommended_action="导出包含 publish_time 和 reads 的 notes 数据，然后重新构建。"
+                recommended_action="导出包含 publish_time 和 reads 的 notes 数据，然后重新构建。",
             )
         ],
         tables={"daily_posts": []},

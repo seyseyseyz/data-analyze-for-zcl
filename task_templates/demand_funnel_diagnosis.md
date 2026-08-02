@@ -6,9 +6,9 @@
 
 ## Purpose
 
-回答「需求蓄了多少水、蓄水能不能转成成交、蓄水在涨还是在退」。把每日经营概览转化为账号级
-加购→成交漏斗 + 逐日趋势，以及心愿单需求蓄水的规模与走向。纯观察性——只报方向与规模，
-绝不做因果归因。
+回答「日均蓄水有多深、逐日蓄水能不能转成成交、蓄水在涨还是在退」。把每日经营概览转化为
+账号级日均加购/支付 + 逐日比率趋势，以及日均心愿单需求蓄水的规模与走向。纯观察性——
+只报方向与规模，绝不做因果归因，也不把日级去重人数相加后冒充观察期唯一人数。
 
 ## Tables
 
@@ -24,25 +24,30 @@
 
 ### Finding 1 — 加购→成交需求漏斗（始终产出）
 
-- `total_add_to_cart_users = SUM(add_to_cart_users)`、`total_paid_buyers = SUM(paid_buyers)`。
-- `cart_to_pay = total_paid_buyers / total_add_to_cart_users`。**比值口径而非严格漏斗**——
-  部分成交未先加购，比值可能接近或超过 100%，故直接算原始比值，绝不过 `bounded_rate`
-  （那会把合法的 1.2 误读成 1.2%）。
+- `add_to_cart_user_days` / `paid_buyer_days` 仅表示逐日去重人数之和（人次）；对外主指标使用
+  `avg_daily_add_to_cart_users` / `avg_daily_paid_buyers`，不输出跨期唯一人数。
+- `avg_daily_cart_to_pay = MEAN(当日 paid_buyers / 当日 add_to_cart_users)`，只纳入两列均非空且
+  当日加购人数大于 0 的日期。**比值口径而非严格漏斗**——部分成交未先加购，比值可能接近或
+  超过 100%，故直接算原始逐日比值，绝不过 `bounded_rate`。
 - 趋势：对按日期排序的逐日 `cart_to_pay` 序列跑 `trend_summary`，用 OLS 斜率给方向。
-- 仅当比值为真子漏斗（`buyers ≤ carts`）且分母过 `min_n_guard` 时，对聚合值给 Wilson 区间。
+- 不对跨日人次做 Wilson 区间或用户级显著性检验；描述可靠性按可同时计算加购→支付比的
+  有效配对天数评估，图表在缺失错位时分别显示加购/支付/配对样本数。
+- 有效配对日为 0 时证据降为 NOT_JUDGABLE，不输出经营动作，只提示补齐同日有效数据。
 - 证据：`has_controls=False, confounder_count>=1` → 天花板 WEAK。
-- 输出 `demand_funnel_trend`（一日一行：date/add_to_cart_users/paid_buyers/cart_to_pay）。
+- 输出 `demand_funnel_trend`（一日一行：date/add_to_cart_users/paid_buyers/cart_to_pay）；原值缺失
+  时保留 `None`，不可转为 0。
 
 ### Finding 2 — 心愿单需求蓄水（降级门控）
 
-- 仅当 `新增加入心愿单人数` 存在。`total_new_wishlist = SUM(新增加入心愿单人数)`。
+- 仅当 `新增加入心愿单人数` 存在。主指标为 `avg_daily_new_wishlist_users`；
+  `new_wishlist_user_days` 仅表示逐日去重人次之和。
 - 趋势：对逐日心愿单新增序列跑 `trend_summary`。
-- 蓄水深度：`add_to_cart_users` 存在时给 `wishlist_to_cart_ratio = 心愿单 / 加购`（参考值）。
+- 蓄水深度：`add_to_cart_users` 存在时给 `avg_daily_wishlist_to_cart = MEAN(当日心愿单 / 当日加购)`
+  （参考值，仅纳入两列均有效的日期）。
 - 输出 `wishlist_demand_trend`（一日一行：date/new_wishlist_users）。
 
 ## Thresholds
 
-- `min_n_guard`：n ≥ 30 才给 Wilson 区间。
 - 趋势方向：`|slope| < 1e-9` 视为「持平」。
 
 ## Failure modes / 降级矩阵
@@ -68,9 +73,10 @@ Required 表存在时 Finding 1 **始终**产出，`run()` 的 findings 列表�
 1. SQL 引用任何列前必先 `_table_columns` 守卫。
 2. `cart_to_pay` 是比值口径，直接算原始比值，不过 `bounded_rate`。
 3. 优先真实计数列（`add_to_cart_users`、`paid_buyers`、`新增加入心愿单人数`）。
-4. 心愿单与加购为两种意向强度，不可相加；`wishlist_to_cart_ratio` 仅作蓄水深度参考。
+4. 心愿单与加购为两种意向强度，不可相加；`avg_daily_wishlist_to_cart` 仅作蓄水深度参考。
 5. 每个 Finding 都填 `confounders` 且带观察性 caveat。
 6. 守卫所有分母（`/0` → `None`，绝不 raise）。
+7. 日级去重列跨日只输出明确命名的人次或日均值；缺失值保持 `None`，不当成 0。
 
 ## Non-goals
 

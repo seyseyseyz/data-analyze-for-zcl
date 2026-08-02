@@ -25,14 +25,9 @@ def test_build_database_creates_standard_tables(tmp_path: Path, fixture_dir: Pat
     con = duckdb.connect(str(db_path))
     try:
         tables = {row[0] for row in con.sql("SHOW TABLES").fetchall()}
-        assert {"notes", "products", "skus", "orders", "daily_sku_sales"}.issubset(
-            tables
-        )
+        assert {"notes", "products", "skus", "orders", "daily_sku_sales"}.issubset(tables)
         assert (
-            con.sql(
-                "SELECT SUM(units) FROM daily_sku_sales WHERE sku_id = 's1'"
-            ).fetchone()[0]
-            == 7
+            con.sql("SELECT SUM(units) FROM daily_sku_sales WHERE sku_id = 's1'").fetchone()[0] == 7
         )
     finally:
         con.close()
@@ -90,14 +85,9 @@ def test_build_database_maps_spaced_order_headers(tmp_path: Path):
     con = duckdb.connect(str(db_path))
     try:
         assert (
-            con.sql(
-                "SELECT SUM(units) FROM daily_sku_sales WHERE sku_id = 's1'"
-            ).fetchone()[0]
-            == 5
+            con.sql("SELECT SUM(units) FROM daily_sku_sales WHERE sku_id = 's1'").fetchone()[0] == 5
         )
-        order_columns = {
-            row[1] for row in con.sql("PRAGMA table_info('orders')").fetchall()
-        }
+        order_columns = {row[1] for row in con.sql("PRAGMA table_info('orders')").fetchall()}
         assert {"order_id", "paid_time", "sku_id", "quantity", "paid_amount"}.issubset(
             order_columns
         )
@@ -120,14 +110,9 @@ def test_build_database_uses_duckdb_columns_for_duplicate_headers(tmp_path: Path
     con = duckdb.connect(str(db_path))
     try:
         assert (
-            con.sql(
-                "SELECT SUM(units) FROM daily_sku_sales WHERE sku_id = 's1'"
-            ).fetchone()[0]
-            == 6
+            con.sql("SELECT SUM(units) FROM daily_sku_sales WHERE sku_id = 's1'").fetchone()[0] == 6
         )
-        order_columns = {
-            row[1] for row in con.sql("PRAGMA table_info('orders')").fetchall()
-        }
+        order_columns = {row[1] for row in con.sql("PRAGMA table_info('orders')").fetchall()}
         assert {"extra", "extra_1"}.issubset(order_columns)
     finally:
         con.close()
@@ -152,15 +137,10 @@ def test_build_database_imports_qianfan_order_excel(tmp_path: Path):
     con = duckdb.connect(str(db_path))
     try:
         assert (
-            con.sql(
-                "SELECT SUM(units) FROM daily_sku_sales WHERE sku_id = 's1'"
-            ).fetchone()[0]
-            == 5
+            con.sql("SELECT SUM(units) FROM daily_sku_sales WHERE sku_id = 's1'").fetchone()[0] == 5
         )
         assert (tmp_path / "staging" / "orders.normalized.csv").exists()
-        order_columns = {
-            row[1] for row in con.sql("PRAGMA table_info('orders')").fetchall()
-        }
+        order_columns = {row[1] for row in con.sql("PRAGMA table_info('orders')").fetchall()}
         assert {"order_id", "paid_time", "sku_id", "quantity", "paid_amount"}.issubset(
             order_columns
         )
@@ -307,8 +287,8 @@ def test_same_key_column_views_coalesce(tmp_path):
     con.close()
     assert len(frame) == 1  # one row per note_id (coalesced, not doubled)
     row = frame.iloc[0]
-    assert row["扩展甲"] == 999   # filled from file A
-    assert row["扩展乙"] == 42    # filled from file B
+    assert row["扩展甲"] == 999  # filled from file A
+    assert row["扩展乙"] == 42  # filled from file B
 
 
 def test_unclassified_file_becomes_needs_data_and_build_survives(tmp_path):
@@ -412,9 +392,8 @@ def test_create_note_metrics_view_allows_missing_shares(tmp_path: Path):
 
         create_note_metrics_view(con)
 
-        assert (
-            con.sql("SELECT engagement_rate FROM note_metrics").fetchone()[0]
-            == pytest.approx(0.6)
+        assert con.sql("SELECT engagement_rate FROM note_metrics").fetchone()[0] == pytest.approx(
+            0.6
         )
     finally:
         con.close()
@@ -433,9 +412,7 @@ def test_overview_column_views_merge_one_row_per_date(tmp_path):
     db = tmp_path / "d.duckdb"
     build_database(db, [tmp_path / "core.csv", tmp_path / "deal.csv"])
     con = duckdb.connect(str(db))
-    frame = con.execute(
-        "SELECT * FROM business_overview_daily ORDER BY date"
-    ).fetchdf()
+    frame = con.execute("SELECT * FROM business_overview_daily ORDER BY date").fetchdf()
     con.close()
     assert len(frame) == 2  # one row per date, not 4 (no GMV double-count)
     assert frame.iloc[0]["net_gmv_pay"] == 900  # coalesced from core.csv
@@ -443,20 +420,42 @@ def test_overview_column_views_merge_one_row_per_date(tmp_path):
 
 def test_business_overview_monthly_rolls_up_daily(tmp_path):
     (tmp_path / "core.csv").write_text(
-        "时间,支付金额,支付订单数,支付买家数,客单价\n"
-        "20260401,1000,10,8,100\n20260402,2000,20,15,100\n20260501,3000,30,20,100\n",
+        "时间,支付金额,支付订单数,支付买家数,商品访客数,客单价\n"
+        "20260401,1000,10,8,10,100\n"
+        "20260402,2000,20,15,15,100\n"
+        "20260501,3000,30,20,25,100\n",
         encoding="utf-8",
     )
     db = tmp_path / "d.duckdb"
     build_database(db, [tmp_path / "core.csv"])
     con = duckdb.connect(str(db))
+    daily_rows = con.execute(
+        "SELECT date, paid_buyers, product_visitors FROM business_overview_daily ORDER BY date"
+    ).fetchall()
+    monthly_columns = {
+        row[1] for row in con.execute("PRAGMA table_info('business_overview_monthly')").fetchall()
+    }
+    con.close()
+    assert daily_rows == [(20260401, 8, 10), (20260402, 15, 15), (20260501, 20, 25)]
+    assert "paid_buyers" not in monthly_columns
+    assert "product_visitors" not in monthly_columns
+    assert {
+        "paid_buyer_days",
+        "avg_daily_paid_buyers",
+        "product_visitor_days",
+        "avg_daily_product_visitors",
+        "avg_daily_aov",
+    } <= monthly_columns
+
+    con = duckdb.connect(str(db))
     rows = con.execute(
-        "SELECT period_month, gmv, paid_orders, aov FROM business_overview_monthly ORDER BY period_month"
+        "SELECT period_month, gmv, paid_orders, paid_buyer_days, "
+        "avg_daily_paid_buyers, product_visitor_days, avg_daily_product_visitors, "
+        "avg_daily_aov FROM business_overview_monthly ORDER BY period_month"
     ).fetchall()
     con.close()
-    assert rows[0][0] == "2026-04" and rows[0][1] == 3000 and rows[0][2] == 30
-    assert rows[0][3] == 100  # aov = 3000/30
-    assert rows[1][0] == "2026-05" and rows[1][1] == 3000
+    assert rows[0] == ("2026-04", 3000, 30, 23, 11.5, 25, 12.5, 100)
+    assert rows[1] == ("2026-05", 3000, 30, 20, 20, 25, 25, 100)
 
 
 def test_note_metrics_derives_click_to_order(tmp_path):
@@ -472,5 +471,5 @@ def test_note_metrics_derives_click_to_order(tmp_path):
         "SELECT click_to_order, gmv_per_click FROM note_metrics WHERE note_id='n1'"
     ).fetchone()
     con.close()
-    assert row[0] == 0.2   # 4 / 20
+    assert row[0] == 0.2  # 4 / 20
     assert row[1] == 40.0  # 800 / 20

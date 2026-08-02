@@ -19,6 +19,7 @@ ONLY the six design tokens common to both renderers
 (``--canvas --surface --ink --ink-strong --muted --line``) so a single CSS string
 is safe to inject into either ``<style>`` block.
 """
+
 from __future__ import annotations
 
 from html import escape
@@ -32,9 +33,7 @@ TOC_RAIL_WIDTH = "232px"
 TOC_WIDE_BREAKPOINT = "1200px"
 
 
-def build_toc_nav(
-    entries: object, *, title: str = "目录", aria_label: str = "报告目录"
-) -> str:
+def build_toc_nav(entries: object, *, title: str = "目录", aria_label: str = "报告目录") -> str:
     """Render an ordered entry list into the shared ``<nav class="toc-rail">``.
 
     ``entries`` is an ordered iterable of ``{"level": 2|3, "anchor": str,
@@ -71,9 +70,7 @@ def _build_toc_nav(entries: object, *, title: str, aria_label: str) -> str:
     for group in groups:
         top = group["top"]
         assert isinstance(top, dict)
-        parts = [
-            f'<li class="toc-item">{_link(top, "toc-link--top")}'
-        ]
+        parts = [f'<li class="toc-item">{_link(top, "toc-link--top")}']
         subs = group["subs"]
         assert isinstance(subs, list)
         if subs:
@@ -113,7 +110,9 @@ def _normalize_entries(entries: object) -> list[dict[str, object]]:
         label = label.strip()
         if not anchor or not label:
             continue
-        result.append({"level": _coerce_level(raw.get("level", 2)), "anchor": anchor, "label": label})
+        result.append(
+            {"level": _coerce_level(raw.get("level", 2)), "anchor": anchor, "label": label}
+        )
     return result
 
 

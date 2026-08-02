@@ -355,7 +355,7 @@ def test_cli_keeps_markdown_when_html_rendering_fails(tmp_path, monkeypatch):
     from xhs_ceramics_analytics.cli import app
     import xhs_ceramics_analytics.reporting.html as html_module
 
-    def fail_html(_results, title=None, assistant=None):
+    def fail_html(_results, title=None, assistant=None, factbook=None):
         raise RuntimeError("chart dependency exploded")
 
     monkeypatch.setattr(html_module, "render_html", fail_html)
@@ -1044,11 +1044,28 @@ def test_render_html_labels_paid_traffic_fields():
     )
 
     html = render_html([result])
+    markdown = render_markdown([result])
 
+    assert "<h3>付费增长</h3>" in html
+    assert "## 付费增长" in markdown
+    assert "核心经营领域" in html
+    assert "有相应数据时增加付费增长等专项领域" in html
     assert "投放消耗" in html
     assert "点击率" in html
     assert "投产比" in html
     assert "增加预算" in html
+
+
+def test_html_hides_empty_paid_growth_domain():
+    result = AnalysisResult(
+        task_id="paid_traffic_efficiency",
+        title="投放效率分析",
+        findings=[],
+        tables={"paid_traffic_efficiency": []},
+    )
+
+    assert "<h3>付费增长</h3>" not in render_html([result])
+    assert "## 付费增长" not in render_markdown([result])
 
 
 def test_evidence_chart_lands_in_how_to_read_section():

@@ -29,18 +29,12 @@ def create_ad_metrics_view(con) -> None:
 
 
 def create_note_metrics_view(con) -> None:
-    note_columns = {
-        row[1] for row in con.sql("PRAGMA table_info('notes')").fetchall()
-    }
+    note_columns = {row[1] for row in con.sql("PRAGMA table_info('notes')").fetchall()}
     impressions = "CAST(impressions AS DOUBLE)" if "impressions" in note_columns else "NULL"
     reads = "CAST(reads AS DOUBLE)" if "reads" in note_columns else "NULL"
     likes = "COALESCE(CAST(likes AS DOUBLE), 0)" if "likes" in note_columns else "0"
-    collects = (
-        "COALESCE(CAST(collects AS DOUBLE), 0)" if "collects" in note_columns else "0"
-    )
-    comments = (
-        "COALESCE(CAST(comments AS DOUBLE), 0)" if "comments" in note_columns else "0"
-    )
+    collects = "COALESCE(CAST(collects AS DOUBLE), 0)" if "collects" in note_columns else "0"
+    comments = "COALESCE(CAST(comments AS DOUBLE), 0)" if "comments" in note_columns else "0"
     shares = "COALESCE(CAST(shares AS DOUBLE), 0)" if "shares" in note_columns else "0"
     product_clicks = numeric_expr(note_columns, "product_clicks")
     note_paid_orders = numeric_expr(note_columns, "note_paid_orders")
@@ -66,15 +60,15 @@ def create_note_metrics_view(con) -> None:
 
 
 def create_business_overview_monthly(con) -> None:
-    columns = {
-        row[1] for row in con.sql("PRAGMA table_info('business_overview_daily')").fetchall()
-    }
+    columns = {row[1] for row in con.sql("PRAGMA table_info('business_overview_daily')").fetchall()}
     if "date" not in columns:
         return
     period = period_month_expr("date")
     gmv = numeric_expr(columns, "gmv")
     paid_orders = numeric_expr(columns, "paid_orders")
     paid_buyers = numeric_expr(columns, "paid_buyers")
+    product_visitors = numeric_expr(columns, "product_visitors")
+    aov = numeric_expr(columns, "aov")
     paid_units = numeric_expr(columns, "paid_units")
     refund_amount_pay = numeric_expr(columns, "refund_amount_pay")
     net_gmv_pay = numeric_expr(columns, "net_gmv_pay")
@@ -85,11 +79,14 @@ def create_business_overview_monthly(con) -> None:
           {period} AS period_month,
           SUM({gmv}) AS gmv,
           SUM({paid_orders}) AS paid_orders,
-          SUM({paid_buyers}) AS paid_buyers,
+          SUM({paid_buyers}) AS paid_buyer_days,
+          AVG({paid_buyers}) AS avg_daily_paid_buyers,
+          SUM({product_visitors}) AS product_visitor_days,
+          AVG({product_visitors}) AS avg_daily_product_visitors,
           SUM({paid_units}) AS paid_units,
           SUM({refund_amount_pay}) AS refund_amount_pay,
           SUM({net_gmv_pay}) AS net_gmv_pay,
-          SUM({gmv}) / NULLIF(SUM({paid_orders}), 0) AS aov,
+          AVG({aov}) AS avg_daily_aov,
           SUM({refund_amount_pay}) / NULLIF(SUM({gmv}), 0) AS refund_rate_pay
         FROM business_overview_daily
         GROUP BY 1

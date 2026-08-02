@@ -2,18 +2,44 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "section_bundle.json",
   "title": "section_bundle",
-  "description": "Writer → synthesizer. One report section's claims plus its spine alignment.",
+  "description": "Runtime section object preserved by the passive controller.",
   "type": "object",
   "additionalProperties": false,
   "required": ["section_id", "title", "claims", "spine_callbacks"],
   "properties": {
-    "section_id": {"type": "string"},
-    "title": {"type": "string"},
+    "section_id": {"type": "string", "minLength": 1},
+    "title": {"type": "string", "minLength": 1},
+    "body": {"type": ["string", "null"]},
     "claims": {"type": "array", "items": {"$ref": "claim.json"}},
-    "table_ref": {"type": ["string", "null"], "description": "Points at an L1/L2 artifact; never recomputed."},
-    "chart_ref": {"type": ["string", "null"]},
-    "spine_callbacks": {"type": "array", "items": {"type": "string"}},
+    "action_cards": {"type": "array", "items": {"$ref": "action_card.json"}},
+    "curated_views": {"type": "array", "items": {"$ref": "view_spec.json"}},
+    "spine_callbacks": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string"}
+    },
     "spine_alignment": {"type": ["string", "null"]},
-    "spine_dissent": {"type": ["string", "null"], "description": "Bottom-up honesty valve; may be null."}
+    "spine_dissent": {
+      "oneOf": [
+        {"type": "string"},
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["reason", "fact_ids"],
+          "properties": {
+            "reason": {"type": "string", "minLength": 1},
+            "fact_ids": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {"type": "string"}
+            }
+          }
+        }
+      ]
+    },
+    "adjudication_notes": {"type": "array", "items": {"type": "string"}},
+    "table_ref": {"type": ["string", "null"]},
+    "chart_ref": {"type": ["string", "null"]}
   }
 }

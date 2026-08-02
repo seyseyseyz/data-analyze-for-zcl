@@ -32,6 +32,34 @@ def test_run_emits_facts_json_into_state_dir(tmp_path, fixture_dir):
     assert not (outputs / "facts.json").exists()
     data = json.loads(facts.read_text(encoding="utf-8"))
     assert len(data["facts_hash"]) == 64
+    status = json.loads((state / "sidecar_status.json").read_text(encoding="utf-8"))
+    assert status["status"] == "ready"
+    assert status["facts_hash"] == data["facts_hash"]
+
+
+def test_run_passes_the_published_factbook_to_html(
+    tmp_path,
+    fixture_dir,
+    monkeypatch,
+):
+    _build_db(tmp_path, fixture_dir)
+    import xhs_ceramics_analytics.reporting.html as html_reporting
+
+    original_render_html = html_reporting.render_html
+    captured: dict[str, object] = {}
+
+    def _capture(results, **kwargs):
+        captured["factbook"] = kwargs.get("factbook")
+        return original_render_html(results, **kwargs)
+
+    monkeypatch.setattr(html_reporting, "render_html", _capture)
+    result = runner.invoke(
+        app,
+        ["run", "core_business_diagnosis", "--project-root", str(tmp_path), "--name", "诊断"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert captured["factbook"] is not None
 
 
 def test_run_survives_facts_json_failure(tmp_path, fixture_dir, monkeypatch):
@@ -50,7 +78,148 @@ def test_run_survives_facts_json_failure(tmp_path, fixture_dir, monkeypatch):
     outputs = tmp_path / ".xhs-ceramics-analytics" / "outputs" / "20260101-000000-诊断"
     assert (outputs / "诊断.md").exists()
     assert (outputs / "诊断.html").exists()
-    assert not (tmp_path / ".xhs-ceramics-analytics" / "facts.json").exists()
+    state = tmp_path / ".xhs-ceramics-analytics"
+    assert not (state / "facts.json").exists()
+    assert not (state / "results.json").exists()
+    status = json.loads((state / "sidecar_status.json").read_text(encoding="utf-8"))
+    assert status["status"] == "unavailable"
+    assert "unexpected finding shape" in status["error"]
+
+
+def test_run_invalidates_previous_pair_when_results_build_fails(
+    tmp_path,
+    fixture_dir,
+    monkeypatch,
+):
+    _build_db(tmp_path, fixture_dir)
+    state = tmp_path / ".xhs-ceramics-analytics"
+    facts_path = state / "facts.json"
+    results_path = state / "results.json"
+    facts_path.write_text('{"facts_hash":"old"}', encoding="utf-8")
+    results_path.write_text('{"facts_hash":"old"}', encoding="utf-8")
+
+    import xhs_ceramics_analytics.reporting.narrative_results as narrative_results
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("results build failed")
+
+    monkeypatch.setattr(narrative_results, "build_narrative_results", _boom)
+    result = runner.invoke(
+        app,
+        ["run", "core_business_diagnosis", "--project-root", str(tmp_path), "--name", "诊断"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert not facts_path.exists()
+    assert not results_path.exists()
+    status = json.loads((state / "sidecar_status.json").read_text(encoding="utf-8"))
+    assert status["status"] == "unavailable"
+    assert "results build failed" in status["error"]
+
+
+def test_run_invalidates_rolled_back_pair_when_second_replace_fails(
+    tmp_path,
+    fixture_dir,
+    monkeypatch,
+):
+    _build_db(tmp_path, fixture_dir)
+    state = tmp_path / ".xhs-ceramics-analytics"
+    facts_path = state / "facts.json"
+    results_path = state / "results.json"
+    facts_path.write_text('{"facts_hash":"old"}', encoding="utf-8")
+    results_path.write_text('{"facts_hash":"old"}', encoding="utf-8")
+    original_replace = Path.replace
+    failed = False
+
+    def _replace(path, target):
+        nonlocal failed
+        if not failed and Path(target).name == "results.json":
+            failed = True
+            raise OSError("replace results failed")
+        return original_replace(path, target)
+
+    monkeypatch.setattr(Path, "replace", _replace)
+    result = runner.invoke(
+        app,
+        ["run", "core_business_diagnosis", "--project-root", str(tmp_path), "--name", "诊断"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert not facts_path.exists()
+    assert not results_path.exists()
+    status = json.loads((state / "sidecar_status.json").read_text(encoding="utf-8"))
+    assert status["status"] == "unavailable"
+    assert "replace results failed" in status["error"]
+
+
+def test_run_interrupt_during_pair_publish_invalidates_active_pair(
+    tmp_path,
+    fixture_dir,
+    monkeypatch,
+):
+    _build_db(tmp_path, fixture_dir)
+    state = tmp_path / ".xhs-ceramics-analytics"
+    facts_path = state / "facts.json"
+    results_path = state / "results.json"
+    facts_path.write_text('{"facts_hash":"old"}', encoding="utf-8")
+    results_path.write_text('{"facts_hash":"old"}', encoding="utf-8")
+    (state / "sidecar_status.json").write_text(
+        '{"status":"ready","facts_hash":"old"}',
+        encoding="utf-8",
+    )
+    original_replace = Path.replace
+
+    def _replace(path, target):
+        if Path(target).name == "results.json":
+            raise KeyboardInterrupt("publish interrupted")
+        return original_replace(path, target)
+
+    monkeypatch.setattr(Path, "replace", _replace)
+    result = runner.invoke(
+        app,
+        ["run", "core_business_diagnosis", "--project-root", str(tmp_path), "--name", "诊断"],
+    )
+
+    assert result.exit_code == 130
+    assert not facts_path.exists()
+    assert not results_path.exists()
+    status = json.loads((state / "sidecar_status.json").read_text(encoding="utf-8"))
+    assert status["status"] == "unavailable"
+    assert "publish interrupted" in status["error"]
+
+
+def test_run_interrupt_during_factbook_build_invalidates_active_pair(
+    tmp_path,
+    fixture_dir,
+    monkeypatch,
+):
+    _build_db(tmp_path, fixture_dir)
+    state = tmp_path / ".xhs-ceramics-analytics"
+    facts_path = state / "facts.json"
+    results_path = state / "results.json"
+    facts_path.write_text('{"facts_hash":"old"}', encoding="utf-8")
+    results_path.write_text('{"facts_hash":"old"}', encoding="utf-8")
+    (state / "sidecar_status.json").write_text(
+        '{"status":"ready","facts_hash":"old"}',
+        encoding="utf-8",
+    )
+    import xhs_ceramics_analytics.reporting.facts_export as facts_export
+
+    def _interrupt(*args, **kwargs):
+        raise KeyboardInterrupt("factbook build interrupted")
+
+    monkeypatch.setattr(facts_export, "build_factbook", _interrupt)
+    result = runner.invoke(
+        app,
+        ["run", "core_business_diagnosis", "--project-root", str(tmp_path), "--name", "诊断"],
+    )
+
+    assert result.exit_code == 130
+    assert not facts_path.exists()
+    assert not results_path.exists()
+    status = json.loads((state / "sidecar_status.json").read_text(encoding="utf-8"))
+    assert status["status"] == "unavailable"
+    assert "factbook build interrupted" in status["error"]
 
 
 def test_skeleton_appends_telemetry_record(tmp_path, fixture_dir):

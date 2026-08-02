@@ -30,7 +30,13 @@ _DERIVED_VIEWS = ("note_metrics", "ad_metrics")
 # Internal build scaffolding — not merchant data. Kept public so the coverage/
 # data-quality reporting can exclude these from the reader-facing 「空表」 list (an
 # empty aux table means "no diagnostics", which is normal, not a data gap).
-AUX_TABLES = ("needs_data", "build_manifest", "data_quality", "mapping_diagnostics")
+AUX_TABLES = (
+    "needs_data",
+    "build_manifest",
+    "data_quality",
+    "mapping_diagnostics",
+    "mapping_audit",
+)
 _AUX_TABLES = AUX_TABLES
 _TABULAR_SUFFIXES = {".csv", *EXCEL_SUFFIXES}
 _DOMAIN_HINTS = (("退款原因", "退款原因"), ("人群", "人群画像"))
@@ -53,7 +59,9 @@ def build_database(
         overrides = load_overrides(
             overrides_path or db_path.parent / "mapping_overrides.yaml"
         )
-        grouped, needs_data, diagnostics = _group_files_by_type(con, files, overrides)
+        grouped, needs_data, diagnostics, mapping_audit = _group_files_by_type(
+            con, files, overrides
+        )
         conflicts: list[dict] = []
         manifest: list[dict] = []
         for table_type, tagged in grouped.items():
@@ -65,6 +73,7 @@ def build_database(
         _create_build_manifest_table(con, db_path, manifest)
         _create_data_quality_table(con, db_path, conflicts)
         _create_mapping_diagnostics_table(con, db_path, diagnostics)
+        _create_mapping_audit_table(con, db_path, mapping_audit)
         create_daily_sku_sales(con)
         if "business_overview_daily" in _existing_tables(con):
             create_business_overview_monthly(con)
@@ -78,7 +87,7 @@ def build_database(
 
 def _group_files_by_type(
     con, files: list[Path], overrides: dict[str, dict[str, set[str]]]
-) -> tuple[dict[str, list], list[dict], list[dict]]:
+) -> tuple[dict[str, list], list[dict], list[dict], list[dict]]:
     # Each grouped value is a list of ``(file_name, canonical_frame)`` pairs (provenance
     # for build_manifest / data_quality). ``diagnostics`` is the flat per-column record
     # list for the mapping_diagnostics table — the file name is attached HERE, where it
@@ -86,6 +95,7 @@ def _group_files_by_type(
     grouped: dict[str, list] = defaultdict(list)
     needs_data: list[dict] = []
     diagnostics: list[dict] = []
+    mapping_audit: list[dict] = []
     for file in files:
         if file.suffix.lower() not in _TABULAR_SUFFIXES:
             needs_data.append(_needs_data_record(file, "非表格文件（如PNG截图）", "OCR 或手工录入"))
@@ -96,7 +106,9 @@ def _group_files_by_type(
         except ValueError as exc:  # incl. AmbiguousTableTypeError
             needs_data.append(_needs_data_record(file, str(exc), "确认导出列或手工映射"))
             continue
-        frame, file_diagnostics = _canonical_frame(con, file, profile, table_type, overrides)
+        frame, file_diagnostics, file_decisions = _canonical_frame(
+            con, file, profile, table_type, overrides
+        )
         grouped[table_type].append((file.name, frame))
         for diag in file_diagnostics:
             diagnostics.append(
@@ -108,9 +120,33 @@ def _group_files_by_type(
                     "candidate_sources": "; ".join(diag.candidate_sources),
                     "reason": diag.reason,
                     "action": diag.action,
+                    "source_column": diag.source_column,
+                    "match_method": diag.match_method,
+                    "match_score": diag.match_score,
+                    "platform_metric_ids": "; ".join(
+                        str(metric_id) for metric_id in diag.platform_metric_ids
+                    ),
+                    "semantic_status": diag.semantic_status,
                 }
             )
-    return grouped, needs_data, diagnostics
+        for decision in file_decisions:
+            mapping_audit.append(
+                {
+                    "table_name": decision.table_type,
+                    "file": file.name,
+                    "canonical_column": decision.canonical_column,
+                    "source_column": decision.source_column,
+                    "match_method": decision.match_method,
+                    "match_score": decision.match_score,
+                    "platform_metric_ids": "; ".join(
+                        str(metric_id) for metric_id in decision.platform_metric_ids
+                    ),
+                    "semantic_status": decision.semantic_status,
+                    "applied": decision.applied,
+                    "reason": decision.reason,
+                }
+            )
+    return grouped, needs_data, diagnostics, mapping_audit
 
 
 def _needs_data_record(file: Path, reason: str, action: str) -> dict:
@@ -225,10 +261,30 @@ def _create_mapping_diagnostics_table(con, db_path: Path, diagnostics: list[dict
         diagnostics,
         columns=[
             "table_name", "file", "required_column", "status",
-            "candidate_sources", "reason", "action",
+            "candidate_sources", "reason", "action", "source_column",
+            "match_method", "match_score", "platform_metric_ids", "semantic_status",
         ],
     )
     _create_table_from_frame(con, db_path, "mapping_diagnostics", frame)
+
+
+def _create_mapping_audit_table(con, db_path: Path, decisions: list[dict]) -> None:
+    frame = pd.DataFrame(
+        decisions,
+        columns=[
+            "table_name",
+            "file",
+            "canonical_column",
+            "source_column",
+            "match_method",
+            "match_score",
+            "platform_metric_ids",
+            "semantic_status",
+            "applied",
+            "reason",
+        ],
+    )
+    _create_table_from_frame(con, db_path, "mapping_audit", frame)
 
 
 def _canonical_frame(con, file: Path, profile: FileProfile, table_type: str, overrides):
@@ -243,8 +299,10 @@ def _canonical_frame(con, file: Path, profile: FileProfile, table_type: str, ove
             row_count=len(frame),
             sample_rows=profile.sample_rows,
         )
-    projected, diagnostics = _projected_frame(frame, profile, table_type, overrides)
-    return _normalized_frame(projected, table_type), diagnostics
+    projected, diagnostics, decisions = _projected_frame(
+        frame, profile, table_type, overrides
+    )
+    return _normalized_frame(projected, table_type), diagnostics, decisions
 
 
 def _combine_frames(frames: list, table_type: str):
@@ -294,7 +352,7 @@ def _projected_frame(frame, profile: FileProfile, table_type: str, overrides):
             used.add(safe)
             new_columns.append(safe)
     projected.columns = new_columns
-    return projected, result.diagnostics
+    return projected, result.diagnostics, result.decisions
 
 
 def _normalized_frame(frame, table_type: str):

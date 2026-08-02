@@ -10,6 +10,7 @@ but never block a bold, tagged conclusion. Confidence is capped deterministicall
 (mechanism → 弱; else ≤ the strongest anchor) — the honesty mechanism that replaces
 the nondeterministic "spine skeptic" agent. Immutable: capping returns a NEW bundle.
 """
+
 import copy
 import json
 import re
@@ -34,6 +35,14 @@ _DIGIT_RE = re.compile(r"\d")
 # cover them. We can't ban every digit — advice legitimately says "发 2 到 3 条内容" — but a
 # currency / percent / 万·亿 figure there is an un-anchored data magnitude the writer invented.
 _ACTION_MAGNITUDE_RE = re.compile(r"[¥￥$%]|\d+(?:\.\d+)?\s*[万亿]")
+_ACTION_LICENSES = {"execute", "pilot", "observe", "blocked"}
+_ACTION_OWNER_ROLES = {
+    "运营负责人",
+    "内容负责人",
+    "售后负责人",
+    "商品负责人",
+    "店铺负责人",
+}
 _TAG_RANK = {"弱": 1, "中": 2, "强": 3}
 _RANK_TAG = {1: "弱", 2: "中", 3: "强"}
 
@@ -97,12 +106,21 @@ def _check_tokens(claim: dict, facts: dict, absent: set, hard: list) -> None:
     token_ids = [str(t.get("token_id")) for t in tokens]
     declared = {"{" + tid + "}" for tid in token_ids}
     if in_sentence != declared:
-        hard.append(_fail("MAGNITUDE_UNBOUND", cid,
-                          f"token mismatch: sentence {sorted(in_sentence)} vs declared "
-                          f"{sorted(declared)}"))
+        hard.append(
+            _fail(
+                "MAGNITUDE_UNBOUND",
+                cid,
+                f"token mismatch: sentence {sorted(in_sentence)} vs declared {sorted(declared)}",
+            )
+        )
     if len(token_ids) != len(set(token_ids)):
-        hard.append(_fail("MAGNITUDE_UNBOUND", cid,
-                          "duplicate token_id within a claim (only the first would fill)"))
+        hard.append(
+            _fail(
+                "MAGNITUDE_UNBOUND",
+                cid,
+                "duplicate token_id within a claim (only the first would fill)",
+            )
+        )
     if _DIGIT_RE.search(_TOKEN_RE.sub("", sentence)):
         hard.append(_fail("MAGNITUDE_UNBOUND", cid, "bare digit outside a {tN} token"))
     for tok in tokens:
@@ -115,9 +133,14 @@ def _check_tokens(claim: dict, facts: dict, absent: set, hard: list) -> None:
             hard.append(_fail("MISSING_FACT", cid, f"no such fact_id: {fid}"))
             continue
         if tok.get("expected_metric_key") not in (None, fact.get("metric_key")):
-            hard.append(_fail("METRIC_MISBIND", cid,
-                              f"{fid}: expected metric {tok.get('expected_metric_key')} "
-                              f"!= fact {fact.get('metric_key')}"))
+            hard.append(
+                _fail(
+                    "METRIC_MISBIND",
+                    cid,
+                    f"{fid}: expected metric {tok.get('expected_metric_key')} "
+                    f"!= fact {fact.get('metric_key')}",
+                )
+            )
         td, fd = tok.get("direction"), fact.get("direction")
         if td is not None and fd is not None and td != fd:
             hard.append(_fail("DIRECTION_CONFLICT", cid, f"{fid}: token {td} != fact {fd}"))
@@ -130,8 +153,13 @@ def _check_pools(claim: dict, facts: dict, hard: list) -> None:
         if pid:
             pools.add(pid)
     if len(pools) >= 2:
-        hard.append(_fail("SUMMED_POOLS", claim.get("claim_id"),
-                          f"claim mixes incompatible pools {sorted(pools)} (use 不可加台账)"))
+        hard.append(
+            _fail(
+                "SUMMED_POOLS",
+                claim.get("claim_id"),
+                f"claim mixes incompatible pools {sorted(pools)} (use 不可加台账)",
+            )
+        )
 
 
 def _check_causal(claim: dict, absent_links: set, hard: list) -> None:
@@ -140,8 +168,13 @@ def _check_causal(claim: dict, absent_links: set, hard: list) -> None:
         return
     key = f"{link.get('from_entity_type')}->{link.get('to_entity_type')}"
     if link.get("quantified") and key in absent_links:
-        hard.append(_fail("QUANTIFIED_ATTRIBUTION", claim.get("claim_id"),
-                          f"quantified attribution on absent link {key}"))
+        hard.append(
+            _fail(
+                "QUANTIFIED_ATTRIBUTION",
+                claim.get("claim_id"),
+                f"quantified attribution on absent link {key}",
+            )
+        )
 
 
 # ---- curated-view policing (spec §Trust & anti-dump rules) ----------------
@@ -238,8 +271,12 @@ def _view_value_matches(rendered: object, view: dict, result_tables: dict) -> bo
 
 
 def _check_one_view(
-    view: object, section_id: object, idx: int, claim_ids: set[str],
-    result_tables: dict, hard: list,
+    view: object,
+    section_id: object,
+    idx: int,
+    claim_ids: set[str],
+    result_tables: dict,
+    hard: list,
 ) -> None:
     """Apply rules 1-3 to a single curated view. Never raises."""
     label = _view_label(view, section_id, idx)
@@ -249,8 +286,13 @@ def _check_one_view(
     # ref still fails distinctly. (An empty/missing supports_claim is rule 1's job.)
     sc = view.get("supports_claim") if isinstance(view, dict) else None
     if isinstance(sc, str) and sc.strip() and sc not in claim_ids:
-        hard.append(_fail("VIEW_SUPPORTS_UNKNOWN_CLAIM", label,
-                          f"supports_claim {sc!r} 不是 bundle 中的真实 claim_id"))
+        hard.append(
+            _fail(
+                "VIEW_SUPPORTS_UNKNOWN_CLAIM",
+                label,
+                f"supports_claim {sc!r} 不是 bundle 中的真实 claim_id",
+            )
+        )
 
     # rule 1: structural validity against the real result.tables (refs real, columns
     # subset, no aggregation, supports_claim present, no invented digits in captions).
@@ -263,16 +305,16 @@ def _check_one_view(
     # wall-of-dates grid. HARD-fail with a dedicated code — clearer than the generic
     # VIEW_VALUE_MISMATCH the suppressed render would otherwise produce.
     if _is_timeseries_table_view(view, result_tables):
-        hard.append(_fail("VIEW_TIMESERIES_AS_TABLE", label,
-                          "逐期时间序列不应以表格呈现,请改用趋势图"))
+        hard.append(
+            _fail("VIEW_TIMESERIES_AS_TABLE", label, "逐期时间序列不应以表格呈现,请改用趋势图")
+        )
         return
 
     # rule 2: value-match the engine's output against the source table.
     rendered = render_view(view, result_tables)
     if not _view_value_matches(rendered, view, result_tables):
         detail = getattr(rendered, "reason", None) or "显示数值无法与源表核对"
-        hard.append(_fail("VIEW_VALUE_MISMATCH", label,
-                          f"数值一致性核对失败:{detail}"))
+        hard.append(_fail("VIEW_VALUE_MISMATCH", label, f"数值一致性核对失败:{detail}"))
 
 
 def _check_curated_views(bundle: dict, result_tables: dict, hard: list) -> None:
@@ -295,8 +337,114 @@ def _check_curated_views(bundle: dict, result_tables: dict, hard: list) -> None:
             try:
                 _check_one_view(view, section_id, idx, claim_ids, result_tables, hard)
             except Exception:  # never-raise: a pathological view drops, gate survives
-                hard.append(_fail("VIEW_SPEC_INVALID", _view_label(view, section_id, idx),
-                                  "视图校验发生内部错误"))
+                hard.append(
+                    _fail(
+                        "VIEW_SPEC_INVALID",
+                        _view_label(view, section_id, idx),
+                        "视图校验发生内部错误",
+                    )
+                )
+
+
+def _iter_action_cards(bundle: dict):
+    for card in bundle.get("action_cards") or []:
+        yield card
+    for section in bundle.get("sections") or []:
+        if not isinstance(section, dict):
+            continue
+        for card in section.get("action_cards") or []:
+            yield card
+
+
+def _action_sentence(card: dict) -> str:
+    parts = [card.get("title"), *(card.get("steps") or []), card.get("stop_rule")]
+    for key in ("cadence_label", "observe_window_label"):
+        parts.append(card.get(key))
+    return "\n".join(str(part) for part in parts if part not in (None, ""))
+
+
+def _check_action_cards(bundle: dict, facts: dict, absent: set, hard: list) -> None:
+    claim_ids = _all_claim_ids(bundle)
+    seen_action_ids: set[str] = set()
+    for index, card in enumerate(_iter_action_cards(bundle)):
+        fallback_id = f"action[{index}]"
+        if not isinstance(card, dict):
+            hard.append(_fail("ACTION_SPEC_INVALID", fallback_id, "action card must be an object"))
+            continue
+        action_id = card.get("action_id")
+        label = action_id if isinstance(action_id, str) and action_id else fallback_id
+        if not isinstance(action_id, str) or not action_id:
+            hard.append(_fail("ACTION_SPEC_INVALID", label, "action_id is required"))
+        elif action_id in seen_action_ids:
+            hard.append(_fail("ACTION_ID_DUPLICATE", label, "action_id must be unique"))
+        else:
+            seen_action_ids.add(action_id)
+
+        for field_name in ("action_family", "title", "stop_rule"):
+            if not isinstance(card.get(field_name), str) or not card[field_name].strip():
+                hard.append(_fail("ACTION_SPEC_INVALID", label, f"{field_name} is required"))
+        steps = card.get("steps")
+        if (
+            not isinstance(steps, list)
+            or not steps
+            or not all(isinstance(step, str) and step.strip() for step in steps)
+        ):
+            hard.append(_fail("ACTION_SPEC_INVALID", label, "steps must contain non-empty text"))
+        if card.get("owner_role") not in _ACTION_OWNER_ROLES:
+            hard.append(_fail("ACTION_SPEC_INVALID", label, "owner_role is not allowed"))
+        if card.get("license") not in _ACTION_LICENSES:
+            hard.append(_fail("ACTION_SPEC_INVALID", label, "license is not allowed"))
+
+        primary_fact_id = card.get("primary_fact_id")
+        if primary_fact_id not in facts or primary_fact_id in absent:
+            hard.append(
+                _fail(
+                    "ACTION_PRIMARY_FACT_MISSING",
+                    label,
+                    f"unknown primary_fact_id: {primary_fact_id}",
+                )
+            )
+        guardrail_fact_id = card.get("guardrail_fact_id")
+        if guardrail_fact_id not in (None, "") and (
+            guardrail_fact_id not in facts or guardrail_fact_id in absent
+        ):
+            hard.append(
+                _fail(
+                    "ACTION_GUARDRAIL_FACT_MISSING",
+                    label,
+                    f"unknown guardrail_fact_id: {guardrail_fact_id}",
+                )
+            )
+        supporting_claim_ids = card.get("supporting_claim_ids")
+        if not isinstance(supporting_claim_ids, list) or not supporting_claim_ids:
+            hard.append(
+                _fail(
+                    "ACTION_SUPPORTS_UNKNOWN_CLAIM",
+                    label,
+                    "supporting_claim_ids must name at least one claim",
+                )
+            )
+        else:
+            for claim_id in supporting_claim_ids:
+                if claim_id not in claim_ids:
+                    hard.append(
+                        _fail(
+                            "ACTION_SUPPORTS_UNKNOWN_CLAIM",
+                            label,
+                            f"unknown supporting claim: {claim_id}",
+                        )
+                    )
+
+        _check_tokens(
+            {
+                "claim_id": label,
+                "sentence": _action_sentence(card),
+                "number_tokens": card.get("number_tokens") or [],
+            },
+            facts,
+            absent,
+            hard,
+        )
 
 
 def run_gate(bundle: dict, facts_json: dict, result_tables: dict | None = None) -> GateReport:
@@ -318,7 +466,24 @@ def run_gate(bundle: dict, facts_json: dict, result_tables: dict | None = None) 
     warnings: list[dict] = []
     capped: list[dict] = []
 
-    backbone_ids = {b.get("link_id") for b in (bundle.get("spine_final") or {}).get("backbone") or []}
+    bundle_facts_hash = bundle.get("facts_hash")
+    supplied_facts_hash = facts_json.get("facts_hash")
+    if (
+        bundle_facts_hash is not None
+        and supplied_facts_hash is not None
+        and bundle_facts_hash != supplied_facts_hash
+    ):
+        hard.append(
+            _fail(
+                "FACTS_SNAPSHOT_MISMATCH",
+                None,
+                "narrative bundle was authored against a different facts/registry snapshot",
+            )
+        )
+
+    backbone_ids = {
+        b.get("link_id") for b in (bundle.get("spine_final") or {}).get("backbone") or []
+    }
     entity_facts = {fid for fid, f in facts.items() if f.get("entity_type")}
     mechanism_facts: set[str] = set()
 
@@ -335,11 +500,15 @@ def run_gate(bundle: dict, facts_json: dict, result_tables: dict | None = None) 
                 mechanism_facts.add(tok.get("fact_id"))
         # WARN: mechanism without a tag
         if claim.get("claim_kind") == "mechanism" and claim.get("confidence") not in _TAG_RANK:
-            warnings.append(_fail("UNTAGGED_MECHANISM", cid, "mechanism claim missing 强/中/弱 tag"))
+            warnings.append(
+                _fail("UNTAGGED_MECHANISM", cid, "mechanism claim missing 强/中/弱 tag")
+            )
         # WARN: sizing without a caliber/assumption label on any anchor
         if claim.get("claim_kind") == "sizing":
-            labelled = any((facts.get(t.get("fact_id")) or {}).get("assumption")
-                           for t in claim.get("number_tokens") or [])
+            labelled = any(
+                (facts.get(t.get("fact_id")) or {}).get("assumption")
+                for t in claim.get("number_tokens") or []
+            )
             if not labelled:
                 warnings.append(_fail("UNLABELED_SIZING", cid, "sizing claim lacks caliber label"))
         # Confidence cap (deterministic; mechanism -> 弱, else <= strongest anchor)
@@ -354,32 +523,55 @@ def run_gate(bundle: dict, facts_json: dict, result_tables: dict | None = None) 
     # data magnitude (¥/%/万) that would otherwise reach the reader un-gated.
     for idx, action in enumerate((bundle.get("first_screen") or {}).get("actions") or []):
         if _ACTION_MAGNITUDE_RE.search(str(action)):
-            hard.append(_fail("MAGNITUDE_UNBOUND", f"first_screen.action[{idx}]",
-                              "action free-text carries an un-anchored ¥/%/万 magnitude"))
+            hard.append(
+                _fail(
+                    "MAGNITUDE_UNBOUND",
+                    f"first_screen.action[{idx}]",
+                    "action free-text carries an un-anchored ¥/%/万 magnitude",
+                )
+            )
+
+    _check_action_cards(bundle, facts, absent, hard)
 
     # Cross-section: dangling callbacks + missing callbacks
     for section in bundle.get("sections") or []:
         callbacks = section.get("spine_callbacks") or []
         if not callbacks:
-            warnings.append(_fail("MISSING_SPINE_CALLBACK", section.get("section_id"),
-                                  "section connects to no spine link"))
+            warnings.append(
+                _fail(
+                    "MISSING_SPINE_CALLBACK",
+                    section.get("section_id"),
+                    "section connects to no spine link",
+                )
+            )
         for link_id in callbacks:
             if link_id not in backbone_ids:
-                hard.append(_fail("DANGLING_CALLBACK", section.get("section_id"),
-                                  f"callback to unknown spine link {link_id}"))
+                hard.append(
+                    _fail(
+                        "DANGLING_CALLBACK",
+                        section.get("section_id"),
+                        f"callback to unknown spine link {link_id}",
+                    )
+                )
 
     # WARN: mechanism fact available but never claimed as mechanism
     for fid in sorted(entity_facts - mechanism_facts):
-        warnings.append(_fail("MISSED_MECHANISM", None,
-                              f"entity fact {fid} has no mechanism claim"))
+        warnings.append(
+            _fail("MISSED_MECHANISM", None, f"entity fact {fid} has no mechanism claim")
+        )
 
     # WARN: headline duplicates a section claim verbatim
     headline = str(bundle.get("headline") or "").strip()
     if headline:
         for claim in _iter_claims(bundle):
             if str(claim.get("sentence") or "").strip() == headline:
-                warnings.append(_fail("REDUNDANT_HEADLINE", claim.get("claim_id"),
-                                      "headline duplicates a section claim"))
+                warnings.append(
+                    _fail(
+                        "REDUNDANT_HEADLINE",
+                        claim.get("claim_id"),
+                        "headline duplicates a section claim",
+                    )
+                )
                 break
 
     # Curated-view policing (spec §Trust & anti-dump rules). Additive — every rule
@@ -387,8 +579,9 @@ def run_gate(bundle: dict, facts_json: dict, result_tables: dict | None = None) 
     _check_curated_views(bundle, result_tables, hard)
 
     status = "FAIL" if hard else "PASS"
-    return GateReport(status=status, hard_failures=hard, warnings=warnings,
-                      capped_claims=capped, bundle=bundle)
+    return GateReport(
+        status=status, hard_failures=hard, warnings=warnings, capped_claims=capped, bundle=bundle
+    )
 
 
 def gate_report_to_json(report: GateReport) -> str:

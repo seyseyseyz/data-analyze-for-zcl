@@ -19,6 +19,26 @@ MIN_ACTIVE_DAYS_FOR_ACTION = 2
 # Spend→GMV response curve resolution and reader-facing band labels.
 _RESPONSE_BINS = 4
 _SPEND_BAND_LABELS = ["低投放", "中低投放", "中高投放", "高投放"]
+_OBJECT_DIMENSIONS = (
+    "campaign_id_optional",
+    "campaign_name_optional",
+    "unit_id_optional",
+    "unit_name_optional",
+    "creative_id_optional",
+    "creative_name_optional",
+    "note_id_optional",
+    "note_url_optional",
+    "product_id_optional",
+    "sku_id_optional",
+)
+_HIERARCHY_LEVELS = (
+    ("campaign", "campaign_id_optional", "campaign_name_optional"),
+    ("unit", "unit_id_optional", "unit_name_optional"),
+    ("creative", "creative_id_optional", "creative_name_optional"),
+    ("note", "note_id_optional", None),
+    ("product", "product_id_optional", None),
+    ("sku", "sku_id_optional", None),
+)
 
 
 def classify_budget_action(
@@ -30,20 +50,14 @@ def classify_budget_action(
 ) -> str:
     if spend is None or spend <= 0 or clicks is None:
         return "needs_data"
-    if gmv is None or roas is None:
+    if roas is None:
         return "needs_data"
     if active_days < MIN_ACTIVE_DAYS_FOR_ACTION and roas >= HIGH_ROAS_THRESHOLD:
         return "hold"
-    if (
-        spend >= MIN_SPEND_FOR_ACTION
-        and roas >= HIGH_ROAS_THRESHOLD
-        and gmv > 0
-    ):
+    if spend >= MIN_SPEND_FOR_ACTION and roas >= HIGH_ROAS_THRESHOLD and gmv != 0:
         return "increase"
     if spend >= MIN_SPEND_FOR_ACTION and (
-        clicks < LOW_CLICK_THRESHOLD
-        or gmv <= 0
-        or roas < LOW_ROAS_THRESHOLD
+        clicks < LOW_CLICK_THRESHOLD or (gmv is not None and gmv <= 0) or roas < LOW_ROAS_THRESHOLD
     ):
         return "reduce"
     return "hold"
@@ -55,7 +69,10 @@ def run(db_path: Path) -> AnalysisResult:
         if not _table_exists(con, "ad_performance_daily"):
             return _missing_result("缺少 ad_performance_daily 表。")
         source = "ad_metrics" if _table_exists(con, "ad_metrics") else "ad_performance_daily"
+        source_columns = _table_columns(con, source)
         rows = _efficiency_rows(con, source)
+        funnel_summary = _paid_funnel_summary(con, source)
+        hierarchy_rows = _hierarchy_rows(con, source)
         response_observations = _spend_gmv_observations(con, source)
     finally:
         con.close()
@@ -65,43 +82,59 @@ def run(db_path: Path) -> AnalysisResult:
             _float_or_none(row.get("spend")),
             _float_or_none(row.get("clicks")),
             _float_or_none(row.get("gmv_optional")),
-            _float_or_none(row.get("roas_calc")),
+            _float_or_none(row.get("roas_effective")),
             int(row.get("paid_active_days") or 0),
         )
 
-    total_spend = sum(float(row.get("spend") or 0) for row in rows)
-    total_gmv = sum(float(row.get("gmv_optional") or 0) for row in rows)
-    has_return = any(row.get("gmv_optional") is not None for row in rows)
+    total_spend = float(funnel_summary.get("spend") or 0)
+    total_gmv = float(funnel_summary.get("gmv_optional") or 0)
+    has_attributed_gmv = funnel_summary.get("gmv_optional") is not None
+    has_return = funnel_summary.get("roas_effective") is not None
+    paid_active_days = int(funnel_summary.get("paid_active_days") or 0)
     evidence_strength = score_evidence(
-        sample_size=sum(int(row.get("paid_active_days") or 0) for row in rows),
+        sample_size=paid_active_days,
         has_controls=has_return,
         confounder_count=1 if has_return else 3,
     )
-    descriptive_reliability = score_reliability(
-        sum(int(row.get("paid_active_days") or 0) for row in rows)
-    )
+    descriptive_reliability = score_reliability(paid_active_days)
 
     findings = [
         Finding(
             title="投放消耗和投产效率已汇总",
             conclusion=(
-                f"已汇总 {qty(len(rows))} 个投放对象，总消耗 {money(total_spend)}，"
-                f"可见成交金额 {money(total_gmv)}。"
+                f"效率明细展示 {qty(len(rows))} 个投放对象；全量总消耗 {money(total_spend)}，"
+                + (
+                    f"可见成交金额 {money(total_gmv)}。"
+                    if has_attributed_gmv
+                    else f"平台回传投产 {funnel_summary.get('roas_effective')}，但缺少成交金额。"
+                )
             ),
             evidence_strength=evidence_strength,
             descriptive_reliability=descriptive_reliability,
-            evidence_reason=_evidence_reason(has_return),
+            evidence_reason=_evidence_reason(has_return, has_attributed_gmv),
             key_numbers={
                 "rows": len(rows),
                 "spend": round(total_spend, 2),
-                "gmv_optional": round(total_gmv, 2) if has_return else None,
+                "gmv_optional": round(total_gmv, 2) if has_attributed_gmv else None,
+                "return_efficiency": funnel_summary.get("roas_effective"),
+                "return_efficiency_source": funnel_summary.get("roas_source"),
             },
-            caveats=_caveats(rows, has_return),
+            caveats=_caveats(rows, has_return, has_attributed_gmv),
             recommended_action=_recommended_action(rows, has_return),
         )
     ]
-    tables = {"paid_traffic_efficiency": rows}
+    tables = {
+        "paid_traffic_efficiency": rows,
+        "paid_funnel_summary": [funnel_summary] if funnel_summary else [],
+    }
     limitations: list[str] = []
+
+    if {"conversions_optional", "orders_optional"} & source_columns:
+        findings.append(_funnel_finding(funnel_summary, paid_active_days))
+
+    if hierarchy_rows:
+        findings.append(_hierarchy_finding(hierarchy_rows))
+        tables["paid_hierarchy"] = hierarchy_rows
 
     elasticity_finding, response_rows = _elasticity_finding(
         response_observations if has_return else [], limitations
@@ -116,6 +149,193 @@ def run(db_path: Path) -> AnalysisResult:
         findings=findings,
         tables=tables,
         limitations=limitations,
+    )
+
+
+def _paid_funnel_summary(con, source: str) -> dict[str, object]:
+    columns = _table_columns(con, source)
+    try:
+        result = con.sql(
+            f"""
+            SELECT {_aggregate_projection(columns)}
+            FROM {source}
+            """
+        )
+        row = result.fetchone()
+    except Exception:
+        return {}
+    if row is None:
+        return {}
+    return _clean_row(dict(zip(result.columns, row, strict=True)))
+
+
+def _hierarchy_rows(con, source: str) -> list[dict[str, object]]:
+    columns = _table_columns(con, source)
+    rows: list[dict[str, object]] = []
+    for level, id_column, name_column in _HIERARCHY_LEVELS:
+        available_id = id_column if id_column in columns else None
+        available_name = name_column if name_column and name_column in columns else None
+        if available_id is None and available_name is None:
+            continue
+
+        object_id_source = available_id or available_name
+        object_name_source = available_name or available_id
+        group_columns = list(dict.fromkeys([object_id_source, object_name_source]))
+        group_clause = ", ".join(column for column in group_columns if column)
+        try:
+            result = con.sql(
+                f"""
+                SELECT
+                  '{level}' AS level,
+                  CAST({object_id_source} AS VARCHAR) AS object_id,
+                  CAST({object_name_source} AS VARCHAR) AS object_name,
+                  {_aggregate_projection(columns)}
+                FROM {source}
+                WHERE {object_id_source} IS NOT NULL OR {object_name_source} IS NOT NULL
+                GROUP BY {group_clause}
+                ORDER BY spend DESC NULLS LAST
+                LIMIT 20
+                """
+            )
+        except Exception:
+            continue
+        rows.extend(
+            _clean_row(dict(zip(result.columns, row, strict=True))) for row in result.fetchall()
+        )
+    return rows
+
+
+def _aggregate_projection(columns: set[str]) -> str:
+    spend = numeric_expr(columns, "spend")
+    impressions = numeric_expr(columns, "impressions")
+    clicks = numeric_expr(columns, "clicks")
+    conversions = numeric_expr(columns, "conversions_optional")
+    orders = numeric_expr(columns, "orders_optional")
+    gmv = numeric_expr(columns, "gmv_optional")
+    reported_roas = _reported_roas_expr(columns)
+    reported_roas_source = _reported_roas_source_expr(columns)
+    reported_cpm = numeric_expr(columns, "cpm")
+    roas_reported = _weighted_average_expr(reported_roas, spend)
+    cpm_reported = _weighted_average_expr(reported_cpm, impressions)
+    roas_calc = f"CASE WHEN SUM({spend}) > 0 THEN SUM({gmv}) * 1.0 / SUM({spend}) END"
+    cpm_calc = (
+        f"CASE WHEN SUM({impressions}) > 0 THEN SUM({spend}) * 1000.0 / SUM({impressions}) END"
+    )
+    active_days = "COUNT(DISTINCT CAST(date AS DATE))" if "date" in columns else "COUNT(*)"
+    return f"""
+      {active_days} AS paid_active_days,
+      SUM({spend}) AS spend,
+      SUM({impressions}) AS impressions,
+      SUM({clicks}) AS clicks,
+      SUM({conversions}) AS conversions_optional,
+      SUM({orders}) AS orders_optional,
+      SUM({gmv}) AS gmv_optional,
+      CASE WHEN SUM({impressions}) > 0
+        THEN SUM({clicks}) * 1.0 / SUM({impressions})
+      END AS ctr_calc,
+      {cpm_calc} AS cpm_calc,
+      {cpm_reported} AS cpm_reported,
+      COALESCE({cpm_calc}, {cpm_reported}) AS cpm_effective,
+      CASE WHEN {cpm_calc} IS NOT NULL AND {cpm_reported} IS NOT NULL
+        THEN {cpm_calc} - {cpm_reported}
+      END AS cpm_gap,
+      CASE WHEN SUM({clicks}) > 0
+        THEN SUM({spend}) * 1.0 / SUM({clicks})
+      END AS cpc_calc,
+      CASE WHEN SUM({clicks}) > 0
+        THEN SUM({conversions}) * 1.0 / SUM({clicks})
+      END AS conversion_rate_calc,
+      CASE WHEN SUM({clicks}) > 0
+        THEN SUM({orders}) * 1.0 / SUM({clicks})
+      END AS order_rate_calc,
+      CASE WHEN SUM({conversions}) > 0
+        THEN SUM({spend}) * 1.0 / SUM({conversions})
+      END AS cpa_calc,
+      CASE WHEN SUM({orders}) > 0
+        THEN SUM({spend}) * 1.0 / SUM({orders})
+      END AS cpo_calc,
+      {roas_calc} AS roas_calc,
+      {roas_reported} AS roas_reported,
+      COALESCE({roas_calc}, {roas_reported}) AS roas_effective,
+      CASE WHEN {roas_calc} IS NOT NULL THEN 'calculated_gmv'
+        ELSE {reported_roas_source}
+      END AS roas_source,
+      CASE WHEN {roas_calc} IS NOT NULL AND {roas_reported} IS NOT NULL
+        THEN {roas_calc} - {roas_reported}
+      END AS roas_gap
+    """
+
+
+def _reported_roas_expr(columns: set[str]) -> str:
+    roas = numeric_expr(columns, "roas_optional")
+    roi = numeric_expr(columns, "roi_optional")
+    return f"COALESCE({roas}, {roi})"
+
+
+def _reported_roas_source_expr(columns: set[str]) -> str:
+    roas = numeric_expr(columns, "roas_optional")
+    roi = numeric_expr(columns, "roi_optional")
+    return f"""
+      CASE
+        WHEN COUNT({roas}) > 0 AND COUNT({roi}) > 0 THEN 'reported_mixed_roas_roi'
+        WHEN COUNT({roas}) > 0 THEN 'reported_roas'
+        WHEN COUNT({roi}) > 0 THEN 'reported_roi'
+      END
+    """
+
+
+def _weighted_average_expr(value_expr: str, weight_expr: str) -> str:
+    return f"""
+      COALESCE(
+        SUM(CASE WHEN {value_expr} IS NOT NULL AND {weight_expr} > 0
+          THEN {value_expr} * {weight_expr} END)
+          / NULLIF(SUM(CASE WHEN {value_expr} IS NOT NULL AND {weight_expr} > 0
+            THEN {weight_expr} END), 0),
+        AVG({value_expr})
+      )
+    """
+
+
+def _funnel_finding(summary: dict[str, object], paid_active_days: int) -> Finding:
+    return Finding(
+        title="投放漏斗已汇总",
+        conclusion="已汇总曝光、点击、转化、订单、成交金额和投产成本，可定位主要流失环节。",
+        evidence_strength=score_evidence(
+            sample_size=paid_active_days,
+            has_controls=False,
+            confounder_count=2,
+        ),
+        descriptive_reliability=score_reliability(paid_active_days),
+        key_numbers={
+            "impressions": summary.get("impressions"),
+            "clicks": summary.get("clicks"),
+            "conversions_optional": summary.get("conversions_optional"),
+            "orders_optional": summary.get("orders_optional"),
+            "cpa_calc": summary.get("cpa_calc"),
+            "cpo_calc": summary.get("cpo_calc"),
+        },
+        caveats=[
+            "转化数和订单数沿用投放平台定义，需结合导出口径解释。",
+            "漏斗反映平台归因结果，不等同于广告带来的增量成交。",
+        ],
+        recommended_action="先治理点击后转化或订单流失最大的环节，再按净回报决定放量。",
+        evidence_reason="使用全量投放事实表汇总，未受效率明细 Top 20 截断。",
+    )
+
+
+def _hierarchy_finding(rows: list[dict[str, object]]) -> Finding:
+    levels = {str(row["level"]) for row in rows}
+    return Finding(
+        title="投放层级已展开",
+        conclusion=f"已按 {qty(len(levels))} 个可用层级独立聚合，可逐级定位高消耗和低回报对象。",
+        evidence_strength=EvidenceStrength.MEDIUM,
+        key_numbers={"levels": len(levels), "objects": len(rows)},
+        caveats=[
+            "计划、单元、创意、笔记、商品和 SKU 是独立聚合层级，禁止跨层相加。",
+            "每个层级最多展示消耗最高的 20 个对象。",
+            "层级差异是描述性关联，不能单独证明某个创意或商品造成了增量成交。",
+        ],
+        recommended_action="从计划下钻到单元和创意，再交叉核对笔记、商品与 SKU 的效率。",
     )
 
 
@@ -214,16 +434,7 @@ def _spend_gmv_observations(con, source: str) -> list[tuple[float, float]]:
     columns = _table_columns(con, source)
     if numeric_expr(columns, "gmv_optional") == "NULL":
         return []
-    dimensions = [
-        column
-        for column in (
-            "campaign_name_optional",
-            "creative_name_optional",
-            "note_id_optional",
-            "sku_id_optional",
-        )
-        if column in columns
-    ]
+    dimensions = [column for column in _OBJECT_DIMENSIONS if column in columns]
     if not dimensions and "platform_source" in columns:
         dimensions = ["platform_source"]
 
@@ -252,16 +463,7 @@ def _spend_gmv_observations(con, source: str) -> list[tuple[float, float]]:
 
 def _efficiency_rows(con, source: str) -> list[dict[str, object]]:
     columns = _table_columns(con, source)
-    dimensions = [
-        column
-        for column in (
-            "campaign_name_optional",
-            "creative_name_optional",
-            "note_id_optional",
-            "sku_id_optional",
-        )
-        if column in columns
-    ]
+    dimensions = [column for column in _OBJECT_DIMENSIONS if column in columns]
     if not dimensions:
         dimensions = ["platform_source"] if "platform_source" in columns else []
 
@@ -272,7 +474,22 @@ def _efficiency_rows(con, source: str) -> list[dict[str, object]]:
     spend_expr = numeric_expr(columns, "spend")
     impressions_expr = numeric_expr(columns, "impressions")
     clicks_expr = numeric_expr(columns, "clicks")
+    conversions_expr = numeric_expr(columns, "conversions_optional")
+    orders_expr = numeric_expr(columns, "orders_optional")
     gmv_expr = numeric_expr(columns, "gmv_optional")
+    reported_roas_expr = _reported_roas_expr(columns)
+    reported_roas_source_expr = _reported_roas_source_expr(columns)
+    reported_cpm_expr = numeric_expr(columns, "cpm")
+    roas_reported_expr = _weighted_average_expr(reported_roas_expr, spend_expr)
+    cpm_reported_expr = _weighted_average_expr(reported_cpm_expr, impressions_expr)
+    roas_calc_expr = (
+        f"CASE WHEN SUM({spend_expr}) > 0 THEN SUM({gmv_expr}) * 1.0 / SUM({spend_expr}) END"
+    )
+    cpm_calc_expr = (
+        f"CASE WHEN SUM({impressions_expr}) > 0 "
+        f"THEN SUM({spend_expr}) * 1000.0 / SUM({impressions_expr}) END"
+    )
+    active_days_expr = "COUNT(DISTINCT CAST(date AS DATE))" if "date" in columns else "COUNT(*)"
 
     # The numeric_expr CASTs raise a DuckDB Conversion Error on a dirty VARCHAR
     # cell ("1,234", "—"); guard exactly like the sibling _spend_gmv_observations
@@ -282,23 +499,49 @@ def _efficiency_rows(con, source: str) -> list[dict[str, object]]:
             f"""
             SELECT
               {select_dimensions}
-              COUNT(DISTINCT CAST(date AS DATE)) AS paid_active_days,
+              {active_days_expr} AS paid_active_days,
               SUM({spend_expr}) AS spend,
               SUM({impressions_expr}) AS impressions,
               SUM({clicks_expr}) AS clicks,
+              SUM({conversions_expr}) AS conversions_optional,
+              SUM({orders_expr}) AS orders_optional,
               SUM({gmv_expr}) AS gmv_optional,
-              CASE WHEN SUM({spend_expr}) > 0
-                THEN SUM({gmv_expr}) * 1.0 / SUM({spend_expr})
-              END AS roas_calc,
+              {roas_calc_expr} AS roas_calc,
+              {roas_reported_expr} AS roas_reported,
+              COALESCE({roas_calc_expr}, {roas_reported_expr}) AS roas_effective,
+              CASE WHEN {roas_calc_expr} IS NOT NULL THEN 'calculated_gmv'
+                ELSE {reported_roas_source_expr}
+              END AS roas_source,
+              CASE WHEN {roas_calc_expr} IS NOT NULL AND {roas_reported_expr} IS NOT NULL
+                THEN {roas_calc_expr} - {roas_reported_expr}
+              END AS roas_gap,
               CASE WHEN SUM({impressions_expr}) > 0
                 THEN SUM({clicks_expr}) * 1.0 / SUM({impressions_expr})
               END AS ctr_calc,
+              {cpm_calc_expr} AS cpm_calc,
+              {cpm_reported_expr} AS cpm_reported,
+              COALESCE({cpm_calc_expr}, {cpm_reported_expr}) AS cpm_effective,
+              CASE WHEN {cpm_calc_expr} IS NOT NULL AND {cpm_reported_expr} IS NOT NULL
+                THEN {cpm_calc_expr} - {cpm_reported_expr}
+              END AS cpm_gap,
               CASE WHEN SUM({clicks_expr}) > 0
                 THEN SUM({spend_expr}) * 1.0 / SUM({clicks_expr})
-              END AS cpc_calc
+              END AS cpc_calc,
+              CASE WHEN SUM({clicks_expr}) > 0
+                THEN SUM({conversions_expr}) * 1.0 / SUM({clicks_expr})
+              END AS conversion_rate_calc,
+              CASE WHEN SUM({clicks_expr}) > 0
+                THEN SUM({orders_expr}) * 1.0 / SUM({clicks_expr})
+              END AS order_rate_calc,
+              CASE WHEN SUM({conversions_expr}) > 0
+                THEN SUM({spend_expr}) * 1.0 / SUM({conversions_expr})
+              END AS cpa_calc,
+              CASE WHEN SUM({orders_expr}) > 0
+                THEN SUM({spend_expr}) * 1.0 / SUM({orders_expr})
+              END AS cpo_calc
             FROM {source}
             {group_clause}
-            ORDER BY roas_calc DESC NULLS LAST, spend DESC NULLS LAST
+            ORDER BY roas_effective DESC NULLS LAST, spend DESC NULLS LAST
             LIMIT 20
             """
         )
@@ -311,7 +554,28 @@ def _efficiency_rows(con, source: str) -> list[dict[str, object]]:
 
 def _clean_row(row: dict[str, object]) -> dict[str, object]:
     cleaned = dict(row)
-    for key in ("spend", "impressions", "clicks", "gmv_optional", "roas_calc", "ctr_calc", "cpc_calc"):
+    for key in (
+        "spend",
+        "impressions",
+        "clicks",
+        "conversions_optional",
+        "orders_optional",
+        "gmv_optional",
+        "roas_calc",
+        "roas_reported",
+        "roas_effective",
+        "roas_gap",
+        "ctr_calc",
+        "cpm_calc",
+        "cpm_reported",
+        "cpm_effective",
+        "cpm_gap",
+        "cpc_calc",
+        "conversion_rate_calc",
+        "order_rate_calc",
+        "cpa_calc",
+        "cpo_calc",
+    ):
         if cleaned.get(key) is not None:
             cleaned[key] = round(float(cleaned[key]), 4)
     if cleaned.get("paid_active_days") is not None:
@@ -333,18 +597,26 @@ def _recommended_action(rows: list[dict[str, object]], has_return: bool) -> str:
     return "保持当前预算，继续观察更多天数后再决定放量或缩量。"
 
 
-def _caveats(rows: list[dict[str, object]], has_return: bool) -> list[str]:
+def _caveats(
+    rows: list[dict[str, object]], has_return: bool, has_attributed_gmv: bool
+) -> list[str]:
     caveats = ["投放效率来自后台导出，不等同于内容或商品的因果影响。"]
     if not has_return:
         caveats.append("缺少成交金额或投产字段，不能判断 ROAS。")
+    elif not has_attributed_gmv:
+        caveats.append("投产来自平台回传 ROI/ROAS，缺少成交金额，无法核算或用于边际回报曲线。")
+    if any(row.get("roas_gap") is not None for row in rows):
+        caveats.append("同时存在成交金额与平台投产时已展示差值，需核对归因窗口和退款口径。")
     if any(int(row.get("paid_active_days") or 0) < 2 for row in rows):
         caveats.append("部分对象只有单日数据，预算动作需要保守执行。")
     return caveats
 
 
-def _evidence_reason(has_return: bool) -> str:
-    if has_return:
+def _evidence_reason(has_return: bool, has_attributed_gmv: bool) -> str:
+    if has_attributed_gmv:
         return "投放消耗和成交金额可用，可用于预算效率判断；仍需注意平台归因口径。"
+    if has_return:
+        return "投放消耗和平台回传 ROI/ROAS 可用，但缺成交金额，不能独立复算投产。"
     return "只有投放消耗或点击数据，适合判断流量效率，不能判断投产。"
 
 

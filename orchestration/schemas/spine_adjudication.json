@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "spine_adjudication.json",
+  "title": "spine_adjudication",
+  "description": "Runtime ingest envelope selecting and minimally reconciling two independent candidates.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "selected_candidate_id",
+    "spine_brief",
+    "rejected_reasons",
+    "unresolved_dissent"
+  ],
+  "properties": {
+    "selected_candidate_id": {"type": "string", "minLength": 1},
+    "spine_brief": {"$ref": "spine_brief.json"},
+    "rejected_reasons": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["candidate_id", "reason"],
+        "properties": {
+          "candidate_id": {"type": "string", "minLength": 1},
+          "reason": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "unresolved_dissent": {
+      "type": "array",
+      "items": {"type": "string"}
+    }
+  }
+}

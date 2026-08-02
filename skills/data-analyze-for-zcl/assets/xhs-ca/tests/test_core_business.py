@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from xhs_ceramics_analytics.analysis.core_business import _bridge_rows
 from xhs_ceramics_analytics.analysis.registry import run_task
 from xhs_ceramics_analytics.db.duck import connect
@@ -40,9 +42,7 @@ def _make_business_full(con, rows):
         )
         """
     )
-    con.executemany(
-        "INSERT INTO business_overview_daily VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", rows
-    )
+    con.executemany("INSERT INTO business_overview_daily VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", rows)
 
 
 def _make_business_minimal(con, rows):
@@ -118,12 +118,104 @@ def test_snapshot_finding_always_emitted_with_trend(tmp_path):
     snap = result.findings[0]
     kn = snap.key_numbers
     assert kn["total_gmv"] == 37000.0
-    assert kn["total_paid_buyers"] == 650.0
+    assert "total_paid_buyers" not in kn
+    assert kn["paid_buyer_days"] == 650.0
+    assert kn["avg_daily_paid_buyers"] == pytest.approx(650.0 / 3)
+    assert kn["product_visitor_days"] == 7400.0
+    assert kn["avg_daily_product_visitors"] == pytest.approx(7400.0 / 3)
+    assert kn["avg_daily_aov"] == pytest.approx(56.7)
+    assert kn["avg_daily_pay_conversion"] == pytest.approx((0.09 + 0.0875 + 0.0867) / 3)
+    assert "支付买家 650 人" not in snap.conclusion
+    assert "日均支付买家" in snap.conclusion
     assert kn["trend_direction"] == "上升"
     assert snap.evidence_strength.value == "weak"
     assert len(result.tables["business_trend"]) == 3
     assert len(result.tables["business_snapshot"]) == 1
     assert snap.confounders  # every finding carries confounders
+
+
+def test_financial_quality_and_traffic_depth_keep_time_calibers_separate(tmp_path):
+    con, db_path = _con(tmp_path)
+    con.execute(
+        """
+        CREATE TABLE business_overview_daily (
+          date INTEGER,
+          gmv DOUBLE,
+          paid_orders DOUBLE,
+          paid_buyers DOUBLE,
+          aov DOUBLE,
+          refund_amount_pay DOUBLE,
+          refund_rate_pay DOUBLE,
+          net_gmv_pay DOUBLE,
+          refund_amount_refundtime DOUBLE,
+          refund_order_share_refundtime DOUBLE,
+          total_visitors DOUBLE,
+          total_pv DOUBLE,
+          product_visitors DOUBLE,
+          product_click_rate_pv DOUBLE,
+          new_add_to_cart_users DOUBLE
+        )
+        """
+    )
+    con.executemany(
+        "INSERT INTO business_overview_daily VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [
+            (20260401, 1000, 20, 18, 55.6, 100, 0.10, 900, 80, 0.08, 500, 1500, 200, 0.20, 30),
+            (20260402, 2000, 40, 35, 57.1, 300, 0.15, 1700, 450, 0.18, 800, 2800, 350, 0.25, 70),
+        ],
+    )
+    con.close()
+
+    result = run_task("core_business_diagnosis", db_path)
+
+    pay_rows = result.tables["business_net_revenue"]
+    refund_rows = result.tables["refund_time_pressure"]
+    depth = result.tables["business_traffic_depth"][0]
+    assert pay_rows[-1]["net_gmv_pay"] == 1700
+    assert pay_rows[-1]["refund_amount_pay"] == 300
+    assert "refund_amount_refundtime" not in pay_rows[-1]
+    assert refund_rows[-1]["refund_amount_refundtime"] == 450
+    assert refund_rows[-1]["refund_order_share_refundtime"] == pytest.approx(0.18)
+    assert "net_gmv_pay" not in refund_rows[-1]
+    assert depth["pv_per_visitor"] == pytest.approx(4300 / 1300)
+    assert depth["new_cart_user_days"] == 100
+    quality = next(f for f in result.findings if f.title == "支付口径净收入与退款压力")
+    assert any("退款时间" in caveat and "支付时间" in caveat for caveat in quality.caveats)
+
+
+def test_financial_and_traffic_ratios_require_same_day_coverage(tmp_path):
+    con, db_path = _con(tmp_path)
+    con.execute(
+        """
+        CREATE TABLE business_overview_daily (
+          date INTEGER,
+          gmv DOUBLE,
+          paid_buyers DOUBLE,
+          refund_amount_pay DOUBLE,
+          net_gmv_pay DOUBLE,
+          total_visitors DOUBLE,
+          total_pv DOUBLE
+        )
+        """
+    )
+    con.executemany(
+        "INSERT INTO business_overview_daily VALUES (?, ?, ?, ?, ?, ?, ?)",
+        [
+            (20260401, 1000, 10, 100, 900, 100, None),
+            (20260402, 2000, 20, None, None, None, 1000),
+        ],
+    )
+    con.close()
+
+    result = run_task("core_business_diagnosis", db_path)
+    quality = next(f for f in result.findings if f.title == "支付口径净收入与退款压力")
+    depth = result.tables["business_traffic_depth"][0]
+    assert quality.key_numbers["gmv"] == 1000
+    assert quality.key_numbers["refund_amount_pay"] == 100
+    assert quality.key_numbers["net_gmv_pay"] == 900
+    assert quality.key_numbers["common_coverage_days"] == 1
+    assert depth["pv_per_visitor"] is None
+    assert depth["pv_visitor_common_days"] == 0
 
 
 def test_carrier_and_channel_structure_emitted(tmp_path):
@@ -189,9 +281,9 @@ def test_single_row_skips_trend_without_raise(tmp_path):
     con.close()
     result = run_task("core_business_diagnosis", db_path)
     assert result.findings  # never empty
-    assert "business_trend" not in result.tables or len(
-        result.tables.get("business_trend", [])
-    ) <= 1
+    assert (
+        "business_trend" not in result.tables or len(result.tables.get("business_trend", [])) <= 1
+    )
     assert any("趋势" in lim for lim in result.limitations)
 
 
@@ -240,7 +332,7 @@ def test_gmv_trend_decomposition_reports_structure(tmp_path):
     assert "结构性变化" in snap.conclusion
 
 
-def test_growth_attribution_identifies_traffic_driver(tmp_path):
+def test_growth_attribution_skips_cross_month_daily_distinct_counts(tmp_path):
     con, db_path = _con(tmp_path)
     # 2026-05 (two days) vs 2026-06 (two days): visitors double, conversion & AOV
     # flat → the GMV bridge (B1 LMDI) must attribute ΔGMV to traffic.
@@ -253,44 +345,11 @@ def test_growth_attribution_identifies_traffic_driver(tmp_path):
     _make_business_full(con, rows)
     con.close()
     result = run_task("core_business_diagnosis", db_path)
-    bridge = next(f for f in result.findings if "增长归因" in f.title)
-    kn = bridge.key_numbers
-    # 读者面 key_numbers 只暴露中文枚举值，不含英文残留，也不与 _zh 重复。
-    assert kn["dominant_factor"] == "流量"
-    assert "dominant_factor_zh" not in kn
-    assert kn["delta_gmv"] == 10000.0
-    # three contributions reconstruct ΔGMV (LMDI is exactly additive)
-    total = kn["contrib_traffic"] + kn["contrib_conversion"] + kn["contrib_aov"]
-    assert abs(total - kn["delta_gmv"]) < 1e-6
-    # gmv_bridge 表格行以中文因子名呈现，不外泄英文枚举（traffic/conversion/aov）。
-    bridge_rows = result.tables["gmv_bridge"]
-    assert bridge_rows
-    factor_values = {str(row.get("factor_zh")) for row in bridge_rows}
-    assert factor_values == {"流量", "转化", "客单价"}
-    assert all("factor" not in row or row.get("factor") not in {"traffic", "conversion", "aov"}
-               for row in bridge_rows)
-    assert "流量" in bridge.conclusion
-
-
-def test_growth_attribution_explains_caliber_and_offset(tmp_path):
-    con, db_path = _con(tmp_path)
-    # Traffic surges (visitors 4x) but conversion & AOV fall, so net GMV only nudges
-    # up (+1000): the dominant factor (traffic) moves the same way as the net change
-    # yet far outweighs it — the bridge must (a) spell out the calendar-month caliber
-    # and (b) say the traffic gain was offset by the other factors.
-    rows = [
-        (20260501, 5000.0, 100.0, 100.0, 50.0, 3000.0, 2000.0, 60.0, 40.0, 1000.0, 100.0, 0.1),
-        (20260502, 5000.0, 100.0, 100.0, 50.0, 3000.0, 2000.0, 60.0, 40.0, 1000.0, 100.0, 0.1),
-        (20260601, 5500.0, 125.0, 125.0, 44.0, 3300.0, 2200.0, 75.0, 50.0, 4000.0, 125.0, 0.03125),
-        (20260602, 5500.0, 125.0, 125.0, 44.0, 3300.0, 2200.0, 75.0, 50.0, 4000.0, 125.0, 0.03125),
-    ]
-    _make_business_full(con, rows)
-    con.close()
-    result = run_task("core_business_diagnosis", db_path)
-    bridge = next(f for f in result.findings if "增长归因" in f.title)
-    assert "2026-05" in bridge.conclusion and "2026-06" in bridge.conclusion
-    assert "抵消" in bridge.conclusion
-    assert bridge.key_numbers["dominant_factor"] == "流量"
+    assert not any("增长归因" in finding.title for finding in result.findings)
+    assert "gmv_bridge" not in result.tables
+    assert any(
+        "日级去重" in limitation and "跨月" in limitation for limitation in result.limitations
+    )
 
 
 def test_growth_attribution_skipped_without_visitors(tmp_path):
@@ -361,6 +420,7 @@ def test_event_activity_lift_compares_event_vs_baseline(tmp_path):
             ("2026-04-05", "大促", "五五购物节", "high"),
             ("2026-04-06", "大促", "五五购物节", "high"),
             ("2026-04-07", "大促", "五五购物节", "high"),
+            ("2026-05-01", "上新", "五月新品", "medium"),
         ],
     )
     con.close()
@@ -371,15 +431,45 @@ def test_event_activity_lift_compares_event_vs_baseline(tmp_path):
     assert gmv_row["event_value"] == 15000.0
     assert gmv_row["baseline_value"] == 5000.0
     assert gmv_row["lift_pct"] == 200.0
-    conv_row = next(r for r in lift if r["metric"] == "支付转化率")
+    conv_row = next(r for r in lift if r["metric"] == "日均支付转化率（每日UV）")
     assert conv_row["event_value"] == 0.1
     assert conv_row["baseline_value"] == 0.05
-    assert conv_row["significance"] == "显著"
+    assert conv_row["significance"] == "描述性"
 
     finding = next(f for f in result.findings if f.title == "活动期抬升对比")
     assert finding.key_numbers["event_days"] == 3
     assert finding.key_numbers["baseline_days"] == 4
     assert finding.key_numbers["gmv_lift_pct"] == 200.0
+    assert finding.key_numbers["conversion_significant"] is None
+    assert finding.key_numbers["event_types"] == ["大促"]
+    assert finding.key_numbers["event_names"] == ["五五购物节"]
+    assert finding.key_numbers["event_severities"] == ["high"]
+    assert gmv_row["event_types"] == ["大促"]
+    assert any("用户级显著性" in caveat for caveat in finding.caveats)
+
+
+def test_event_activity_lift_requires_two_valid_conversion_days_per_group(tmp_path):
+    con, db_path = _con(tmp_path)
+    rows = [
+        (20260401, 5000.0, 50.0, 50.0, 100.0, 3000.0, 2000.0, 30.0, 20.0, 1000.0, 50.0, 0.05),
+        (20260402, 5000.0, 50.0, None, 100.0, 3000.0, 2000.0, 30.0, 20.0, None, 50.0, None),
+        (20260403, 15000.0, 120.0, 120.0, 125.0, 9000.0, 6000.0, 70.0, 50.0, 1200.0, 120.0, 0.10),
+        (20260404, 15000.0, 120.0, None, 125.0, 9000.0, 6000.0, 70.0, 50.0, None, 120.0, None),
+    ]
+    _make_business_full(con, rows)
+    _make_calendar_events(
+        con,
+        [
+            ("2026-04-03", "大促", "测试活动", "high"),
+            ("2026-04-04", "大促", "测试活动", "high"),
+        ],
+    )
+    con.close()
+
+    result = run_task("core_business_diagnosis", db_path)
+
+    assert [row["metric"] for row in result.tables["event_activity_lift"]] == ["日均 GMV"]
+    assert any("有效转化日不足 2 天" in message for message in result.limitations)
 
 
 def test_event_activity_lift_absent_without_calendar(tmp_path):

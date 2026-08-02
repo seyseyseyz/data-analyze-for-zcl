@@ -17,17 +17,15 @@
 - `notes` (required) — key columns: `note_id`, `publish_time`
   Chinese header hints: 笔记id -> note_id, 发布时间/笔记发布时间 -> publish_time
 
-- `note_sku_links` (optional) — key columns: `note_id`, `sku_id`
-  无 FIELD_ALIASES 条目，需以英文列名导入。存在时使用显式归因路径 (confounder_count=1)。
+- `note_sku_links` (required for attribution) — key columns: `note_id`, `sku_id`
+  支持英文列名及 `笔记ID/规格ID` 手工 CSV。只有显式关联可进入分析。
 
-- `skus` (optional) — key columns: `sku_id`
-  Chinese header hints: 规格id -> sku_id
-  仅当 note_sku_links 不可用时参与候选兜底 (CROSS JOIN first SKU)。
+- `skus` (optional) — key columns: `sku_id`，用于补充 SKU 元数据，不用于猜测关联。
 
 ## Method
 
 1. 打开 DuckDB 连接，检查 daily_sku_sales 表是否存在且包含 {date, sku_id, units}；缺失则返回 NOT_JUDGABLE。(L303-310)
-2. 解析 note-SKU 关联来源：优先使用 note_sku_links INNER JOIN notes（取 publish_time）；否则用 notes 前 25 条 CROSS JOIN skus 首条 SKU 的候选兜底；均不可用则返回 NOT_JUDGABLE。(L217-300)
+2. 使用 note_sku_links INNER JOIN notes 取得显式 note-SKU 关联与 publish_time；缺失、列不全或没有匹配行都返回 NOT_JUDGABLE，不猜测首个 SKU。
 3. 为每组 (note_id, sku_id, publish_time) CROSS JOIN 四组固定窗口规格，LEFT JOIN daily_sku_sales 按 sku_id（VARCHAR cast）匹配。(L102-163)
 4. 按窗口对 units 分别聚合 pre_units 和 post_units；同时统计 matched_sales_days 用于判断数据完整性。(L124-157)
 5. 计算 absolute_lift 和 relative_lift；结果按 note_id, sku_id, 窗口顺序排列。(L164-187)
@@ -43,7 +41,7 @@
 - `relative_lift = (post_units - pre_units) / pre_units WHEN pre_units > 0 ELSE NULL` (sku_lift.py:173-175)
 - Window specs (day offsets): d0_1:[pre=-1..0, post=0..1); d1_3:[pre=-3..0, post=1..4); d4_7:[pre=-4..0, post=4..8); d8_14:[pre=-7..0, post=8..15) (sku_lift.py:7-12)
 - `sample_size = |{(note_id, sku_id) distinct pairs}|` (sku_lift.py:68-69)
-- `confounder_count = 1 if source == 'note_sku_links' else 3` (sku_lift.py:71)
+- `confounder_count = 1`，关联源固定为 `note_sku_links`。
 
 ## Thresholds & evidence
 
@@ -52,7 +50,7 @@
 | has_controls=False (本任务硬编码)，任何 sample_size | WEAK | evidence.py:20; sku_lift.py:70 |
 | daily_sku_sales 缺失或缺少 {date, sku_id, units} | NOT_JUDGABLE | sku_lift.py:303-310 |
 | note_sku_links 存在但缺 note_id/sku_id，或 notes 缺 publish_time | NOT_JUDGABLE | sku_lift.py:242-253 |
-| 无 note_sku_links 且 notes/skus 不足以兜底 | NOT_JUDGABLE | sku_lift.py:255-300 |
+| 无 note_sku_links 或无有效显式关联 | NOT_JUDGABLE | sku_lift.py |
 | 产出行的 matched_sales_days 全为 0 | NOT_JUDGABLE | sku_lift.py:60-65 |
 
 注意：由于 has_controls 始终为 False，STRONG 和 MEDIUM 在本任务中不可达。
@@ -66,7 +64,7 @@
 - Finding:
   - title: "笔记锚定的 SKU 销量响应窗口"
   - evidence_strength: WEAK (最高可达)
-  - caveats: 始终包含 "观测到的销量变化只是笔记关联销售窗口的描述性结果，不能证明因果。"；候选兜底时额外附加 "缺少显式 note_sku_links 表，笔记到 SKU 的匹配使用首个 SKU 候选兜底，归因较弱。"
+  - caveats: 始终包含 "观测到的销量变化只是笔记关联销售窗口的描述性结果，不能证明因果。"
   - recommended_action: "先把这些结果当作弱方向信号；如果要做更强归因，需要补充显式 note-SKU 关联或留出对照逻辑。"
 
 ## Sample output section
@@ -86,13 +84,12 @@
 关键数字：
 - `note_sku_links`: 3
 - `windows`: 12
-- `link_source`: candidate_first_sku
+- `link_source`: note_sku_links
 - `first_d8_14_post_units`: 18.0
 - `first_d8_14_absolute_lift`: 11.0
 
 注意事项：
 - 观测到的销量变化只是笔记关联销售窗口的描述性结果，不能证明因果。
-- 缺少显式 note_sku_links 表，笔记到 SKU 的匹配使用首个 SKU 候选兜底，归因较弱。
 
 | note_id | sku_id | publish_time | window | pre_units | post_units | absolute_lift | relative_lift |
 |---------|--------|--------------|--------|-----------|------------|---------------|---------------|
@@ -107,7 +104,7 @@
 - daily_sku_sales 表完全缺失 -> 返回 NOT_JUDGABLE，recommended_action 提示先导入该表 -> 补充含 date/sku_id/units 的日销售数据
 - daily_sku_sales 存在但缺字段 (如缺 units) -> 返回 NOT_JUDGABLE 并列出缺失字段名 -> 检查导出配置是否包含商品数量列
 - note_sku_links 存在但列不全 -> 返回 NOT_JUDGABLE -> 确认导入时 note_id/sku_id 列名正确
-- 候选兜底路径中 notes 缺少 publish_time -> 返回 NOT_JUDGABLE -> 确认笔记导出包含发布时间
+- notes 缺少 publish_time -> 返回 NOT_JUDGABLE -> 确认笔记导出包含发布时间
 - 窗口计算产出行但 matched_sales_days 全为 0（销售日期范围与笔记发布日期无交集）-> 返回 NOT_JUDGABLE -> 补齐观察窗口覆盖期间的日销售记录
 - pre_units == 0 -> relative_lift 为 NULL，absolute_lift 仍正常计算 -> 业务上可能意味着新品首发或数据缺失
 - units 含非数值 -> DuckDB CAST(units AS DOUBLE) 抛出错误，无 Python 端 NaN 防护 -> 确认源数据清洗
@@ -116,11 +113,11 @@
 
 - `tests/fixtures/orders.csv` — order_id, paid_time, sku_id, quantity, paid_amount (feeds derived daily_sku_sales)
 - `tests/fixtures/notes.csv` — note_id, publish_time, ... (provides publish_time anchor)
-- `tests/fixtures/skus.csv` — sku_id, product_id, sku_name, price, ... (enables candidate_first_sku fallback)
+- 手工 `note_sku_links.csv` — 至少包含 note_id/sku_id，或中文 `笔记ID/规格ID`
 
-Minimum viable fixture set for this task: orders.csv, notes.csv, skus.csv.
+Minimum viable fixture set for this task: orders.csv, notes.csv, note_sku_links.csv.
 
-注意：当前 fixture 集仅覆盖 candidate_first_sku 兜底路径；显式 note_sku_links 路径的覆盖在回归测试中通过 CREATE TABLE + INSERT 实现。
+回归测试使用显式 note_sku_links；无关联时必须降级，不再生成候选归因。
 
 ## Cross-links
 

@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "challenge_report.json",
+  "title": "challenge_report",
+  "description": "Runtime domain-challenge envelope. It reports claim-targeted issues and never edits the section.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["section_id", "issues", "recommendation"],
+  "properties": {
+    "section_id": {"type": "string", "minLength": 1},
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["claim_id", "severity", "reason"],
+        "properties": {
+          "claim_id": {"type": "string", "minLength": 1},
+          "severity": {"enum": ["blocker", "major", "note"]},
+          "reason": {"type": "string", "minLength": 1},
+          "suggested_resolution": {"type": ["string", "null"]}
+        }
+      }
+    },
+    "recommendation": {"enum": ["accept", "revise"]}
+  }
+}

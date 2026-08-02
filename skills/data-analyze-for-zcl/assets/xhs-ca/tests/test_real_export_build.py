@@ -74,3 +74,34 @@ def test_golden_full_export_has_empty_mapping_diagnostics(fixture_dir, tmp_path)
     count = con.execute("SELECT count(*) FROM mapping_diagnostics").fetchone()[0]
     con.close()
     assert count == 0  # every Required column maps on the golden happy path
+
+
+def test_build_persists_mapping_audit_and_quarantines_fuzzy_fields(tmp_path):
+    export = tmp_path / "refund_overview.csv"
+    export.write_text(
+        "统计时间,账号名称,载体,退款金额（支付时间）,refund_user,退款率（支付时间）,"
+        "发货前退款金额（支付时间）,发货后退款金额（支付时间）,退货退款金额（支付时间）\n"
+        "2026-06,店铺,全部,100,8,0.1,20,30,50\n",
+        encoding="utf-8",
+    )
+    db = tmp_path / "audit.duckdb"
+
+    build_database(db, [export])
+
+    con = duckdb.connect(str(db))
+    audit = con.execute(
+        "SELECT source_column, match_method, semantic_status, applied "
+        "FROM mapping_audit WHERE canonical_column = 'refund_users'"
+    ).fetchone()
+    diagnostic = con.execute(
+        "SELECT status, source_column, match_method, semantic_status "
+        "FROM mapping_diagnostics WHERE required_column = 'refund_users'"
+    ).fetchone()
+    con.close()
+    assert audit == ("refund_user", "fuzzy", "review_required", False)
+    assert diagnostic == (
+        "review_required",
+        "refund_user",
+        "fuzzy",
+        "review_required",
+    )

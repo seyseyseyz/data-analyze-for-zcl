@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "decision_brief.json",
+  "title": "decision_brief",
+  "description": "ID-only decision index compiled from adjudicated claims, actions and views.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "report_name",
+    "context_id",
+    "facts_hash",
+    "headline_claim_id",
+    "spine_claim_ids",
+    "kpi_fact_ids",
+    "levers",
+    "open_question_ids",
+    "data_gap_ids"
+  ],
+  "properties": {
+    "report_name": {"type": "string", "minLength": 1},
+    "context_id": {"type": "string", "minLength": 1},
+    "facts_hash": {"type": "string", "minLength": 1},
+    "headline_claim_id": {"type": "string", "minLength": 1},
+    "spine_claim_ids": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string"}
+    },
+    "kpi_fact_ids": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string"}
+    },
+    "levers": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "lever_id",
+          "problem_claim_id",
+          "supporting_claim_ids",
+          "action_ids",
+          "view_ids",
+          "table_ids"
+        ],
+        "properties": {
+          "lever_id": {"type": "string", "minLength": 1},
+          "problem_claim_id": {"type": "string", "minLength": 1},
+          "supporting_claim_ids": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {"type": "string"}
+          },
+          "action_ids": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {"type": "string"}
+          },
+          "view_ids": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {"type": "string"}
+          },
+          "table_ids": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {"type": "string"}
+          }
+        }
+      }
+    },
+    "open_question_ids": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string"}
+    },
+    "data_gap_ids": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string"}
+    }
+  }
+}

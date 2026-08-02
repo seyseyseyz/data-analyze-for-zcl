@@ -417,11 +417,12 @@ def test_demand_funnel_draws_two_stage_funnel_and_trend():
         ]},
     )
     html = charts.for_result(result)
-    assert "加购人数" in html and "成交人数" in html
-    assert "加购→成交转化率趋势" in html
+    assert "日均加购人数（每日去重）" in html
+    assert "日均支付买家数（每日去重）" in html
+    assert "逐日加购→支付比趋势" in html
     assert "<path" in html                 # cart_to_pay trend draws a line
     assert "置信度 低" in html
-    assert "n=300" in html                 # total add_to_cart_users, not a row count
+    assert "n=3" in html                   # observed days, not summed daily UV counts
 
 
 def test_demand_funnel_empty_when_no_trend_table():
@@ -439,9 +440,25 @@ def test_demand_funnel_survives_null_cart_to_pay():
         ]},
     )
     html = charts.for_result(result)
-    assert "加购人数" in html               # funnel still renders
+    assert "日均加购人数（每日去重）" in html  # funnel still renders
     assert "数据不足，无法判断" in html      # the trend panel degrades honestly
 
+
+def test_demand_funnel_averages_each_stage_over_non_missing_days():
+    result = _result(
+        "demand_funnel_diagnosis",
+        EvidenceStrength.MEDIUM,
+        {"demand_funnel_trend": [
+            {"date": "2026-04-01", "add_to_cart_users": 100.0, "paid_buyers": None,
+             "cart_to_pay": None},
+            {"date": "2026-04-02", "add_to_cart_users": None, "paid_buyers": 10.0,
+             "cart_to_pay": None},
+        ]},
+    )
+    html = charts.for_result(result)
+    assert 'class="ca-num">100</text>' in html
+    assert 'class="ca-num">10</text>' in html
+    assert "n=加购1/支付1/配对0" in html
 
 def test_core_business_draws_gmv_trend_with_changepoint():
     result = _result(
@@ -597,10 +614,11 @@ def test_hbar_value_label_stays_within_bounds_for_large_numbers():
         ]},
     )
     html = charts.for_result(result)
-    # GMV renders as whole yuan (shared format_money) — the wide 千分位 label is
-    # 839,336, and the layout must still keep its right edge within the viewBox.
-    assert "839,336" in html
+    # GMV ≥1万 renders in 万-notation (shared format_money): 839,335.64 → 83.9万, and
+    # the layout must still keep even a full-length bar's label within the viewBox.
+    assert "83.9万" in html
     assert "839,335.64" not in html
+    assert "839,336" not in html
     assert _num_label_right_edges(html), "expected value labels to be present"
     assert max(_num_label_right_edges(html)) <= 640 + 1   # within the 640-wide viewBox
 

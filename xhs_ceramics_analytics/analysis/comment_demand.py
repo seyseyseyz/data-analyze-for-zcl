@@ -26,12 +26,37 @@ _KEYWORDS: dict[str, tuple[str, ...]] = {
 # high-volume theme that is mostly complaints (色差/磕碰) reads differently from a
 # high-volume demand (容量/链接). Deliberately small, high-precision seed tables.
 _POS_LEXICON = (
-    "好", "喜欢", "精致", "超值", "满意", "好看", "质量好", "回购", "推荐",
-    "惊艳", "值得", "细腻", "有质感", "实用",
+    "好",
+    "喜欢",
+    "精致",
+    "超值",
+    "满意",
+    "好看",
+    "质量好",
+    "回购",
+    "推荐",
+    "惊艳",
+    "值得",
+    "细腻",
+    "有质感",
+    "实用",
 )
 _NEG_LEXICON = (
-    "色差", "磕碰", "破损", "失望", "划痕", "瑕疵", "掉色", "太小", "有裂",
-    "开裂", "难看", "翻车", "退货", "货不对板", "味道",
+    "色差",
+    "磕碰",
+    "破损",
+    "失望",
+    "划痕",
+    "瑕疵",
+    "掉色",
+    "太小",
+    "有裂",
+    "开裂",
+    "难看",
+    "翻车",
+    "退货",
+    "货不对板",
+    "味道",
 )
 
 
@@ -39,6 +64,7 @@ def run(db_path: Path) -> AnalysisResult:
     con = connect(db_path)
     try:
         comments = _fetch_comments(con) if _table_exists(con, "comments") else []
+        comments = _attach_comment_context(con, comments)
     finally:
         con.close()
 
@@ -49,7 +75,8 @@ def run(db_path: Path) -> AnalysisResult:
 
     limitations = [] if comments else ["没有可用于需求挖掘的评论数据。"]
     caveats = [
-        "评论意图基于关键词分组，调整商品文案前需要人工复核。"
+        "评论意图基于关键词分组，调整商品文案前需要人工复核。",
+        "笔记类型、场景和关联商品仅来自显式 note_id 连接；未提供 note-SKU 关联时不推断 SKU。",
     ]
     if total_comments < 10:
         caveats.append("评论量较小，需求占比只能作为方向性参考。")
@@ -58,8 +85,7 @@ def run(db_path: Path) -> AnalysisResult:
         Finding(
             title="评论需求分组已提取",
             conclusion=(
-                f"已将 {total_comments} 条评论归入 "
-                f"{len(detected_groups)} 个有观测数据的需求分组。"
+                f"已将 {total_comments} 条评论归入 {len(detected_groups)} 个有观测数据的需求分组。"
             ),
             evidence_strength=score_evidence(
                 total_comments, has_controls=False, confounder_count=1
@@ -71,9 +97,7 @@ def run(db_path: Path) -> AnalysisResult:
                 "top_group": top_group,
             },
             caveats=caveats,
-            recommended_action=(
-                "用排名靠前的需求分组更新笔记回复、商品详情文案和下周 FAQ 内容。"
-            )
+            recommended_action=("用排名靠前的需求分组更新笔记回复、商品详情文案和下周 FAQ 内容。")
             if total_comments
             else "先收集更多评论，再调整需求假设。",
         )
@@ -225,7 +249,14 @@ def _fetch_comments(con) -> list[dict[str, str | None]]:
 
 def _summarize_comments(comments: list[dict[str, str | None]]) -> list[dict[str, object]]:
     grouped = {
-        group: {"comments": 0, "note_ids": set(), "examples": []}
+        group: {
+            "comments": 0,
+            "note_ids": set(),
+            "examples": [],
+            "note_types": set(),
+            "scene_hints": set(),
+            "related_products": set(),
+        }
         for group in _GROUPS
     }
     for comment in comments:
@@ -235,6 +266,9 @@ def _summarize_comments(comments: list[dict[str, str | None]]) -> list[dict[str,
         bucket["comments"] += 1
         if comment["note_id"] is not None:
             bucket["note_ids"].add(comment["note_id"])
+        bucket["note_types"].update(comment.get("note_types") or [])
+        bucket["scene_hints"].update(comment.get("scene_hints") or [])
+        bucket["related_products"].update(comment.get("related_products") or [])
         if len(bucket["examples"]) < 3:
             bucket["examples"].append(text)
 
@@ -249,9 +283,63 @@ def _summarize_comments(comments: list[dict[str, str | None]]) -> list[dict[str,
                 "notes": len(bucket["note_ids"]),
                 "comment_share": round(bucket["comments"] / total, 4) if total else 0.0,
                 "example_comments": list(bucket["examples"]),
+                "note_types": sorted(bucket["note_types"]),
+                "scene_hints": sorted(bucket["scene_hints"]),
+                "related_products": [
+                    {"product_id": product_id, "product_name": product_name}
+                    for product_id, product_name in sorted(bucket["related_products"])
+                ],
             }
         )
     return sorted(rows, key=lambda row: (-int(row["comments"]), str(row["demand_group"])))
+
+
+def _attach_comment_context(con, comments: list[dict]) -> list[dict]:
+    note_context: dict[str, dict[str, set]] = {}
+    if _table_exists(con, "notes") and "note_id" in _table_columns(con, "notes"):
+        cols = _table_columns(con, "notes")
+        result = con.sql("SELECT * FROM notes")
+        names = result.columns
+        for raw in result.fetchall():
+            row = dict(zip(names, raw, strict=True))
+            if row.get("note_id") is None:
+                continue
+            context = note_context.setdefault(
+                str(row["note_id"]),
+                {"note_types": set(), "scene_hints": set(), "related_products": set()},
+            )
+            if "note_type" in cols and row.get("note_type") is not None:
+                context["note_types"].add(str(row["note_type"]))
+            product_id = row.get("related_product_id") if "related_product_id" in cols else None
+            product_name = (
+                row.get("related_product_name") if "related_product_name" in cols else None
+            )
+            if product_id is not None or product_name is not None:
+                context["related_products"].add(
+                    (str(product_id or ""), str(product_name or product_id or ""))
+                )
+
+    if _table_exists(con, "content_features") and {"note_id", "scene_hint"} <= _table_columns(
+        con, "content_features"
+    ):
+        for note_id, scene_hint in con.sql(
+            "SELECT note_id, scene_hint FROM content_features WHERE note_id IS NOT NULL"
+        ).fetchall():
+            context = note_context.setdefault(
+                str(note_id),
+                {"note_types": set(), "scene_hints": set(), "related_products": set()},
+            )
+            if scene_hint is not None:
+                context["scene_hints"].add(str(scene_hint))
+
+    enriched = []
+    for comment in comments:
+        row = dict(comment)
+        context = note_context.get(str(comment.get("note_id")), {})
+        for key in ("note_types", "scene_hints", "related_products"):
+            row[key] = sorted(context.get(key, set()))
+        enriched.append(row)
+    return enriched
 
 
 def _classify_comment(text: str) -> str:

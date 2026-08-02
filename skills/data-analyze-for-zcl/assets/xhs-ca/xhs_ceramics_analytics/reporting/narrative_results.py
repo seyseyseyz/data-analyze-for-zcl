@@ -10,33 +10,40 @@ dict 且恒空(``build_factbook`` 从不带 ``domain_slices=`` 调用),拿它当
 Finding 的 ``key_numbers`` 逐条摊平成 facts(不造数),结论拼成 ``reading.conclusion``。
 这样 L3 叙事路径从真实、可溯源的切片起步,而不是靠手搓文件。纯函数,never-raise。
 """
+
 from __future__ import annotations
 
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
+from xhs_ceramics_analytics.contracts.platform_catalog import (
+    build_platform_semantic_context,
+)
 from xhs_ceramics_analytics.reporting.domains import group_by_domain
-from xhs_ceramics_analytics.reporting.facts_export import numeric_facts_from_finding
+from xhs_ceramics_analytics.reporting.facts_export import (
+    CANONICAL_VERSION,
+    FactBook,
+    build_factbook,
+    fact_id_map_for_result,
+    facts_hash,
+    iter_result_finding_refs,
+    metric_mapping_to_dict,
+)
 
 
-def _iter_findings(result: AnalysisResult) -> list[Finding]:
-    """域内一条 AnalysisResult 的全部 Finding:顶层 + 子节。"""
-    findings = list(result.findings)
-    for sub in result.subsections:
-        findings.extend(sub.findings)
-    return findings
-
-
-def _finding_facts(task_id: str, finding: Finding) -> list[dict[str, object]]:
+def _finding_facts(
+    task_id: str,
+    finding_path: str,
+    finding: Finding,
+    factbook: FactBook,
+    fact_ids: dict[tuple[str, str], str],
+) -> list[dict[str, object]]:
     """把一条 Finding 的 key_numbers 摊平成 facts,逐条带证据档与来源结论标题。
 
-    NUMERIC 的 key_number 额外带上 FactBook 里逐字节相同的 ``fact_id`` /
-    ``metric_key`` / ``rendered`` —— 直接复用 :func:`numeric_facts_from_finding`
-    (facts_export 里 fact_id 的唯一真源),这样 fan agent 的 claim 用 ``{tN}`` 绑上
-    ``fact_id`` 后能在 gate 里被 facts.json 解析。非数值 key_number(如 SKU 名称)不是
-    FactBook 里的 fact,故不带 ``fact_id``,以免 claim 绑到一个不存在的键上。
+    NUMERIC 的 key_number 额外带上同一 FactBook 中的 ``fact_id`` / ``metric_key`` /
+    ``metric_id`` / ``rendered``。这样 fan agent 的 claim 用 ``{tN}`` 绑上 ``fact_id``
+    后能在 gate 里被 facts.json 解析。非数值 key_number(如 SKU 名称)不是 FactBook
+    里的 fact,故不带 ``fact_id``,以免 claim 绑到一个不存在的键上。
     """
     tier = str(finding.evidence_strength)
-    numeric = numeric_facts_from_finding(task_id, finding)
-    by_metric = {fact.metric_key: fact for fact in numeric.values()}
     out: list[dict[str, object]] = []
     for metric, value in finding.key_numbers.items():
         fact: dict[str, object] = {
@@ -45,10 +52,12 @@ def _finding_facts(task_id: str, finding: Finding) -> list[dict[str, object]]:
             "evidence": tier,
             "finding": finding.title,
         }
-        canonical = by_metric.get(metric)
+        canonical_id = fact_ids.get((finding_path, str(metric)))
+        canonical = factbook.facts.get(canonical_id) if canonical_id is not None else None
         if canonical is not None:  # 数值 fact —— 带上可被 gate 解析的 fact_id
             fact["fact_id"] = canonical.fact_id
             fact["metric_key"] = canonical.metric_key
+            fact["metric_id"] = canonical.metric_id
             fact["rendered"] = canonical.rendered
         out.append(fact)
     return out
@@ -94,9 +103,7 @@ def _normalize_blocked(blocked_modules) -> list[dict[str, str]]:
     out: list[dict[str, str]] = []
     for item in blocked_modules:
         if isinstance(item, dict):
-            out.append(
-                {"slug": str(item.get("slug", "")), "reason": str(item.get("reason", ""))}
-            )
+            out.append({"slug": str(item.get("slug", "")), "reason": str(item.get("reason", ""))})
         elif isinstance(item, (tuple, list)) and len(item) == 2:
             slug, reason = item
             out.append({"slug": str(slug), "reason": str(reason)})
@@ -109,8 +116,9 @@ def build_narrative_results(
     results: list[AnalysisResult],
     *,
     blocked_modules: tuple[str, ...] | list[str] = (),
+    factbook: FactBook | None = None,
 ) -> dict[str, object]:
-    """构造叙事控制器的 results.json 文档。Never-raise。
+    """从同一 FactBook 快照构造叙事控制器的 results.json 文档。
 
     返回 ``{"domain_slices": [{"title", "facts", "reading"}], "blocked_modules":
     [{"slug", "reason"}], "result_tables": {表名: 行列表}}``。切片顺序即
@@ -121,17 +129,30 @@ def build_narrative_results(
     :func:`_collect_result_tables`),作为策展视图引擎填数、gate 核对数值的唯一源 —— 没有
     它,任何 agent 产出的 curated view 都会因「表不在 result.tables」被 gate 判非法。
     """
+    factbook = factbook or build_factbook(results)
     slices: list[dict[str, object]] = []
     for group in group_by_domain(results):
         # task_id 挂在 result 上而非 finding 上,所以要保留 (task_id, finding) 配对,
         # 才能把 fact_id 的域前缀正确传进 _finding_facts。
-        pairs = [
-            (result.task_id, finding)
-            for result in group.results
-            for finding in _iter_findings(result)
+        pairs = []
+        for result in group.results:
+            fact_ids = fact_id_map_for_result(result)
+            pairs.extend(
+                (result.task_id, ref.path, ref.finding, fact_ids)
+                for ref in iter_result_finding_refs(result)
+            )
+        findings = [finding for _task_id, _path, finding, _fact_ids in pairs]
+        facts = [
+            fact
+            for task_id, finding_path, finding, fact_ids in pairs
+            for fact in _finding_facts(
+                task_id,
+                finding_path,
+                finding,
+                factbook,
+                fact_ids,
+            )
         ]
-        findings = [finding for _task_id, finding in pairs]
-        facts = [fact for task_id, finding in pairs for fact in _finding_facts(task_id, finding)]
         slices.append(
             {
                 "title": group.title,
@@ -140,6 +161,11 @@ def build_narrative_results(
             }
         )
     return {
+        "canonical_version": CANONICAL_VERSION,
+        "facts_hash": facts_hash(factbook),
+        "registry_hash": factbook.metric_mapping.registry_hash,
+        "metric_mapping": metric_mapping_to_dict(factbook.metric_mapping),
+        "platform_semantics": build_platform_semantic_context(),
         "domain_slices": slices,
         "blocked_modules": _normalize_blocked(blocked_modules),
         "result_tables": _collect_result_tables(results),

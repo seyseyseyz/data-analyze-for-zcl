@@ -55,10 +55,45 @@ def _bundle(claims, **kw):
     return b
 
 
+def _action_card(**overrides):
+    card = {
+        "action_id": "a0",
+        "action_family": "商品优化",
+        "title": "优先复盘支付金额",
+        "owner_role": "店铺负责人",
+        "steps": ["围绕已验证的问题安排复盘"],
+        "primary_fact_id": "m.gmv",
+        "guardrail_fact_id": "m.aov",
+        "stop_rule": "客单价继续低于 {t0} 时停止扩量",
+        "license": "pilot",
+        "supporting_claim_ids": ["c0"],
+        "number_tokens": [
+            {
+                "token_id": "t0",
+                "fact_id": "m.aov",
+                "expected_metric_key": "aov",
+                "direction": "down",
+            }
+        ],
+    }
+    card.update(overrides)
+    return card
+
+
 def test_clean_bundle_passes():
     r = run_gate(_bundle([_claim()]), _facts())
     assert r.status == "PASS"
     assert r.hard_failures == []
+
+
+def test_bundle_from_another_fact_and_registry_snapshot_hard_fails():
+    bundle = _bundle([_claim()])
+    bundle["facts_hash"] = "stale-facts-and-registry"
+
+    result = run_gate(bundle, _facts())
+
+    assert result.status == "FAIL"
+    assert any(failure["code"] == "FACTS_SNAPSHOT_MISMATCH" for failure in result.hard_failures)
 
 
 def test_missing_fact_hard_fails():
@@ -99,6 +134,38 @@ def test_first_screen_action_with_benign_count_passes():
     b["first_screen"]["actions"] = ["围绕同一个 SKU 连续发 2 到 3 条内容，只改一个变量。"]
     r = run_gate(b, _facts())
     assert r.status == "PASS"
+
+
+def test_grounded_action_card_passes():
+    result = run_gate(_bundle([_claim()], action_cards=[_action_card()]), _facts())
+
+    assert result.status == "PASS"
+
+
+def test_rendered_grounded_action_card_still_passes_gate():
+    from xhs_ceramics_analytics.reporting.narrative_render import render_draft
+
+    drafted = render_draft(_bundle([_claim()], action_cards=[_action_card()]), _facts())
+    result = run_gate(drafted, _facts())
+
+    assert result.status == "PASS"
+
+
+def test_action_card_rejects_unknown_references_and_unbound_numbers():
+    card = _action_card(
+        primary_fact_id="missing.fact",
+        supporting_claim_ids=["missing.claim"],
+        stop_rule="转化率低于 5% 时停止扩量",
+        number_tokens=[],
+    )
+
+    result = run_gate(_bundle([_claim()], action_cards=[card]), _facts())
+    codes = {failure["code"] for failure in result.hard_failures}
+
+    assert result.status == "FAIL"
+    assert "ACTION_PRIMARY_FACT_MISSING" in codes
+    assert "ACTION_SUPPORTS_UNKNOWN_CLAIM" in codes
+    assert "MAGNITUDE_UNBOUND" in codes
 
 
 def test_nonexistent_slice_hard_fails():

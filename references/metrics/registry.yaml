@@ -1,0 +1,963 @@
+# Metric Ontology — Phase 1 validated registry
+# Source of truth for report-facing metric semantics. Loader: contracts/metrics.py.
+# Runtime consumption validates exact fact bindings and supplies report-facing semantics;
+# calculations and source coverage remain producer-owned.
+# Rules:
+# - metric_id is stable and global
+# - display_name is the only reader-facing name
+# - legacy_keys map today's module.key_numbers during migration
+# - proxy:true forbids financial wording (净利率/利润率)
+# - additive:false metrics must not be summed across peers without a declared composition
+# - daily-distinct users stay at shop_day grain; window outputs must declare person-days,
+#   daily means, or means of daily ratios explicitly
+
+version: 1
+runtime_consumed: true
+runtime_mode: observe
+runtime_scopes: [fact_annotation]
+updated: 2026-08-01
+
+legacy_contracts:
+  account_baseline.active_days: "count|count|note|none"
+  account_baseline.posts: "count|count|note|none"
+  audience_structure_diagnosis.repeat_conversion_premium: "percent|user_count|audience|none"
+  audience_structure_diagnosis.repeat_gmv_share: "percent|amount|audience|none"
+  channel_structure_diagnosis.card_gmv: "cny|amount|carrier|none"
+  channel_structure_diagnosis.card_refund_rate: "percent|order_count|carrier|none"
+  channel_structure_diagnosis.note_gmv: "cny|amount|carrier|none"
+  channel_structure_diagnosis.note_refund_rate: "percent|order_count|carrier|none"
+  core_business_diagnosis.avg_daily_aov: "cny|amount|shop_window|mean_of_daily_ratios"
+  core_business_diagnosis.avg_daily_paid_buyers: "count|user_count|shop_window|mean_daily"
+  core_business_diagnosis.avg_daily_pay_conversion: "percent|dimensionless|shop_window|mean_of_daily_ratios"
+  core_business_diagnosis.avg_daily_product_visitors: "count|user_count|shop_window|mean_daily"
+  core_business_diagnosis.click_pay_rate: "percent|user_count|shop_window|none"
+  core_business_diagnosis.paid_buyer_days: "person_day|user_count|shop_window|sum_as_person_days"
+  core_business_diagnosis.product_visitor_days: "person_day|user_count|shop_window|sum_as_person_days"
+  core_business_diagnosis.total_gmv: "cny|amount|shop_day_sum|none"
+  core_business_diagnosis.total_paid_orders: "count|order_count|shop_day_sum|none"
+  core_business_diagnosis.visit_click_rate: "percent|user_count|shop_window|none"
+  core_business_diagnosis.visit_pay_rate: "percent|user_count|shop_window|none"
+  demand_funnel_diagnosis.add_to_cart_observed_days: "count|count|shop_window|none"
+  demand_funnel_diagnosis.add_to_cart_user_days: "person_day|user_count|shop_window|sum_as_person_days"
+  demand_funnel_diagnosis.avg_daily_add_to_cart_users: "count|user_count|shop_window|mean_daily"
+  demand_funnel_diagnosis.avg_daily_cart_to_pay: "percent|dimensionless|shop_window|mean_of_daily_ratios"
+  demand_funnel_diagnosis.avg_daily_new_wishlist_users: "count|user_count|shop_window|mean_daily"
+  demand_funnel_diagnosis.avg_daily_paid_buyers: "count|user_count|shop_window|mean_daily"
+  demand_funnel_diagnosis.avg_daily_wishlist_to_cart: "percent|dimensionless|shop_window|mean_of_daily_ratios"
+  demand_funnel_diagnosis.new_wishlist_user_days: "person_day|user_count|shop_window|sum_as_person_days"
+  demand_funnel_diagnosis.paid_buyer_days: "person_day|user_count|shop_window|sum_as_person_days"
+  demand_funnel_diagnosis.paid_buyer_observed_days: "count|count|shop_window|none"
+  demand_funnel_diagnosis.paired_ratio_observed_days: "count|count|shop_window|none"
+  note_commercial_diagnosis.converting_share: "percent|count|note|none"
+  note_commercial_diagnosis.direct_note_gmv: "cny|amount|carrier|none"
+  note_commercial_diagnosis.gmv_total: "cny|amount|carrier|none"
+  note_commercial_diagnosis.top_decile_gmv_share: "percent|amount|note|none"
+  refund_root_cause_diagnosis.baseline_refund_rate: "percent|order_count|shop_day_sum|none"
+  refund_root_cause_diagnosis.post_ship_rate: "percent|order_count|shop_day_sum|none"
+  refund_root_cause_diagnosis.pre_ship_rate: "percent|order_count|shop_day_sum|none"
+  refund_structure_diagnosis.overall_refund_rate: "percent|amount|shop_day_sum|none"
+  refund_structure_diagnosis.total_refund_amount: "cny|amount|shop_day_sum|none"
+  reshoot_repost_candidates.candidate_notes: "count|count|note|none"
+  search_efficiency_diagnosis.leak_count: "count|count|search_term|none"
+  search_efficiency_diagnosis.opportunity_count: "count|count|search_term|none"
+  search_efficiency_diagnosis.total_impressions: "count|impression|search_term|none"
+  sku_structure_diagnosis.baseline_refund_rate: "percent|order_count|shop_day_sum|none"
+  sku_structure_diagnosis.gmv_total: "cny|amount|shop_day_sum|none"
+  sku_structure_diagnosis.high_refund_sku_count: "count|count|sku|none"
+  sku_structure_diagnosis.overall_cart_to_pay: "percent|composite_proxy|sku|none"
+  sku_structure_diagnosis.overall_refund_rate: "percent|order_count|shop_day_sum|none"
+  sku_structure_diagnosis.sweet_net_margin: "percent|composite_proxy|price_band|none"
+  sku_structure_diagnosis.top_decile_gmv_share: "percent|amount|sku|none"
+  sku_structure_diagnosis.top_gmv_band_share: "percent|amount|price_band|none"
+  sku_structure_diagnosis.top_gmv_category_l2_share: "percent|amount|category_l2|none"
+
+enums:
+  unit: [percent, cny, count, person_day, index, pp, text]
+  grain:
+    - shop_day
+    - shop_day_sum
+    - shop_month
+    - shop_window
+    - carrier
+    - sku
+    - note
+    - search_term
+    - audience
+    - price_band
+    - category_l2
+  window_role: [analysis, comparison, baseline, trailing]
+  caliber:
+    - amount
+    - order_count
+    - user_count
+    - impression
+    - composite_proxy
+    - dimensionless
+    - count
+  source_grain: [shop_day]
+  aggregation: [direct, sum_as_person_days, mean_daily, mean_of_daily_ratios]
+  distinct_scope: [day]
+
+metrics:
+  # ── Shop snapshot ───────────────────────────────────────────
+  - metric_id: shop.gmv
+    display_name: 支付金额
+    unit: cny
+    formula: SUM(gmv)
+    grain: shop_day_sum
+    window_role: analysis
+    caliber: amount
+    additive: true
+    proxy: false
+    owners_modules: [core_business_diagnosis, sku_structure_diagnosis]
+    legacy_keys: [core_business_diagnosis.total_gmv, sku_structure_diagnosis.gmv_total]
+
+  - metric_id: shop.paid_buyers
+    display_name: 每日支付买家数（当日去重）
+    unit: count
+    formula: "DIRECT(business_overview_daily.paid_buyers)"
+    source_grain: shop_day
+    grain: shop_day
+    aggregation: direct
+    distinct_scope: day
+    period_unique: false
+    window_role: analysis
+    caliber: user_count
+    additive: false
+    proxy: false
+    owners_modules: [core_business_diagnosis, demand_funnel_diagnosis]
+    legacy_keys: []
+    notes: "仅表示单日去重人数；跨日不得相加后称为期间唯一买家。"
+
+  - metric_id: shop.paid_buyer_days
+    display_name: 支付买家人次（逐日去重人次）
+    unit: person_day
+    formula: "SUM_AS_PERSON_DAYS(shop.paid_buyers)"
+    source_grain: shop_day
+    grain: shop_window
+    aggregation: sum_as_person_days
+    distinct_scope: day
+    period_unique: false
+    window_role: analysis
+    caliber: user_count
+    additive: false
+    proxy: false
+    owners_modules: [core_business_diagnosis, demand_funnel_diagnosis]
+    legacy_keys: [core_business_diagnosis.paid_buyer_days, demand_funnel_diagnosis.paid_buyer_days]
+    notes: "逐日去重人数之和，只能称人次；不是观察期唯一买家数。"
+
+  - metric_id: shop.avg_daily_paid_buyers
+    display_name: 日均支付买家数
+    unit: count
+    formula: "MEAN_NON_NULL_BY_DAY(shop.paid_buyers)"
+    source_grain: shop_day
+    grain: shop_window
+    aggregation: mean_daily
+    distinct_scope: day
+    period_unique: false
+    window_role: analysis
+    caliber: user_count
+    additive: false
+    proxy: false
+    owners_modules: [core_business_diagnosis, demand_funnel_diagnosis]
+    legacy_keys: [core_business_diagnosis.avg_daily_paid_buyers, demand_funnel_diagnosis.avg_daily_paid_buyers]
+
+  - metric_id: shop.paid_orders
+    display_name: 支付订单数
+    unit: count
+    formula: SUM(paid_orders)
+    grain: shop_day_sum
+    window_role: analysis
+    caliber: order_count
+    additive: true
+    proxy: false
+    owners_modules: [core_business_diagnosis]
+    legacy_keys: [core_business_diagnosis.total_paid_orders]
+
+  - metric_id: shop.aov
+    display_name: 每日客单价
+    unit: cny
+    formula: "DIRECT(business_overview_daily.aov)"
+    source_grain: shop_day
+    grain: shop_day
+    aggregation: direct
+    window_role: analysis
+    caliber: amount
+    additive: false
+    proxy: false
+    owners_modules: [core_business_diagnosis]
+    legacy_keys: []
+
+  - metric_id: shop.avg_daily_aov
+    display_name: 日均客单价
+    unit: cny
+    formula: "MEAN_NON_NULL_BY_DAY(aov); FALLBACK_IF_NO_VALID_AOV(MEAN_BY_VALID_DAY(gmv / NULLIF(paid_buyers, 0)))"
+    source_grain: shop_day
+    grain: shop_window
+    aggregation: mean_of_daily_ratios
+    distinct_scope: day
+    period_unique: false
+    window_role: analysis
+    numerator: gmv
+    denominator: paid_buyers
+    caliber: amount
+    additive: false
+    proxy: false
+    owners_modules: [core_business_diagnosis]
+    legacy_keys: [core_business_diagnosis.avg_daily_aov]
+
+  - metric_id: shop.product_visitors
+    display_name: 每日商品访客数（当日去重）
+    unit: count
+    formula: "DIRECT(business_overview_daily.product_visitors)"
+    source_grain: shop_day
+    grain: shop_day
+    aggregation: direct
+    distinct_scope: day
+    period_unique: false
+    window_role: analysis
+    caliber: user_count
+    additive: false
+    proxy: false
+    owners_modules: [core_business_diagnosis]
+    legacy_keys: []
+    notes: "仅表示单日去重人数；平台 metric 14 尚未形成可执行 source binding。"
+
+  - metric_id: shop.product_visitor_days
+    display_name: 商品访客人次（逐日去重人次）
+    unit: person_day
+    formula: "SUM_AS_PERSON_DAYS(shop.product_visitors)"
+    source_grain: shop_day
+    grain: shop_window
+    aggregation: sum_as_person_days
+    distinct_scope: day
+    period_unique: false
+    window_role: analysis
+    caliber: user_count
+    additive: false
+    proxy: false
+    owners_modules: [core_business_diagnosis]
+    legacy_keys: [core_business_diagnosis.product_visitor_days]
+    notes: "逐日去重人数之和，只能称人次；不是观察期唯一访客数。"
+
+  - metric_id: shop.avg_daily_product_visitors
+    display_name: 日均商品访客数
+    unit: count
+    formula: "MEAN_NON_NULL_BY_DAY(shop.product_visitors)"
+    source_grain: shop_day
+    grain: shop_window
+    aggregation: mean_daily
+    distinct_scope: day
+    period_unique: false
+    window_role: analysis
+    caliber: user_count
+    additive: false
+    proxy: false
+    owners_modules: [core_business_diagnosis]
+    legacy_keys: [core_business_diagnosis.avg_daily_product_visitors]
+
+  - metric_id: shop.pay_conversion_uv
+    display_name: 每日支付转化率（UV）
+    unit: percent
+    formula: "DIRECT(business_overview_daily.pay_conversion_uv)"
+    source_grain: shop_day
+    grain: shop_day
+    aggregation: direct
+    distinct_scope: day
+    period_unique: false
+    window_role: analysis
+    numerator: paid_buyers
+    denominator: product_visitors
+    caliber: dimensionless
+    additive: false
+    proxy: false
+    owners_modules: [core_business_diagnosis]
+    legacy_keys: []
+
+  - metric_id: shop.avg_daily_pay_conversion_uv
+    display_name: 日均支付转化率（UV）
+    unit: percent
+    formula: "MEAN_NON_NULL_BY_DAY(BOUNDED_RATE(pay_conversion_uv)); FALLBACK_IF_NO_VALID_RATE(MEAN_BY_VALID_DAY(paid_buyers / NULLIF(product_visitors, 0)))"
+    source_grain: shop_day
+    grain: shop_window
+    aggregation: mean_of_daily_ratios
+    distinct_scope: day
+    period_unique: false
+    window_role: analysis
+    numerator: paid_buyers
+    denominator: product_visitors
+    caliber: dimensionless
+    additive: false
+    proxy: false
+    owners_modules: [core_business_diagnosis]
+    legacy_keys: [core_business_diagnosis.avg_daily_pay_conversion]
+
+  - metric_id: shop.cart_to_pay_user
+    display_name: 每日加购→支付比（非严格漏斗）
+    forbidden_aliases: [加购到支付, 加购转化, 加购支付率, 加购→成交比, 加购→支付转化（人数）]
+    unit: percent
+    formula: "DIRECT(paid_buyers / NULLIF(add_to_cart_users, 0))"
+    source_grain: shop_day
+    grain: shop_day
+    aggregation: direct
+    distinct_scope: day
+    period_unique: false
+    window_role: analysis
+    numerator: paid_buyers
+    denominator: add_to_cart_users
+    caliber: dimensionless
+    additive: false
+    proxy: false
+    owners_modules: [demand_funnel_diagnosis]
+    legacy_keys: []
+    notes: "用户可绕过加购直接支付，因此可能超过 100%；不得称严格漏斗转化率。"
+
+  - metric_id: shop.avg_daily_cart_to_pay_ratio
+    display_name: 日均加购→支付比（非严格漏斗）
+    forbidden_aliases: [日均加购转化率, 日均加购支付率]
+    unit: percent
+    formula: "MEAN_BY_VALID_DAY(paid_buyers / NULLIF(add_to_cart_users, 0))"
+    source_grain: shop_day
+    grain: shop_window
+    aggregation: mean_of_daily_ratios
+    distinct_scope: day
+    period_unique: false
+    window_role: analysis
+    numerator: paid_buyers
+    denominator: add_to_cart_users
+    caliber: dimensionless
+    additive: false
+    proxy: false
+    owners_modules: [demand_funnel_diagnosis]
+    legacy_keys: [demand_funnel_diagnosis.avg_daily_cart_to_pay]
+    notes: "只在同日加购人数与支付买家数均有效且加购人数大于 0 时计入均值。"
+
+  - metric_id: quality.add_to_cart_observed_days
+    display_name: 加购人数有效观察天数
+    unit: count
+    formula: COUNT_VALID_BY_DAY(add_to_cart_users)
+    grain: shop_window
+    window_role: analysis
+    caliber: count
+    additive: false
+    proxy: false
+    owners_modules: [demand_funnel_diagnosis]
+    legacy_keys: [demand_funnel_diagnosis.add_to_cart_observed_days]
+
+  - metric_id: quality.paid_buyer_observed_days
+    display_name: 支付买家人数有效观察天数
+    unit: count
+    formula: COUNT_VALID_BY_DAY(paid_buyers)
+    grain: shop_window
+    window_role: analysis
+    caliber: count
+    additive: false
+    proxy: false
+    owners_modules: [demand_funnel_diagnosis]
+    legacy_keys: [demand_funnel_diagnosis.paid_buyer_observed_days]
+
+  - metric_id: quality.paired_cart_to_pay_observed_days
+    display_name: 加购→支付比有效配对天数
+    unit: count
+    formula: "COUNT_BY_DAY(add_to_cart_users IS NOT NULL AND add_to_cart_users > 0 AND paid_buyers IS NOT NULL)"
+    grain: shop_window
+    window_role: analysis
+    caliber: count
+    additive: false
+    proxy: false
+    owners_modules: [demand_funnel_diagnosis]
+    legacy_keys: [demand_funnel_diagnosis.paired_ratio_observed_days]
+
+  - metric_id: sku.cart_to_pay_line
+    display_name: SKU 池加购→支付转化
+    forbidden_aliases: [加购到支付, 加购转化]
+    unit: percent
+    formula: sku-level cart/pay aggregation (see sku_structure)
+    grain: sku
+    window_role: analysis
+    caliber: composite_proxy
+    additive: false
+    proxy: false
+    owners_modules: [sku_structure_diagnosis]
+    legacy_keys: [sku_structure_diagnosis.overall_cart_to_pay]
+    notes: "仅商品结构章使用；与 shop.avg_daily_cart_to_pay_ratio 分母/集合不同。"
+
+  - metric_id: shop.add_to_cart_users
+    display_name: 每日加购人数（当日去重）
+    unit: count
+    formula: "DIRECT(business_overview_daily.add_to_cart_users)"
+    source_grain: shop_day
+    grain: shop_day
+    aggregation: direct
+    distinct_scope: day
+    period_unique: false
+    window_role: analysis
+    caliber: user_count
+    additive: false
+    proxy: false
+    owners_modules: [demand_funnel_diagnosis]
+    legacy_keys: []
+
+  - metric_id: shop.add_to_cart_user_days
+    display_name: 加购用户人次（逐日去重人次）
+    unit: person_day
+    formula: "SUM_AS_PERSON_DAYS(shop.add_to_cart_users)"
+    source_grain: shop_day
+    grain: shop_window
+    aggregation: sum_as_person_days
+    distinct_scope: day
+    period_unique: false
+    window_role: analysis
+    caliber: user_count
+    additive: false
+    proxy: false
+    owners_modules: [demand_funnel_diagnosis]
+    legacy_keys: [demand_funnel_diagnosis.add_to_cart_user_days]
+    notes: "逐日去重人数之和，只能称人次；不是观察期唯一加购用户数。"
+
+  - metric_id: shop.avg_daily_add_to_cart_users
+    display_name: 日均加购人数
+    unit: count
+    formula: "MEAN_NON_NULL_BY_DAY(shop.add_to_cart_users)"
+    source_grain: shop_day
+    grain: shop_window
+    aggregation: mean_daily
+    distinct_scope: day
+    period_unique: false
+    window_role: analysis
+    caliber: user_count
+    additive: false
+    proxy: false
+    owners_modules: [demand_funnel_diagnosis]
+    legacy_keys: [demand_funnel_diagnosis.avg_daily_add_to_cart_users]
+
+  - metric_id: shop.wishlist_new
+    display_name: 每日心愿单新增人数（当日去重）
+    unit: count
+    formula: 'DIRECT(business_overview_daily."新增加入心愿单人数")'
+    source_grain: shop_day
+    grain: shop_day
+    aggregation: direct
+    distinct_scope: day
+    period_unique: false
+    window_role: analysis
+    caliber: user_count
+    additive: false
+    proxy: false
+    owners_modules: [demand_funnel_diagnosis]
+    legacy_keys: []
+
+  - metric_id: shop.new_wishlist_user_days
+    display_name: 心愿单新增用户人次（逐日去重人次）
+    unit: person_day
+    formula: "SUM_AS_PERSON_DAYS(shop.wishlist_new)"
+    source_grain: shop_day
+    grain: shop_window
+    aggregation: sum_as_person_days
+    distinct_scope: day
+    period_unique: false
+    window_role: analysis
+    caliber: user_count
+    additive: false
+    proxy: false
+    owners_modules: [demand_funnel_diagnosis]
+    legacy_keys: [demand_funnel_diagnosis.new_wishlist_user_days]
+    notes: "逐日去重人数之和，只能称人次；不是观察期唯一心愿单用户数。"
+
+  - metric_id: shop.avg_daily_new_wishlist_users
+    display_name: 日均心愿单新增人数
+    unit: count
+    formula: "MEAN_NON_NULL_BY_DAY(shop.wishlist_new)"
+    source_grain: shop_day
+    grain: shop_window
+    aggregation: mean_daily
+    distinct_scope: day
+    period_unique: false
+    window_role: analysis
+    caliber: user_count
+    additive: false
+    proxy: false
+    owners_modules: [demand_funnel_diagnosis]
+    legacy_keys: [demand_funnel_diagnosis.avg_daily_new_wishlist_users]
+
+  - metric_id: shop.wishlist_to_cart_ratio
+    display_name: 每日心愿单相对加购比
+    unit: percent
+    formula: 'DIRECT(business_overview_daily."新增加入心愿单人数" / NULLIF(add_to_cart_users, 0))'
+    source_grain: shop_day
+    grain: shop_day
+    aggregation: direct
+    distinct_scope: day
+    period_unique: false
+    window_role: analysis
+    numerator: 新增加入心愿单人数
+    denominator: add_to_cart_users
+    caliber: dimensionless
+    additive: false
+    proxy: false
+    owners_modules: [demand_funnel_diagnosis]
+    legacy_keys: []
+
+  - metric_id: shop.avg_daily_wishlist_to_cart_ratio
+    display_name: 日均心愿单相对加购比
+    unit: percent
+    formula: 'MEAN_BY_VALID_DAY(business_overview_daily."新增加入心愿单人数" / NULLIF(add_to_cart_users, 0))'
+    source_grain: shop_day
+    grain: shop_window
+    aggregation: mean_of_daily_ratios
+    distinct_scope: day
+    period_unique: false
+    window_role: analysis
+    numerator: 新增加入心愿单人数
+    denominator: add_to_cart_users
+    caliber: dimensionless
+    additive: false
+    proxy: false
+    owners_modules: [demand_funnel_diagnosis]
+    legacy_keys: [demand_funnel_diagnosis.avg_daily_wishlist_to_cart]
+
+  # ── Shop funnel page ────────────────────────────────────────
+  - metric_id: shop.click_pay_rate
+    display_name: 点击支付率
+    unit: percent
+    formula: click_pay_rate
+    grain: shop_window
+    window_role: analysis
+    caliber: user_count
+    additive: false
+    proxy: false
+    owners_modules: [core_business_diagnosis]
+    legacy_keys: [core_business_diagnosis.click_pay_rate]
+
+  - metric_id: shop.visit_click_rate
+    display_name: 访问点击率
+    unit: percent
+    formula: visit_click_rate
+    grain: shop_window
+    window_role: analysis
+    caliber: user_count
+    additive: false
+    proxy: false
+    owners_modules: [core_business_diagnosis]
+    legacy_keys: [core_business_diagnosis.visit_click_rate]
+
+  - metric_id: shop.visit_pay_rate
+    display_name: 访问支付率
+    unit: percent
+    formula: visit_pay_rate
+    grain: shop_window
+    window_role: analysis
+    caliber: user_count
+    additive: false
+    proxy: false
+    owners_modules: [core_business_diagnosis]
+    legacy_keys: [core_business_diagnosis.visit_pay_rate]
+
+  # ── GMV bridge (comparison window required) ─────────────────
+  - metric_id: bridge.delta_gmv
+    display_name: GMV 变化额
+    unit: cny
+    formula: GMV(right) - GMV(left)
+    grain: shop_month
+    window_role: comparison
+    caliber: amount
+    additive: true
+    proxy: false
+    owners_modules: [core_business_diagnosis]
+    legacy_keys: []
+    notes: "必须绑定 comparison_window（如 2026-04 vs 2026-06）。"
+
+  - metric_id: bridge.contrib_traffic
+    display_name: 流量贡献（GMV 桥）
+    unit: cny
+    formula: LMDI traffic component
+    grain: shop_month
+    window_role: comparison
+    caliber: amount
+    additive: true
+    proxy: false
+    owners_modules: [core_business_diagnosis]
+    legacy_keys: []
+    notes: "composition/mechanism_hypothesis；action_license 上限 pilot。"
+
+  - metric_id: bridge.contrib_conversion
+    display_name: 转化贡献（GMV 桥）
+    unit: cny
+    formula: LMDI conversion component
+    grain: shop_month
+    window_role: comparison
+    caliber: amount
+    additive: true
+    proxy: false
+    owners_modules: [core_business_diagnosis]
+    legacy_keys: []
+
+  - metric_id: bridge.contrib_aov
+    display_name: 客单价贡献（GMV 桥）
+    unit: cny
+    formula: LMDI aov component
+    grain: shop_month
+    window_role: comparison
+    caliber: amount
+    additive: true
+    proxy: false
+    owners_modules: [core_business_diagnosis]
+    legacy_keys: []
+
+  # ── Carrier / channel ───────────────────────────────────────
+  - metric_id: carrier.card_gmv
+    display_name: 商品卡 GMV
+    unit: cny
+    formula: SUM(card_gmv)
+    grain: carrier
+    window_role: analysis
+    caliber: amount
+    additive: true
+    proxy: false
+    owners_modules: [channel_structure_diagnosis, core_business_diagnosis]
+    legacy_keys: [channel_structure_diagnosis.card_gmv]
+
+  - metric_id: carrier.note_gmv
+    display_name: 笔记 GMV
+    unit: cny
+    formula: SUM(note_gmv)
+    grain: carrier
+    window_role: analysis
+    caliber: amount
+    additive: true
+    proxy: false
+    owners_modules: [channel_structure_diagnosis, note_commercial_diagnosis]
+    legacy_keys: [channel_structure_diagnosis.note_gmv, note_commercial_diagnosis.direct_note_gmv, note_commercial_diagnosis.gmv_total]
+
+  - metric_id: carrier.card_gmv_share
+    display_name: 商品卡 GMV 占比
+    unit: percent
+    formula: card_gmv / (card_gmv + note_gmv)
+    grain: carrier
+    window_role: analysis
+    caliber: amount
+    additive: false
+    proxy: false
+    owners_modules: [channel_structure_diagnosis]
+    legacy_keys: []
+
+  - metric_id: carrier.card_refund_rate
+    display_name: 商品卡退款率（订单）
+    unit: percent
+    formula: card refund orders / card paid orders
+    grain: carrier
+    window_role: analysis
+    caliber: order_count
+    additive: false
+    proxy: false
+    owners_modules: [channel_structure_diagnosis]
+    legacy_keys: [channel_structure_diagnosis.card_refund_rate]
+
+  - metric_id: carrier.note_refund_rate
+    display_name: 笔记退款率（订单）
+    unit: percent
+    formula: note refund orders / note paid orders
+    grain: carrier
+    window_role: analysis
+    caliber: order_count
+    additive: false
+    proxy: false
+    owners_modules: [channel_structure_diagnosis, note_commercial_diagnosis]
+    legacy_keys: [channel_structure_diagnosis.note_refund_rate]
+
+  # ── Refund cluster ──────────────────────────────────────────
+  - metric_id: shop.refund_amount
+    display_name: 退款金额
+    unit: cny
+    formula: SUM(refund_amount)
+    grain: shop_day_sum
+    window_role: analysis
+    caliber: amount
+    additive: true
+    proxy: false
+    owners_modules: [refund_structure_diagnosis]
+    legacy_keys: [refund_structure_diagnosis.total_refund_amount]
+
+  - metric_id: shop.refund_amount_rate
+    display_name: 退款金额率
+    unit: percent
+    formula: refund_amount / gmv
+    grain: shop_day_sum
+    window_role: analysis
+    caliber: amount
+    additive: false
+    proxy: false
+    owners_modules: [refund_structure_diagnosis]
+    legacy_keys: [refund_structure_diagnosis.overall_refund_rate]
+    notes: "总盘金额口径；勿与订单退款率混称「整体退款率」而不标注。"
+
+  - metric_id: shop.refund_order_rate
+    display_name: 退款订单率
+    unit: percent
+    formula: refund_orders / paid_orders
+    grain: shop_day_sum
+    window_role: analysis
+    caliber: order_count
+    additive: false
+    proxy: false
+    owners_modules: [sku_structure_diagnosis, refund_root_cause_diagnosis]
+    legacy_keys: [sku_structure_diagnosis.overall_refund_rate, sku_structure_diagnosis.baseline_refund_rate, refund_root_cause_diagnosis.baseline_refund_rate]
+    notes: "SKU/根因模块基线；与 shop.refund_amount_rate 不同口径。"
+
+  - metric_id: refund.pre_ship_order_rate
+    display_name: 发货前退款率（订单）
+    unit: percent
+    formula: pre_ship_refund_orders / paid_orders
+    grain: shop_day_sum
+    window_role: analysis
+    caliber: order_count
+    additive: false
+    proxy: false
+    owners_modules: [refund_root_cause_diagnosis]
+    legacy_keys: [refund_root_cause_diagnosis.pre_ship_rate]
+
+  - metric_id: refund.post_ship_order_rate
+    display_name: 发货后退款率（订单）
+    unit: percent
+    formula: post_ship_refund_orders / paid_orders
+    grain: shop_day_sum
+    window_role: analysis
+    caliber: order_count
+    additive: false
+    proxy: false
+    owners_modules: [refund_root_cause_diagnosis]
+    legacy_keys: [refund_root_cause_diagnosis.post_ship_rate]
+
+  - metric_id: refund.pre_ship_amount_share
+    display_name: 发货前退款金额份额
+    unit: percent
+    formula: pre_ship_refund_amount / total_refund_amount
+    grain: shop_day_sum
+    window_role: analysis
+    caliber: amount
+    additive: false
+    proxy: false
+    non_additive_group: refund_stage_amount_composition
+    owners_modules: [refund_structure_diagnosis]
+    legacy_keys: []
+    notes: "构成份额；不可与订单率轴混加。"
+
+  # ── Price / assortment ──────────────────────────────────────
+  - metric_id: price.sweet_net_yield
+    display_name: 甜点带净收益（转化−退款）
+    forbidden_aliases: [净利率, 利润率, 净利率线索, sweet_net_margin]
+    unit: percent
+    formula: cart_to_pay - refund_order_rate  on sweet band
+    grain: price_band
+    window_role: analysis
+    caliber: composite_proxy
+    additive: false
+    proxy: true
+    proxy_label: 转化率减退款率（非会计净利率）
+    owners_modules: [sku_structure_diagnosis]
+    legacy_keys: [sku_structure_diagnosis.sweet_net_margin]
+
+  - metric_id: price.top_gmv_band_share
+    display_name: 头部价位带 GMV 占比
+    unit: percent
+    formula: max band gmv share
+    grain: price_band
+    window_role: analysis
+    caliber: amount
+    additive: false
+    proxy: false
+    owners_modules: [sku_structure_diagnosis]
+    legacy_keys: [sku_structure_diagnosis.top_gmv_band_share]
+
+  - metric_id: category.top_l2_gmv_share
+    display_name: 头部二级类目 GMV 占比
+    unit: percent
+    formula: max l2 gmv / total
+    grain: category_l2
+    window_role: analysis
+    caliber: amount
+    additive: false
+    proxy: false
+    owners_modules: [sku_structure_diagnosis]
+    legacy_keys: [sku_structure_diagnosis.top_gmv_category_l2_share]
+
+  - metric_id: sku.high_refund_count
+    display_name: 高退款 SKU 数
+    unit: count
+    formula: count of SKUs above baseline with min orders
+    grain: sku
+    window_role: analysis
+    caliber: count
+    additive: true
+    proxy: false
+    owners_modules: [sku_structure_diagnosis]
+    legacy_keys: [sku_structure_diagnosis.high_refund_sku_count]
+
+  - metric_id: sku.top_decile_gmv_share
+    display_name: 头部 SKU GMV 集中度
+    unit: percent
+    formula: top decile gmv share
+    grain: sku
+    window_role: analysis
+    caliber: amount
+    additive: false
+    proxy: false
+    owners_modules: [sku_structure_diagnosis]
+    legacy_keys: [sku_structure_diagnosis.top_decile_gmv_share]
+
+  # ── Content / search ────────────────────────────────────────
+  - metric_id: note.top_decile_gmv_share
+    display_name: 头部笔记 GMV 集中度
+    unit: percent
+    formula: top decile note gmv share
+    grain: note
+    window_role: analysis
+    caliber: amount
+    additive: false
+    proxy: false
+    owners_modules: [note_commercial_diagnosis]
+    legacy_keys: [note_commercial_diagnosis.top_decile_gmv_share]
+
+  - metric_id: note.converting_share
+    display_name: 有成交笔记占比
+    unit: percent
+    formula: notes_with_orders / notes_with_reads
+    grain: note
+    window_role: analysis
+    caliber: count
+    additive: false
+    proxy: false
+    owners_modules: [note_commercial_diagnosis]
+    legacy_keys: [note_commercial_diagnosis.converting_share]
+
+  - metric_id: note.reshoot_candidates
+    display_name: 重拍候选笔记数
+    unit: count
+    formula: count ranked candidates
+    grain: note
+    window_role: analysis
+    caliber: count
+    additive: true
+    proxy: false
+    owners_modules: [reshoot_repost_candidates]
+    legacy_keys: [reshoot_repost_candidates.candidate_notes]
+
+  - metric_id: search.total_impressions
+    display_name: 搜索曝光量
+    unit: count
+    formula: SUM(impressions)
+    grain: search_term
+    window_role: analysis
+    caliber: impression
+    additive: true
+    proxy: false
+    owners_modules: [search_efficiency_diagnosis]
+    legacy_keys: [search_efficiency_diagnosis.total_impressions]
+
+  - metric_id: search.leak_term_count
+    display_name: 搜索流失词数
+    unit: count
+    formula: count leak terms
+    grain: search_term
+    window_role: analysis
+    caliber: count
+    additive: true
+    proxy: false
+    owners_modules: [search_efficiency_diagnosis]
+    legacy_keys: [search_efficiency_diagnosis.leak_count]
+
+  - metric_id: search.opportunity_term_count
+    display_name: 搜索机会词数
+    unit: count
+    formula: count opportunity terms
+    grain: search_term
+    window_role: analysis
+    caliber: count
+    additive: true
+    proxy: false
+    owners_modules: [search_efficiency_diagnosis]
+    legacy_keys: [search_efficiency_diagnosis.opportunity_count]
+
+  # ── Audience ────────────────────────────────────────────────
+  - metric_id: audience.new_gmv_share
+    display_name: 新客 GMV 占比
+    unit: percent
+    formula: new_customer gmv share
+    grain: audience
+    window_role: analysis
+    caliber: amount
+    additive: false
+    proxy: false
+    owners_modules: [audience_structure_diagnosis]
+    legacy_keys: []
+
+  - metric_id: audience.repeat_gmv_share
+    display_name: 老客 GMV 占比
+    unit: percent
+    formula: repeat gmv share
+    grain: audience
+    window_role: analysis
+    caliber: amount
+    additive: false
+    proxy: false
+    owners_modules: [audience_structure_diagnosis]
+    legacy_keys: [audience_structure_diagnosis.repeat_gmv_share]
+
+  - metric_id: audience.repeat_conversion_premium
+    display_name: 老客转化溢价
+    unit: percent
+    formula: repeat_cvr / new_cvr - 1
+    grain: audience
+    window_role: analysis
+    caliber: user_count
+    additive: false
+    proxy: false
+    owners_modules: [audience_structure_diagnosis]
+    legacy_keys: [audience_structure_diagnosis.repeat_conversion_premium]
+
+  # ── Account baseline (often baseline window) ────────────────
+  - metric_id: account.posts
+    display_name: 发布笔记数（基线窗）
+    unit: count
+    formula: count notes in baseline window
+    grain: note
+    window_role: baseline
+    caliber: count
+    additive: true
+    proxy: false
+    owners_modules: [account_baseline]
+    legacy_keys: [account_baseline.posts]
+    notes: "若超出 analysis_window，UI 必须标「历史基线」。"
+
+  - metric_id: account.active_days
+    display_name: 活跃发布天数（基线窗）
+    unit: count
+    formula: count active post days
+    grain: note
+    window_role: baseline
+    caliber: count
+    additive: true
+    proxy: false
+    owners_modules: [account_baseline]
+    legacy_keys: [account_baseline.active_days]
+
+# Composition ledgers: groups that may appear together only as a declared breakdown
+composition_groups:
+  refund_stage_amount_composition:
+    description: 退款金额按发货前/发货后等环节的构成
+    must_sum_to: 1.0
+    tolerance: 0.02
+    forbidden_mix_with_calibers: [order_count]
+
+# Display policy
+display_policy:
+  money:
+    narrative_threshold_wan: 10000
+    narrative_format: wan_1dp_with_yen   # ¥1.8万
+    table_format: grouped_yuan            # 17,689
+  percent:
+    decimals: 1
+  dual_label:
+    descriptive_confidence: [高, 中, 低, 暂不下定论]
+    action_license: [可执行, 可试点, 仅观察, 先补数据]
+  proxy_forbidden_terms: [净利率, 利润率, 毛利率, ROI, ROAS]

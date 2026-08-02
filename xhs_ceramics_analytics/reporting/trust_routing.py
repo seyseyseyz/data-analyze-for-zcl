@@ -6,6 +6,7 @@ capped at 弱 regardless of how clean the underlying numbers look. Measurement a
 sizing claims earn 强 from a strong-evidence or high-descriptive-reliability
 anchor, 中 from a medium anchor, else 弱. Pure function, never raises.
 """
+
 from xhs_ceramics_analytics.evidence import DescriptiveReliability, EvidenceStrength
 
 _STRONG, _MEDIUM, _WEAK = "强", "中", "弱"

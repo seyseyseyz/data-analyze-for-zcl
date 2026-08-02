@@ -54,7 +54,7 @@ One row per note, optionally split into cover and copy feature groups. If cover 
 
 ## Chinese Aliases (from mapping.py FIELD_ALIASES)
 
-No dedicated aliases for `content_features` in FIELD_ALIASES (features are typically generated programmatically from note content analysis).
+支持中文表头导入。核心字段包括笔记ID、封面构图/构图类型、场景提示/场景线索、文案角度/内容角度、购买动机；其余封面视觉和文案语义字段也按本页 canonical 字段提供对应中文别名。程序生成英文表头与人工标注中文表头均可使用。
 
 ## Sample Row
 

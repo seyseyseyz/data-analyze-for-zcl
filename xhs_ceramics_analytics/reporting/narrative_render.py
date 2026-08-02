@@ -11,6 +11,8 @@ edit/hash guards raise ValueError by design (callers treat them as gate failures
 """
 
 import copy
+import hashlib
+import json
 import re
 from typing import NamedTuple
 
@@ -77,20 +79,29 @@ def _claims_by_id(bundle: dict) -> dict[str, dict]:
 def render_draft(bundle: dict, facts_json: dict) -> dict:
     """Return a new bundle where every claim carries a filled ``rendered_sentence``.
 
-    An already-rendered sentence (e.g. one a Continuity pass polished before freezing)
-    is preserved — it is only (re)filled when absent or still holding an unfilled {tN}.
-    This lets a frozen bundle re-render at 0 LLM calls without reverting its edits.
+    Agent-authored rendered fields are never trusted: claims and action-card display
+    fields are deterministically rebuilt from tokenized source text and FactBook values.
+    Action source fields retain placeholders so a later gate can validate magnitudes.
     """
     bundle = copy.deepcopy(bundle)
     facts = facts_json.get("facts") or {}
     for claims in _all_claim_lists(bundle):
         for claim in claims:
-            existing = str(claim.get("rendered_sentence") or "")
-            if existing and not _TOKEN_RE.search(existing):
-                continue  # already rendered (e.g. continuity-edited) — keep it verbatim
             claim["rendered_sentence"] = fill_sentence(
                 str(claim.get("sentence") or ""), claim.get("number_tokens"), facts
             )
+    for card in _iter_action_cards(bundle):
+        tokens = card.get("number_tokens") or []
+        for field_name in ("title", "stop_rule", "cadence_label", "observe_window_label"):
+            rendered_field = f"rendered_{field_name}"
+            card.pop(rendered_field, None)
+            if field_name in card and card[field_name] is not None:
+                card[rendered_field] = fill_sentence(str(card[field_name]), tokens, facts)
+        card.pop("rendered_steps", None)
+        if isinstance(card.get("steps"), list):
+            card["rendered_steps"] = [
+                fill_sentence(str(step), tokens, facts) for step in card["steps"]
+            ]
     return bundle
 
 
@@ -128,6 +139,62 @@ def apply_continuity_edits(bundle: dict, edits: list[dict]) -> dict:
 
 def _rendered(claim: dict) -> str:
     return str(claim.get("rendered_sentence") or claim.get("sentence") or "").strip()
+
+
+def _iter_action_cards(bundle: dict):
+    for card in bundle.get("action_cards") or []:
+        if isinstance(card, dict):
+            yield card
+    for section in bundle.get("sections") or []:
+        if not isinstance(section, dict):
+            continue
+        for card in section.get("action_cards") or []:
+            if isinstance(card, dict):
+                yield card
+
+
+_LICENSE_LABELS = {
+    "execute": "可执行",
+    "pilot": "先小范围验证",
+    "observe": "继续观察",
+    "blocked": "暂不执行",
+}
+
+
+def _action_card_parts(bundle: dict) -> list[str]:
+    cards = list(_iter_action_cards(bundle))
+    if not cards:
+        return []
+    parts = ["## 下一步行动"]
+    for card in cards:
+        title = _strip_raw_html_markers(
+            str(card.get("rendered_title") or card.get("title") or "").strip()
+        )
+        if not title:
+            continue
+        parts.append(f"### {title}")
+        owner = _strip_raw_html_markers(str(card.get("owner_role") or "").strip())
+        license_label = _LICENSE_LABELS.get(str(card.get("license") or ""), "")
+        metadata = [value for value in (owner, license_label) if value]
+        if metadata:
+            parts.append(" · ".join(metadata))
+        for index, step in enumerate(card.get("rendered_steps") or card.get("steps") or [], 1):
+            text = _strip_raw_html_markers(str(step).strip())
+            if text:
+                parts.append(f"{index}. {text}")
+        window = _strip_raw_html_markers(
+            str(
+                card.get("rendered_observe_window_label") or card.get("observe_window_label") or ""
+            ).strip()
+        )
+        if window:
+            parts.append(f"**观察窗口**：{window}")
+        stop_rule = _strip_raw_html_markers(
+            str(card.get("rendered_stop_rule") or card.get("stop_rule") or "").strip()
+        )
+        if stop_rule:
+            parts.append(f"**停止规则**：{stop_rule}")
+    return parts
 
 
 # Confidence tiers, weakest→strongest, for the conservative modal tie-break below.
@@ -304,6 +371,7 @@ def bundle_to_markdown(
             # it never emits a chart that duplicates one shown in another section.
             if chart_count == 0:
                 parts.extend(_fallback_chart_parts(heading, tables, charted_tables))
+    parts.extend(_action_card_parts(bundle))
     # 可复用内容模板: a static, number-free ceramics content playbook (领域内容模板库).
     # Deterministic and reproducible — appended after the data sections and before the
     # open-questions caveats, so the reader meets findings, then what-to-make, then gaps.
@@ -628,17 +696,40 @@ def _fallback_chart_parts(
         return []
 
 
-def render_frozen(frozen: dict, facts_json: dict) -> tuple[str, str]:
-    """Render (md, html) from a frozen narrative. Re-gates + checks facts_hash (tamper evidence)."""
+def render_frozen(
+    frozen: dict,
+    facts_json: dict,
+    *,
+    title: str | None = None,
+    result_tables: dict | None = None,
+) -> tuple[str, str]:
+    """Render a frozen narrative with the current title and deterministic table snapshot."""
     if frozen.get("facts_hash") != facts_json.get("facts_hash"):
         raise ValueError("frozen facts_hash does not match the supplied facts.json")
     bundle = frozen.get("narrative_bundle") or {}
-    report = run_gate(bundle, facts_json)
+    bundle_hash = hashlib.sha256(
+        json.dumps(
+            bundle,
+            sort_keys=True,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+    ).hexdigest()
+    if frozen.get("narrative_bundle_hash") != bundle_hash:
+        raise ValueError("frozen narrative_bundle_hash does not match narrative_bundle")
+    tables = result_tables if result_tables is not None else frozen.get("result_tables")
+    tables = tables if isinstance(tables, dict) else {}
+    report = run_gate(bundle, facts_json, tables)
     if report.status != "PASS":
         raise ValueError(f"frozen narrative fails the render-time gate: {report.hard_failures}")
-    drafted = render_draft(report.bundle, facts_json)
-    md = bundle_to_markdown(drafted, facts_json)
-    html = render_markdown_document_html(md)
+    md = bundle_to_markdown(
+        report.bundle,
+        facts_json,
+        title=title,
+        result_tables=tables,
+    )
+    html = render_markdown_document_html(md, title=title)
     return md, html
 
 

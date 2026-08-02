@@ -139,6 +139,29 @@ def test_task9_not_judgable_without_links_or_notes(tmp_path):
     assert curve.findings[0].evidence_strength == EvidenceStrength.NOT_JUDGABLE
 
 
+def test_task9_does_not_assign_first_sku_without_explicit_links(tmp_path):
+    db_path = tmp_path / "no-explicit-links.duckdb"
+    con = connect(db_path)
+    try:
+        _create_notes(con)
+        _create_skus(con)
+        _create_daily_sku_sales(con)
+        con.execute("INSERT INTO notes VALUES ('n1', TIMESTAMP '2026-06-10 09:00:00')")
+        con.execute("INSERT INTO skus VALUES ('first-sku')")
+        con.execute("INSERT INTO daily_sku_sales VALUES (DATE '2026-06-10', 'first-sku', 3)")
+    finally:
+        con.close()
+
+    lift = _run("sku_counterfactual_lift", db_path)
+    curve = _run("content_response_curve", db_path)
+
+    for result, table_name in ((lift, "sku_lift"), (curve, "response_windows")):
+        assert result.findings[0].evidence_strength == EvidenceStrength.NOT_JUDGABLE
+        assert result.tables[table_name] == []
+        assert "显式 note-SKU" in " ".join(result.limitations)
+        assert "first-sku" not in str(result.tables)
+
+
 def test_task9_uses_publish_anchored_windows_and_exposes_long_tail(tmp_path):
     db_path = tmp_path / "analytics.duckdb"
     con = connect(db_path)

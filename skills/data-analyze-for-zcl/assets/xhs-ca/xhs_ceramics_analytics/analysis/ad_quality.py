@@ -37,9 +37,7 @@ def run(db_path: Path) -> AnalysisResult:
                 ),
                 evidence_strength=evidence_strength,
                 descriptive_reliability=descriptive_reliability,
-                evidence_reason=(
-                    "该检查只判断字段和粒度可用性，不判断投放效果好坏。"
-                ),
+                evidence_reason=("该检查只判断字段和粒度可用性，不判断投放效果好坏。"),
                 key_numbers={
                     "rows": sample_size,
                     "total_spend": row.get("total_spend"),
@@ -131,9 +129,9 @@ def _non_null_count(con, column: str, columns: set[str]) -> int:
     if column not in columns:
         return 0
     return int(
-        con.sql(
-            f"SELECT COUNT(*) FROM ad_performance_daily WHERE {column} IS NOT NULL"
-        ).fetchone()[0]
+        con.sql(f"SELECT COUNT(*) FROM ad_performance_daily WHERE {column} IS NOT NULL").fetchone()[
+            0
+        ]
     )
 
 

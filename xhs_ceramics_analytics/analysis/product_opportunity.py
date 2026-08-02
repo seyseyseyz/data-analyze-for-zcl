@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from xhs_ceramics_analytics.analytics.numeric import to_finite_float
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.db.duck import connect
 from xhs_ceramics_analytics.evidence import EvidenceStrength
@@ -20,9 +21,7 @@ def run(db_path: Path) -> AnalysisResult:
                 title="SKU 机会已排序",
                 conclusion="已按观察期销量表现对 SKU 排序，并标记初步机会类型。",
                 evidence_strength=(
-                    EvidenceStrength.MEDIUM
-                    if rows and has_sales
-                    else EvidenceStrength.NOT_JUDGABLE
+                    EvidenceStrength.WEAK if rows and has_sales else EvidenceStrength.NOT_JUDGABLE
                 ),
                 evidence_reason=_evidence_reason(rows, has_sales),
                 key_numbers={"sku_count": len(rows)},
@@ -39,97 +38,132 @@ def _fetch_product_opportunities(
 ) -> tuple[list[dict[str, object]], list[str], bool]:
     has_sales_table = _table_exists(con, "daily_sku_sales")
     sales_columns = _table_columns(con, "daily_sku_sales") if has_sales_table else set()
-    has_sales_columns = has_sales_table and {"sku_id", "units", "gmv"}.issubset(
-        sales_columns
-    )
-    has_sales = has_sales_columns and _has_observed_sales(con)
+    has_sales_columns = has_sales_table and {"sku_id", "units", "gmv"}.issubset(sales_columns)
+    sales = _sales_by_sku(con, sales_columns) if has_sales_columns else {}
+    has_sales = bool(sales)
 
+    catalog: dict[str, dict[str, object]] = {}
     if _table_exists(con, "skus"):
         sku_columns = _table_columns(con, "skus")
         if "sku_id" not in sku_columns:
             return [], ["skus 表缺少 sku_id 字段。"], False
+        relation = con.sql("SELECT * FROM skus")
+        for raw in _rows(relation):
+            if raw.get("sku_id") is None:
+                continue
+            sku_id = str(raw["sku_id"])
+            catalog[sku_id] = {
+                "sku_id": sku_id,
+                "sku_name": str(raw.get("sku_name") or sku_id),
+                "inventory_optional": _maybe_float(raw.get("inventory_optional")),
+            }
 
-        name_expr = (
-            "COALESCE(CAST(s.sku_name AS VARCHAR), CAST(s.sku_id AS VARCHAR))"
-            if "sku_name" in sku_columns
-            else "CAST(s.sku_id AS VARCHAR)"
+    sku_ids = sorted(set(catalog) | set(sales))
+    if not sku_ids:
+        return [], ["缺少 skus 表和可用的 daily_sku_sales 数据。"], False
+
+    rows: list[dict[str, object]] = []
+    for sku_id in sku_ids:
+        catalog_row = catalog.get(sku_id, {})
+        sales_row = sales.get(sku_id)
+        units = sales_row.get("units") if sales_row else None
+        gmv = sales_row.get("gmv") if sales_row else None
+        active_days = sales_row.get("active_days") if sales_row else None
+        units_per_day = units / active_days if units is not None and active_days else None
+        gmv_per_day = gmv / active_days if gmv is not None and active_days else None
+        inventory = catalog_row.get("inventory_optional")
+        inventory_cover = (
+            inventory / units_per_day
+            if inventory is not None and units_per_day and units_per_day > 0
+            else None
         )
-        if has_sales:
-            result = con.sql(
-                f"""
-                WITH sales AS (
-                  SELECT
-                    CAST(sku_id AS VARCHAR) AS sku_id,
-                    SUM(CAST(units AS DOUBLE)) AS units,
-                    SUM(CAST(gmv AS DOUBLE)) AS gmv
-                  FROM daily_sku_sales
-                  GROUP BY 1
-                )
-                SELECT
-                  CAST(s.sku_id AS VARCHAR) AS sku_id,
-                  {name_expr} AS sku_name,
-                  COALESCE(sales.units, 0.0) AS units,
-                  COALESCE(sales.gmv, 0.0) AS gmv,
-                  CASE
-                    WHEN COALESCE(sales.units, 0.0) >= 3 THEN 'sales_response_present'
-                    ELSE 'needs_more_content_or_data'
-                  END AS opportunity_type
-                FROM skus AS s
-                LEFT JOIN sales ON CAST(s.sku_id AS VARCHAR) = sales.sku_id
-                ORDER BY gmv DESC NULLS LAST, units DESC NULLS LAST, sku_id
-                """
-            )
-            return _rows(result), [], True
-
-        result = con.sql(
-            f"""
-            SELECT
-              CAST(s.sku_id AS VARCHAR) AS sku_id,
-              {name_expr} AS sku_name,
-              NULL AS units,
-              NULL AS gmv,
-              'needs_sales_data' AS opportunity_type
-            FROM skus AS s
-            ORDER BY sku_id
-            """
+        if sales_row is None:
+            opportunity_type = "needs_sales_data"
+        elif inventory is not None and inventory <= 0:
+            opportunity_type = "out_of_stock_risk"
+        elif inventory_cover is not None and inventory_cover <= 7:
+            opportunity_type = "low_inventory_risk"
+        else:
+            opportunity_type = "sales_response_present"
+        rows.append(
+            {
+                "sku_id": sku_id,
+                "sku_name": catalog_row.get("sku_name") or sku_id,
+                "units": units,
+                "gmv": gmv,
+                "active_days": active_days,
+                "units_per_active_day": units_per_day,
+                "gmv_per_active_day": gmv_per_day,
+                "inventory_optional": inventory,
+                "inventory_cover_active_days": inventory_cover,
+                "opportunity_type": opportunity_type,
+            }
         )
-        limitation = _sales_limitation(has_sales_table, has_sales_columns)
-        return _rows(result), [limitation], False
+    rows.sort(
+        key=lambda row: (
+            row["gmv"] is not None,
+            row["gmv"] or 0,
+            row["units"] or 0,
+            row["sku_id"],
+        ),
+        reverse=True,
+    )
 
-    if has_sales:
-        result = con.sql(
-            """
-            SELECT
-              CAST(sku_id AS VARCHAR) AS sku_id,
-              CAST(sku_id AS VARCHAR) AS sku_name,
-              SUM(CAST(units AS DOUBLE)) AS units,
-              SUM(CAST(gmv AS DOUBLE)) AS gmv,
-              CASE
-                WHEN SUM(CAST(units AS DOUBLE)) >= 3 THEN 'sales_response_present'
-                ELSE 'needs_more_content_or_data'
-              END AS opportunity_type
-            FROM daily_sku_sales
-            GROUP BY 1, 2
-            ORDER BY gmv DESC NULLS LAST, units DESC NULLS LAST, sku_id
-            """
+    limitations: list[str] = []
+    if not catalog:
+        limitations.append("缺少 skus 表，SKU 名称使用 sku_id。")
+    if not has_sales:
+        limitations.append(_sales_limitation(has_sales_table, has_sales_columns))
+    if catalog and has_sales and "inventory_optional" not in _table_columns(con, "skus"):
+        limitations.append("skus 缺少 inventory_optional，无法判断缺货和库存覆盖天数。")
+    return rows, limitations, has_sales
+
+
+def _sales_by_sku(con, columns: set[str]) -> dict[str, dict[str, object]]:
+    relation = con.sql("SELECT * FROM daily_sku_sales")
+    groups: dict[str, dict[str, object]] = {}
+    for raw in _rows(relation):
+        if raw.get("sku_id") is None:
+            continue
+        units = _maybe_float(raw.get("units"))
+        gmv = _maybe_float(raw.get("gmv"))
+        if units is None and gmv is None:
+            continue
+        sku_id = str(raw["sku_id"])
+        group = groups.setdefault(
+            sku_id, {"units_values": [], "gmv_values": [], "dates": set(), "rows": 0}
         )
-        return _rows(result), ["缺少 skus 表，SKU 名称使用 sku_id。"], True
+        if units is not None:
+            group["units_values"].append(units)
+        if gmv is not None:
+            group["gmv_values"].append(gmv)
+        if "date" in columns and raw.get("date") is not None:
+            group["dates"].add(str(raw["date"]))
+        group["rows"] += 1
 
-    return [], ["缺少 skus 表和可用的 daily_sku_sales 数据。"], False
+    output: dict[str, dict[str, object]] = {}
+    for sku_id, group in groups.items():
+        output[sku_id] = {
+            "units": sum(group["units_values"]) if group["units_values"] else None,
+            "gmv": sum(group["gmv_values"]) if group["gmv_values"] else None,
+            "active_days": len(group["dates"]) if group["dates"] else group["rows"],
+        }
+    return output
+
+
+def _maybe_float(value: object) -> float | None:
+    return to_finite_float(value, None)
 
 
 def _evidence_reason(rows: list[dict[str, object]], has_sales: bool) -> str:
     if rows and has_sales:
         return (
-            "SKU 销售数据可用，可以用于商品优先级排序；"
-            "当前商品机会排序主要基于 SKU 销售数据，"
+            "SKU 销售数据可用，可按销量、GMV 与活跃日速度排序；"
+            "库存存在时仅做库存覆盖风险提示。当前仍是描述性机会排序，"
             "内容表现象限还需要继续纳入 note-SKU 关联证据。"
         )
     if rows:
-        return (
-            "当前能识别 SKU 清单，但缺少可用销售数据，"
-            "适合先补齐销量和销售额后再判断商品机会。"
-        )
+        return "当前能识别 SKU 清单，但缺少可用销售数据，适合先补齐销量和销售额后再判断商品机会。"
     return "缺少 SKU 或销售数据，当前结论只适合指导补数顺序。"
 
 

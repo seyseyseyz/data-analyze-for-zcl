@@ -1,18 +1,19 @@
 """Per-run telemetry — the guard against a silently-degrading report.
 
 Each report run appends one canonical JSON line to ``report_runs.jsonl`` recording
-mode (frozen / skeleton / gate / blocked), the facts_hash, whether the frozen-narrative cache
-hit, per-rule hard-fail counts, and a degradation reason code. The skill surfaces
+mode, the facts_hash, cache/delivery outcomes, per-rule hard-fail counts, and a
+degradation reason code. The skill surfaces
 ``summarize_runs`` in its step-9 delivery note, so an over-strict gate rule cannot
 make skeleton the silent default — the counters make it visible. Records are
 timestamp-free by design (deterministic + replay-safe; the spec bars a wall clock in
 the hashed path). Pure + never raises on a normal filesystem.
 """
+
 import json
 from collections import Counter
 from pathlib import Path
 
-_VALID_MODES = ("frozen", "skeleton", "gate", "blocked")
+_VALID_MODES = ("frozen", "skeleton", "gate", "blocked", "failed")
 
 
 def build_run_record(
@@ -22,14 +23,24 @@ def build_run_record(
     cache_hit: bool,
     hard_fail_counts: dict | None = None,
     degradation_reason: str | None = None,
+    cache_status: str | None = None,
+    delivery_status: str | None = None,
+    error_code: str | None = None,
+    task_counts: dict | None = None,
+    quality_gates: dict | None = None,
 ) -> dict:
-    """Deterministic run record. mode ∈ {frozen, skeleton, gate, blocked}. No timestamp by design."""
+    """Build a deterministic quality and delivery record with no wall clock."""
     return {
         "mode": mode if mode in _VALID_MODES else "unknown",
         "facts_hash": facts_hash,
         "cache_hit": bool(cache_hit),
+        "cache_status": cache_status,
+        "delivery_status": delivery_status,
+        "error_code": error_code,
         "hard_fail_counts": dict(hard_fail_counts or {}),
         "degradation_reason": degradation_reason,
+        "task_counts": dict(task_counts or {}),
+        "quality_gates": dict(quality_gates or {}),
     }
 
 

@@ -29,6 +29,8 @@ TABLE_SIGNATURES: dict[str, set[str]] = {
     },
     "comments": {"note_id", "comment_time", "comment_text"},
     "content_features": {"note_id", "composition_type", "scene_hint", "copy_angle"},
+    "note_sku_links": {"note_id", "sku_id"},
+    "refund_reasons": {"refund_reason", "refund_amount", "refund_orders"},
     "calendar_events": {"date", "event_type", "event_name", "severity"},
     "ad_performance_daily": {
         "date",
@@ -64,6 +66,62 @@ TABLE_SIGNATURES: dict[str, set[str]] = {
 }
 
 FIELD_ALIASES: dict[str, dict[str, set[str]]] = {
+    "note_sku_links": {
+        "note_id": {"笔记ID", "笔记id"},
+        "sku_id": {"规格ID", "规格id", "SKU ID", "sku_id"},
+    },
+    "refund_reasons": {
+        "refund_reason": {"退款原因", "售后原因"},
+        "refund_amount": {"退款金额"},
+        "refund_orders": {"退款订单数", "退款单数"},
+    },
+    "calendar_events": {
+        "date": {"日期", "事件日期"},
+        "event_type": {"事件类型", "活动类型"},
+        "event_name": {"事件名称", "活动名称"},
+        "severity": {"影响等级", "严重程度", "事件等级"},
+        "affected_product_id_optional": {"关联商品ID", "影响商品ID"},
+        "affected_sku_id_optional": {"关联规格ID", "关联SKU ID", "影响规格ID"},
+        "notes": {"备注", "事件备注"},
+    },
+    "comments": {
+        "note_id": {"笔记ID", "笔记id"},
+        "comment_time": {"评论时间", "留言时间"},
+        "comment_text": {"评论内容", "评论文本", "留言内容"},
+        "comment_id": {"评论ID", "评论id"},
+        "parent_comment_id": {"父评论ID", "上级评论ID"},
+        "comment_like_count": {"评论点赞数", "点赞数"},
+        "author_id_hash": {"评论用户哈希", "用户ID哈希"},
+    },
+    "content_features": {
+        "note_id": {"笔记ID", "笔记id"},
+        "vessel_type_visible": {"可见器型", "封面器型"},
+        "composition_type": {"封面构图", "构图类型"},
+        "product_area_ratio_band": {"商品面积占比", "商品面积档位"},
+        "shooting_angle": {"拍摄角度"},
+        "background_material": {"背景材质"},
+        "lighting_style": {"光线风格", "布光风格"},
+        "color_temperature": {"色温"},
+        "saturation_band": {"饱和度档位"},
+        "contrast_band": {"对比度档位"},
+        "scene_hint": {"场景提示", "场景线索"},
+        "human_hand_visible": {"是否露手", "手部是否可见"},
+        "food_drink_visible": {"是否有食物饮品", "食物饮品是否可见"},
+        "text_overlay_present": {"是否有封面字", "封面文字"},
+        "text_overlay_length_band": {"封面字数档位"},
+        "aesthetic_semantics": {"审美语义", "视觉风格"},
+        "copy_angle": {"文案角度", "内容角度"},
+        "purchase_motive": {"购买动机"},
+        "craft_terms_present": {"是否包含工艺词"},
+        "scene_terms_present": {"是否包含场景词"},
+        "gift_terms_present": {"是否包含送礼词"},
+        "scarcity_terms_present": {"是否包含稀缺词"},
+        "price_explanation_present": {"是否解释价格"},
+        "title_length_band": {"标题长度档位"},
+        "specific_noun_density_band": {"具体名词密度档位"},
+        "emotional_intensity_band": {"情绪强度档位"},
+        "call_to_action_type": {"行动引导类型", "CTA类型"},
+    },
     "orders": {
         "order_id": {"订单号", "订单编号", "订单id"},
         "paid_time": {"支付时间", "付款时间", "成交时间"},
@@ -178,7 +236,26 @@ FIELD_ALIASES: dict[str, dict[str, set[str]]] = {
         "total_pv": {"总浏览量"},
         "product_click_rate_pv": {"商品点击率（PV）"},
         "new_add_to_cart_users": {"新增加购人数"},
+        "new_wishlist_users": {"新增加入心愿单人数"},
         "refund_order_share_refundtime": {"退款订单占比（退款时间）"},
+        "note_paid_buyers": {"笔记支付买家数"},
+        "card_paid_buyers": {"商卡支付买家数"},
+        "note_product_visitors": {"笔记商品访客数"},
+        "card_product_visitors": {"商卡商品访客数"},
+        "note_pay_conversion": {"笔记支付转化率"},
+        "card_pay_conversion": {"商卡支付转化率"},
+        "note_aov": {"笔记客单价"},
+        "card_aov": {"商卡客单价"},
+        "note_net_gmv_pay": {"笔记退款后支付金额（支付时间）"},
+        "card_net_gmv_pay": {"商卡退款后支付金额（支付时间）"},
+        "note_refund_orders_pay": {"笔记退款订单数（支付时间）"},
+        "card_refund_orders_pay": {"商卡退款订单数（支付时间）"},
+        "note_refund_rate_pay": {"笔记退款率（支付时间）"},
+        "card_refund_rate_pay": {"商卡退款率（支付时间）"},
+        "note_pre_ship_refund_rate_pay": {"笔记发货前退款率（支付时间）"},
+        "card_pre_ship_refund_rate_pay": {"商卡发货前退款率（支付时间）"},
+        "note_post_ship_refund_rate_pay": {"笔记发货后退款率（支付时间）"},
+        "card_post_ship_refund_rate_pay": {"商卡发货后退款率（支付时间）"},
     },
     "sku_performance": {
         "sku_id": {"规格ID", "规格id"},
@@ -299,6 +376,8 @@ GRAIN_KEYS: dict[str, tuple[str, ...]] = {
     "shop_page_source": ("date", "audience_type", "first_purchase_cycle", "source_page"),
     "refund_overview": ("stat_period", "account_name", "carrier"),
     "traffic_source": ("xhs_id", "channel", "note_type"),
+    "note_sku_links": ("note_id", "sku_id"),
+    "refund_reasons": ("refund_reason",),
 }
 
 
@@ -309,44 +388,85 @@ GRAIN_KEYS: dict[str, tuple[str, ...]] = {
 # §2/§5/§6/§7 tables do not use it). Enforced by test_required_columns_invariants.
 REQUIRED_COLUMNS: dict[str, set[str]] = {
     "notes": {
-        "note_id", "publish_time", "title", "reads",
-        "impressions", "likes", "collects", "comments",
+        "note_id",
+        "publish_time",
+        "title",
+        "reads",
+        "impressions",
+        "likes",
+        "collects",
+        "comments",
     },
     "products": {"product_id", "product_name", "vessel_type", "series"},
     "skus": {"sku_id", "product_id", "sku_name", "price"},
     "orders": {"order_id", "paid_time", "sku_id", "quantity", "paid_amount"},
     "comments": {"note_id", "comment_time", "comment_text"},
     "content_features": {"note_id", "composition_type", "scene_hint", "copy_angle"},
+    "note_sku_links": {"note_id", "sku_id"},
+    "refund_reasons": {"refund_reason", "refund_amount", "refund_orders"},
     "calendar_events": {"date", "event_type", "event_name", "severity"},
     "ad_performance_daily": {"date", "spend", "impressions", "clicks"},
     "business_overview_daily": {
-        "date", "gmv", "paid_orders", "paid_buyers", "aov",
-        "paid_units", "refund_amount_pay", "net_gmv_pay",  # mart-SUM deps, NOT in signature
+        "date",
+        "gmv",
+        "paid_orders",
+        "paid_buyers",
+        "aov",
+        "paid_units",
+        "refund_amount_pay",
+        "net_gmv_pay",  # mart-SUM deps, NOT in signature
     },
     "sku_performance": {"sku_id", "net_gmv_pay", "refund_rate_pay", "add_to_cart_users"},
     "search_overview": {
-        "date", "carrier", "gmv", "paid_orders",
-        "card_impression_users", "product_click_rate", "pay_conversion",
+        "date",
+        "carrier",
+        "gmv",
+        "paid_orders",
+        "card_impression_users",
+        "product_click_rate",
+        "pay_conversion",
     },
     "search_terms": {
-        "search_term", "gmv",
-        "card_impression_users", "product_click_rate", "pay_conversion",
+        "search_term",
+        "gmv",
+        "card_impression_users",
+        "product_click_rate",
+        "pay_conversion",
     },
     "shop_page_funnel": {
-        "date", "audience_type", "first_purchase_cycle", "shop_visitors", "shop_payers",
+        "date",
+        "audience_type",
+        "first_purchase_cycle",
+        "shop_visitors",
+        "shop_payers",
     },
     "shop_page_source": {
-        "date", "audience_type", "first_purchase_cycle", "source_page",
-        "shop_visitors", "enter_pay_rate",
+        "date",
+        "audience_type",
+        "first_purchase_cycle",
+        "source_page",
+        "shop_visitors",
+        "enter_pay_rate",
     },
     "refund_overview": {
-        "stat_period", "account_name", "carrier",
-        "refund_amount_pay", "refund_users", "refund_rate_pay",
-        "pre_ship_refund_amount", "post_ship_refund_amount", "return_refund_amount",
+        "stat_period",
+        "account_name",
+        "carrier",
+        "refund_amount_pay",
+        "refund_users",
+        "refund_rate_pay",
+        "pre_ship_refund_amount",
+        "post_ship_refund_amount",
+        "return_refund_amount",
     },
     "traffic_source": {
-        "xhs_id", "channel", "note_type",
-        "gmv", "paid_orders", "product_clicks", "product_click_users",
+        "xhs_id",
+        "channel",
+        "note_type",
+        "gmv",
+        "paid_orders",
+        "product_clicks",
+        "product_click_users",
     },
 }
 
@@ -373,13 +493,17 @@ def _normalize_column_name(column: str) -> str:
 
 
 def guess_table_type(profile: FileProfile) -> str:
-    hits = {
-        table: _table_scoped_hits(profile.columns, table) for table in TABLE_SIGNATURES
-    }
-    scores = {
-        table: hits[table] / len(signature)
-        for table, signature in TABLE_SIGNATURES.items()
-    }
+    hits = {table: _table_scoped_hits(profile.columns, table) for table in TABLE_SIGNATURES}
+    scores = {table: hits[table] / len(signature) for table, signature in TABLE_SIGNATURES.items()}
+    if hits.get("note_sku_links", 0) < 2:
+        scores["note_sku_links"] = 0.0
+    refund_reason_mapping = _resolve_mapping(
+        profile,
+        "refund_reasons",
+        FIELD_ALIASES.get("refund_reasons", {}),
+    )
+    if "refund_reason" not in refund_reason_mapping:
+        scores["refund_reasons"] = 0.0
     # Rank by normalized coverage, breaking ties by raw hit count: a type that
     # matches MORE of the file's actual columns is the better fit even when a
     # smaller signature ties it on coverage. Without this, a column-sparse notes
@@ -416,9 +540,7 @@ def _table_scoped_hits(columns: list[str], table_type: str) -> int:
     return sum(
         1
         for target in signature
-        if _alias_source_column(
-            source_columns, target, table_aliases.get(target, set()), set()
-        )
+        if _alias_source_column(source_columns, target, table_aliases.get(target, set()), set())
         is not None
     )
 
@@ -431,12 +553,39 @@ class ColumnDiagnostic:
     candidate_sources: tuple[str, ...]  # unmapped source headers (agent candidate pool)
     reason: str  # Chinese, operator-facing
     action: str  # Chinese, what to do
+    source_column: str | None = None
+    match_method: str | None = None
+    match_score: float | None = None
+    platform_metric_ids: tuple[int, ...] = ()
+    semantic_status: str | None = None
+
+
+@dataclass(frozen=True)
+class ColumnDecision:
+    table_type: str
+    canonical_column: str
+    source_column: str
+    match_method: str
+    match_score: float | None
+    semantic_status: str
+    platform_metric_ids: tuple[int, ...]
+    applied: bool
+    reason: str
+
+
+@dataclass(frozen=True)
+class _ResolvedColumn:
+    canonical_column: str
+    source_column: str
+    match_method: str
+    match_score: float | None
 
 
 @dataclass(frozen=True)
 class ColumnMapping:
     mapping: dict[str, str]  # canonical -> source, exactly as guess_field_mapping returned
     diagnostics: tuple[ColumnDiagnostic, ...]
+    decisions: tuple[ColumnDecision, ...] = ()
 
 
 def _effective_aliases(
@@ -457,20 +606,55 @@ def _resolve_mapping(
     table_type: str,
     aliases: dict[str, set[str]],
 ) -> dict[str, str]:
-    targets = TABLE_SIGNATURES[table_type] | set(aliases.keys())
-    source_columns = [
-        (column, _normalize_column_name(column)) for column in profile.columns
-    ]
+    return {
+        resolved.canonical_column: resolved.source_column
+        for resolved in _resolve_mapping_candidates(profile, table_type, aliases, {})
+    }
+
+
+def _resolve_mapping_candidates(
+    profile: FileProfile,
+    table_type: str,
+    shipped_aliases: dict[str, set[str]],
+    override_aliases: dict[str, set[str]],
+) -> list[_ResolvedColumn]:
+    targets = (
+        TABLE_SIGNATURES[table_type]
+        | set(shipped_aliases.keys())
+        | set(override_aliases.keys())
+    )
+    source_columns = [(column, _normalize_column_name(column)) for column in profile.columns]
     used_sources: set[str] = set()
-    mapping: dict[str, str] = {}
+    resolved_targets: set[str] = set()
+    resolved_columns: list[_ResolvedColumn] = []
     for target in sorted(targets):
+        override_match = _alias_source_column(
+            source_columns,
+            target,
+            override_aliases.get(target, set()),
+            used_sources,
+            include_target=False,
+        )
+        if override_match:
+            resolved_columns.append(
+                _ResolvedColumn(target, override_match, "operator_override", None)
+            )
+            used_sources.add(override_match)
+            resolved_targets.add(target)
+    for target in sorted(targets - resolved_targets):
         alias_match = _alias_source_column(
-            source_columns, target, aliases.get(target, set()), used_sources
+            source_columns,
+            target,
+            shipped_aliases.get(target, set()),
+            used_sources,
         )
         if alias_match:
-            mapping[target] = alias_match
+            resolved_columns.append(
+                _ResolvedColumn(target, alias_match, "shipped_alias", None)
+            )
             used_sources.add(alias_match)
-            continue
+            resolved_targets.add(target)
+    for target in sorted(targets - resolved_targets):
         normalized_target = _normalize_column_name(target)
         candidates = [
             (fuzz.WRatio(normalized_target, normalized_source), source_column)
@@ -481,9 +665,11 @@ def _resolve_mapping(
             continue
         score, source_column = max(candidates, key=lambda candidate: candidate[0])
         if score >= MIN_FIELD_CONFIDENCE:
-            mapping[target] = source_column
+            resolved_columns.append(
+                _ResolvedColumn(target, source_column, "fuzzy", float(score))
+            )
             used_sources.add(source_column)
-    return mapping
+    return resolved_columns
 
 
 def map_columns(
@@ -492,13 +678,60 @@ def map_columns(
     *,
     overrides: dict[str, dict[str, set[str]]] | None = None,
 ) -> ColumnMapping:
-    aliases = _effective_aliases(table_type, overrides or {})
-    mapping = _resolve_mapping(profile, table_type, aliases)
+    supplied_overrides = overrides or {}
+    resolved_columns = _resolve_mapping_candidates(
+        profile,
+        table_type,
+        FIELD_ALIASES.get(table_type, {}),
+        supplied_overrides.get(table_type, {}),
+    )
+    semantic_context = _platform_semantic_context()
+    mapping: dict[str, str] = {}
+    diagnostics: list[ColumnDiagnostic] = []
+    decisions: list[ColumnDecision] = []
+    blocked_targets: set[str] = set()
+    for resolved in resolved_columns:
+        semantic_status, platform_metric_ids, applied, reason = _assess_mapping_semantics(
+            table_type,
+            resolved,
+            semantic_context,
+        )
+        decisions.append(
+            ColumnDecision(
+                table_type=table_type,
+                canonical_column=resolved.canonical_column,
+                source_column=resolved.source_column,
+                match_method=resolved.match_method,
+                match_score=resolved.match_score,
+                semantic_status=semantic_status,
+                platform_metric_ids=platform_metric_ids,
+                applied=applied,
+                reason=reason,
+            )
+        )
+        if applied:
+            mapping[resolved.canonical_column] = resolved.source_column
+            continue
+        blocked_targets.add(resolved.canonical_column)
+        diagnostics.append(
+            ColumnDiagnostic(
+                table_type=table_type,
+                required_column=resolved.canonical_column,
+                status=semantic_status,
+                candidate_sources=(resolved.source_column,),
+                reason=reason,
+                action="确认平台口径后写入 mapping_overrides.yaml，再重新构建",
+                source_column=resolved.source_column,
+                match_method=resolved.match_method,
+                match_score=resolved.match_score,
+                platform_metric_ids=platform_metric_ids,
+                semantic_status=semantic_status,
+            )
+        )
     mapped_sources = set(mapping.values())
     leftover = tuple(column for column in profile.columns if column not in mapped_sources)
-    diagnostics: list[ColumnDiagnostic] = []
     for column in sorted(REQUIRED_COLUMNS.get(table_type, set())):
-        if column in mapping:
+        if column in mapping or column in blocked_targets:
             continue
         # Status is computed purely from the leftover pool — no semantic guess here.
         # Non-empty pool: some header is present but unmatched (a drift the agent can
@@ -514,7 +747,162 @@ def map_columns(
                 action="确认口径后在 mapping_overrides.yaml 补别名",
             )
         )
-    return ColumnMapping(mapping=mapping, diagnostics=tuple(diagnostics))
+    return ColumnMapping(
+        mapping=mapping,
+        diagnostics=tuple(diagnostics),
+        decisions=tuple(decisions),
+    )
+
+
+def _platform_semantic_context() -> dict[str, object]:
+    from xhs_ceramics_analytics.contracts.platform_catalog import (
+        build_platform_semantic_context,
+    )
+
+    return build_platform_semantic_context()
+
+
+def _reference_targets(reference: dict[str, object]) -> set[tuple[object, object]]:
+    direct = {
+        (reference.get("canonical_table"), reference.get("canonical_field"))
+    }
+    possible = {
+        (item.get("canonical_table"), item.get("canonical_field"))
+        for item in reference.get("possible_targets", [])
+        if isinstance(item, dict)
+    }
+    return {target for target in direct | possible if all(target)}
+
+
+def _reference_table_scope(reference: dict[str, object]) -> set[str]:
+    from xhs_ceramics_analytics.contracts.platform_catalog import PLATFORM_MODULE_TABLES
+
+    return {
+        table
+        for module in reference.get("modules", [])
+        for table in PLATFORM_MODULE_TABLES.get(str(module), ())
+    }
+
+
+def _is_platform_table(table_type: str) -> bool:
+    from xhs_ceramics_analytics.contracts.platform_catalog import PLATFORM_MODULE_TABLES
+
+    return any(table_type in tables for tables in PLATFORM_MODULE_TABLES.values())
+
+
+def _assess_mapping_semantics(
+    table_type: str,
+    resolved: _ResolvedColumn,
+    context: dict[str, object],
+) -> tuple[str, tuple[int, ...], bool, str]:
+    accepted = [
+        reference
+        for reference in context.get("accepted_references", [])
+        if isinstance(reference, dict)
+    ]
+    candidates = [
+        reference
+        for reference in context.get("reference_only_candidates", [])
+        if isinstance(reference, dict)
+    ]
+    target = (table_type, resolved.canonical_column)
+    accepted_for_target = [
+        reference for reference in accepted if target in _reference_targets(reference)
+    ]
+    candidates_for_target = [
+        reference for reference in candidates if target in _reference_targets(reference)
+    ]
+    normalized_source = _normalize_column_name(resolved.source_column)
+    source_references = [
+        reference
+        for reference in [*accepted, *candidates]
+        if _normalize_column_name(str(reference.get("display_name", "")))
+        == normalized_source
+    ]
+    accepted_source_targets = [
+        reference for reference in accepted_for_target if reference in source_references
+    ]
+    candidate_source_targets = [
+        reference for reference in candidates_for_target if reference in source_references
+    ]
+    source_allows_target = any(
+        target in _reference_targets(reference) for reference in source_references
+    )
+    source_conflicts_with_target = any(
+        table_type in _reference_table_scope(reference)
+        and target not in _reference_targets(reference)
+        for reference in source_references
+    )
+    metric_ids = tuple(
+        sorted(
+            {
+                int(reference["platform_metric_id"])
+                for reference in [
+                    *accepted_source_targets,
+                    *candidate_source_targets,
+                    *source_references,
+                ]
+                if reference.get("platform_metric_id") is not None
+            }
+        )
+    )
+    if resolved.match_method == "operator_override":
+        return (
+            "operator_confirmed",
+            metric_ids,
+            True,
+            "mapping_overrides.yaml 已显式确认该字段映射",
+        )
+    if source_conflicts_with_target and not source_allows_target:
+        return (
+            "conflict",
+            metric_ids,
+            False,
+            "源表头命中平台指标，但官方语义与目标 canonical 字段冲突",
+        )
+    if resolved.match_method == "fuzzy" and not _is_platform_table(table_type):
+        return (
+            "legacy_fuzzy",
+            metric_ids,
+            True,
+            f"非平台目录表保留兼容性模糊匹配（score={resolved.match_score:.1f}）",
+        )
+    if resolved.match_method == "fuzzy":
+        return (
+            "review_required",
+            metric_ids,
+            False,
+            f"仅字段名模糊匹配（score={resolved.match_score:.1f}），未获语义批准",
+        )
+    if accepted_source_targets:
+        return "verified", metric_ids, True, "已命中审核通过的平台字段绑定"
+    if candidate_source_targets:
+        review_reasons = sorted(
+            {
+                str(review_reason)
+                for reference in candidate_source_targets
+                for review_reason in reference.get("review_reasons", [])
+            }
+        )
+        return (
+            "reference_only",
+            metric_ids,
+            True,
+            "平台定义与目标字段一致，但绑定尚未审核：" + ", ".join(review_reasons),
+        )
+    if context.get("status") == "unavailable":
+        return (
+            "catalog_unavailable",
+            (),
+            True,
+            "平台语义目录不可用，保留已发布的精确别名映射",
+        )
+    return (
+        "no_platform_reference",
+        metric_ids,
+        True,
+        "未找到平台指标引用，保留已发布的精确别名映射",
+    )
 
 
 def guess_field_mapping(profile: FileProfile, table_type: str) -> dict[str, str]:
@@ -526,9 +914,12 @@ def _alias_source_column(
     target: str,
     aliases: set[str],
     used_sources: set[str],
+    *,
+    include_target: bool = True,
 ) -> str | None:
     normalized_aliases = {_normalize_column_name(alias) for alias in aliases}
-    normalized_aliases.add(_normalize_column_name(target))
+    if include_target:
+        normalized_aliases.add(_normalize_column_name(target))
     for source_column, normalized_source in source_columns:
         if source_column not in used_sources and normalized_source in normalized_aliases:
             return source_column

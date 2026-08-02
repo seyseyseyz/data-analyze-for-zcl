@@ -29,6 +29,7 @@
   - Required 列：`shop_visitors, shop_payers, first_purchase_cycle`
   - 可选用列：`product_click_users, visit_click_rate, click_pay_rate,
     visit_pay_rate, audience_type`
+- `calendar_events`（粒度：一行一事件日期），用于活动期/平销期日均 GMV 与逐日 UV 转化率描述。
 
 **关键——note/card 是列拆分而非行维度。** 载体结构来自每日行上的
 `note_gmv`/`card_gmv`（及 `note_paid_orders`/`card_paid_orders`）列，不存在 `carrier` 列。
@@ -37,15 +38,29 @@
 
 ### Finding 1 — 整体经营快照与趋势（始终产出）
 
-- `SUM(gmv/paid_orders/paid_buyers/paid_units)`，逐列用 `_table_columns` 守卫后再取。
-- 客单价：`paid_buyers > 0` 时 `aov = gmv / paid_buyers`（derived）；否则回退 `aov` 列均值
-  （column），并在 key_numbers/caveat 中标明来源。
-- 支付转化率：优先真实计数 `paid_buyers / SUM(product_visitors)`（`product_visitors`
-  存在且 > 0）；否则对 `pay_conversion_uv` 逐值 `bounded_rate` 归一后取均值。
+- `gmv/paid_orders/paid_units` 可跨日求和；`paid_buyers/product_visitors` 为日级去重，只输出
+  `paid_buyer_days` / `product_visitor_days` 人次之和与 `avg_daily_paid_buyers` /
+  `avg_daily_product_visitors` 日均值，不称为观察期唯一人数。
+- 客单价：优先对每日 `aov` 列取均值；缺失时逐日计算 `gmv / paid_buyers` 后取均值，绝不使用
+  `SUM(gmv) / SUM(paid_buyers)` 冒充期间客单价。
+- 支付转化率：优先对每日 `pay_conversion_uv` 归一后取均值；缺失时逐日计算
+  `paid_buyers / product_visitors` 后取均值，绝不先跨日汇总日级去重人数。
 - 趋势：对按日期排序的 `[(date_str, gmv), ...]` 跑 `mom_change`，用首→末 `direction_label`
   给出整体方向，逐期 delta 存入 `appendix`。
 - 证据：`has_controls=False, confounder_count>=1` → 天花板 WEAK。
 - 输出 `business_snapshot`（单聚合行）+ `business_trend`（一日一行）。
+
+### Finding 1.5 — 增长归因（严格降级门控）
+
+- traffic × conversion × AOV 的期间 GMV 桥需要期间去重访客/买家或用户级 ID。
+- 当前 `business_overview_daily` 只有日级去重人数；跨月相加只能得到人次，因此必须跳过 GMV 桥并
+  记录 limitation。未来新增真实期间去重来源后，才可恢复 `gmv_bridge`。
+
+### 活动期抬升对比（可选）
+
+- 活动/平销 GMV 取各组日均；转化取各组逐日 `paid_buyers / product_visitors` 的均值。
+- 两组均至少有 2 个有效转化日才输出转化对比；否则仅保留 GMV 并记录 limitation。
+- 日级去重用户可能跨日重复，转化只作描述性对比，不做用户级两比例显著性检验。
 
 ### Finding 2 — 载体 + 渠道结构拆解（降级门控）
 
@@ -80,8 +95,8 @@
 
 ## Output tables
 
-`business_snapshot`、`business_trend`、`carrier_structure`、
-`traffic_channel_structure`、`shop_funnel_stages`、`audience_conversion`。
+`business_snapshot`、`business_trend`、`business_self_benchmark`、`event_activity_lift`、
+`carrier_structure`、`traffic_channel_structure`、`shop_funnel_stages`、`audience_conversion`。
 仅产出输入存在的表；缺失表直接省略。
 
 ## Failure modes / 降级矩阵
@@ -97,6 +112,8 @@
 | `shop_page_funnel` | Finding 3 跳过并记 limitation。 |
 | `product_click_users` | 漏斗回退比率列均值并记 note。 |
 | `audience_type` | 客群 `two_proportion` 跳过，漏斗照常产出。 |
+| 期间去重 UV/用户级 ID | 跳过增长归因（GMV 桥），不可用日级去重人数跨期求和替代。 |
+| 活动或平销任一组有效转化日 `< 2` | 活动对比仅输出日均 GMV，不输出转化对比。 |
 
 Required 表存在时 Finding 1 **始终**产出，`run()` 的 findings 列表永不为空。
 
@@ -116,6 +133,7 @@ Required 表存在时 Finding 1 **始终**产出，`run()` 的 findings 列表�
 4. `two_proportion` 仅在 ≥2 组各 `n > 0` 时运行；「显著」须配合报告效应量（`diff`）。
 5. 每个 Finding 都填 `confounders` 且带观察性 caveat。
 6. 守卫所有分母（`/0` → `None`，绝不 raise）。
+7. `business_overview_daily` 的日级去重人数跨日只输出人次或日均值，不生成期间唯一人数。
 
 ## Non-goals
 

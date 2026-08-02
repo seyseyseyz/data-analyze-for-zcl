@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "spine_candidate.json",
+  "title": "spine_candidate",
+  "description": "Runtime ingest envelope for one isolated spine candidate task.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["candidate_id", "spine_brief"],
+  "properties": {
+    "candidate_id": {"type": "string", "minLength": 1},
+    "spine_brief": {"$ref": "spine_brief.json"}
+  }
+}

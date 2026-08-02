@@ -15,6 +15,40 @@ def _bundle_inputs(n):
     return results, facts_json
 
 
+def _complete_pending_fan(run_dir):
+    for task in nw.status_json(run_dir)["tasks"]["pending"]:
+        section_id = task.get("section_id") or task["task_id"].split(":", 1)[-1]
+        nw.ingest_output(
+            run_dir,
+            stage="fan",
+            task_id=task["task_id"],
+            text=json.dumps(
+                {"section_id": section_id, "title": section_id, "body": "b"},
+                ensure_ascii=False,
+            ),
+        )
+
+
+def _complete_continuity(run_dir):
+    task = nw.status_json(run_dir)["tasks"]["pending"][0]
+    nw.ingest_output(
+        run_dir,
+        stage="continuity",
+        task_id=task["task_id"],
+        text='{"edits":[]}',
+    )
+
+
+def _complete_pending_patch(run_dir):
+    task = nw.status_json(run_dir)["tasks"]["pending"][0]
+    nw.ingest_output(
+        run_dir,
+        stage="patch",
+        task_id=task["task_id"],
+        text='{"sections":[]}',
+    )
+
+
 def test_slug_preserves_cjk_and_normalizes_ascii():
     assert nw._slug("生意大盘") == "生意大盘"
     assert nw._slug("Traffic & Content") == "traffic-content"
@@ -52,6 +86,91 @@ def test_prepare_run_writes_state_and_briefs(tmp_path):
     assert (tmp_path / "domain_slices.json").exists()
     fan_briefs = sorted((tmp_path / "briefs").glob("fan_*.md"))
     assert len(fan_briefs) == nw.MAX_FAN_AGENTS
+
+
+def test_prepare_run_rejects_v2_sidecar_snapshot_mismatch_before_writes(tmp_path):
+    results = {
+        "canonical_version": 2,
+        "facts_hash": "results-hash",
+        "registry_hash": "registry-hash",
+        "metric_mapping": {"status": "observe"},
+        "domain_slices": [],
+    }
+    facts_json = {
+        "canonical_version": 2,
+        "facts_hash": "facts-hash",
+        "registry_hash": "registry-hash",
+        "metric_mapping": {"status": "observe"},
+        "facts": {},
+    }
+
+    with pytest.raises(ValueError, match="facts_hash"):
+        nw.prepare_run(
+            tmp_path,
+            results=results,
+            facts_json=facts_json,
+            report_name="测试报告",
+        )
+
+    assert not (tmp_path / "state.json").exists()
+
+
+@pytest.mark.parametrize(
+    ("results", "facts_json"),
+    [
+        (
+            {"domain_slices": []},
+            {"canonical_version": 2, "facts_hash": "h", "facts": {}},
+        ),
+        (
+            {"canonical_version": 2, "facts_hash": "h", "domain_slices": []},
+            {"facts_hash": "h", "facts": {}},
+        ),
+    ],
+)
+def test_prepare_run_rejects_mixed_legacy_and_v2_sidecars(
+    tmp_path,
+    results,
+    facts_json,
+):
+    with pytest.raises(ValueError, match="canonical_version"):
+        nw.prepare_run(
+            tmp_path,
+            results=results,
+            facts_json=facts_json,
+            report_name="测试报告",
+        )
+
+    assert not (tmp_path / "state.json").exists()
+
+
+def test_prepare_run_records_v2_metric_snapshot(tmp_path):
+    results = {
+        "canonical_version": 2,
+        "facts_hash": "same-hash",
+        "registry_hash": "registry-hash",
+        "metric_mapping": {"status": "observe"},
+        "domain_slices": [],
+    }
+    facts_json = {
+        "canonical_version": 2,
+        "facts_hash": "same-hash",
+        "registry_hash": "registry-hash",
+        "metric_mapping": {"status": "observe"},
+        "facts": {},
+    }
+
+    state = nw.prepare_run(
+        tmp_path,
+        results=results,
+        facts_json=facts_json,
+        report_name="测试报告",
+        multi_agent_authorized=True,
+    )
+
+    assert state["canonical_version"] == 2
+    assert state["registry_hash"] == "registry-hash"
+    assert state["metric_mapping_status"] == "observe"
 
 
 def test_prepare_run_refuses_overwrite_of_unfinished_run(tmp_path):
@@ -171,10 +290,13 @@ def test_advance_exhausted_gate_routes_to_deterministic(tmp_path, monkeypatch):
     nw.ingest_output(tmp_path, stage="seed", text='{"sections":[{"section_id":"域0","title":"域0","body":"b"}]}')
     nw.advance_run(tmp_path)  # fan
     nw.ingest_output(tmp_path, stage="fan", text='{"section_id":"域0","title":"域0","body":"b"}')
+    _complete_pending_fan(tmp_path)
     nw.advance_run(tmp_path)  # synth
     nw.ingest_output(tmp_path, stage="synth", text='{"sections":[{"section_id":"域0","title":"域0","body":"b"}]}')
     # gate rounds: each advance re-fails; after MAX_GATE_ROUNDS → deterministic
     for _ in range(nw.MAX_GATE_ROUNDS + 2):
+        if nw.status_json(tmp_path)["stage"] == "patch":
+            _complete_pending_patch(tmp_path)
         state = nw.advance_run(tmp_path)
         if state["stage"] == "blocked":
             break
@@ -206,6 +328,7 @@ def test_advance_gate_pass_flows_to_finalized_with_capped_bundle(tmp_path, monke
     assert state["stage"] == "continuity"
     assert state["_bundle"] == capped_bundle
 
+    _complete_continuity(tmp_path)
     state = nw.advance_run(tmp_path)  # continuity recheck: PASS -> finalized
     assert state["stage"] == "finalized"
     # the capped bundle (not the stale pre-gate one) must be what's carried forward
@@ -244,6 +367,7 @@ def test_advance_success_path_writes_both_narrative_artifacts(tmp_path, monkeypa
     nw.ingest_output(tmp_path, stage="synth",
                      text='{"sections":[{"section_id":"域0","title":"域0","body":"b"}]}')
     nw.advance_run(tmp_path)  # gate PASS -> continuity
+    _complete_continuity(tmp_path)
     state = nw.advance_run(tmp_path)  # continuity PASS -> finalized + writes artifacts
 
     assert state["stage"] == "finalized"
@@ -343,6 +467,7 @@ def test_advance_continuity_gate_failure_routes_to_blocked(tmp_path, monkeypatch
     state = nw.advance_run(tmp_path)  # gate: PASS -> continuity
     assert state["stage"] == "continuity"
 
+    _complete_continuity(tmp_path)
     state = nw.advance_run(tmp_path)  # continuity recheck: FAIL -> blocked, no exception raised
     assert state["stage"] == "blocked"
     assert called["reason"] == "continuity_gate_failed"
@@ -415,6 +540,10 @@ def test_producer_output_feeds_finalize_deterministic_without_crash(tmp_path):
     the live run hit as AttributeError: 'str' has no attribute 'get'."""
     from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
     from xhs_ceramics_analytics.evidence import EvidenceStrength
+    from xhs_ceramics_analytics.reporting.facts_export import (
+        build_factbook,
+        factbook_to_json,
+    )
     from xhs_ceramics_analytics.reporting.narrative_results import build_narrative_results
 
     analysis = [
@@ -424,17 +553,26 @@ def test_producer_output_feeds_finalize_deterministic_without_crash(tmp_path):
             findings=[Finding(title="t", conclusion="大盘走弱", evidence_strength=EvidenceStrength.WEAK, key_numbers={"gmv": 1})],
         )
     ]
+    factbook = build_factbook(analysis)
     results = build_narrative_results(
         analysis,
         blocked_modules=[("note_funnel", "笔记表缺少 impressions 字段"), "paid_traffic_efficiency"],
+        factbook=factbook,
     )
     # contract: normalized to {slug, reason} dicts — the skeleton reader consumes this.
     assert all(isinstance(b, dict) and "slug" in b for b in results["blocked_modules"])
-    facts_json = {"facts_hash": "h", "numbers": {}}
+    facts_json = json.loads(factbook_to_json(factbook))
     project_root = tmp_path / "proj"
     project_root.mkdir()
     run_dir = tmp_path / "run"
-    nw.prepare_run(run_dir, results=results, facts_json=facts_json, report_name="r", project_root=project_root)
+    nw.prepare_run(
+        run_dir,
+        results=results,
+        facts_json=facts_json,
+        report_name="r",
+        project_root=project_root,
+        workflow_version=nw.LEGACY_WORKFLOW_VERSION,
+    )
     nw.finalize_deterministic(run_dir, project_root=project_root, reason="unsupported")
     body = (project_root / ".xhs-ceramics-analytics" / "outputs" / "20260101-000000-r" / "r.md").read_text(encoding="utf-8")
     assert "note_funnel" in body and "paid_traffic_efficiency" in body
@@ -508,12 +646,15 @@ def test_advance_exhaustion_preserves_finalize_history(tmp_path, monkeypatch):
                      text='{"sections":[{"section_id":"域0","title":"域0","body":"b"}]}')
     nw.advance_run(run_dir, project_root=project_root)  # fan
     nw.ingest_output(run_dir, stage="fan", text='{"section_id":"域0","title":"域0","body":"b"}')
+    _complete_pending_fan(run_dir)
     nw.advance_run(run_dir, project_root=project_root)  # synth
     nw.ingest_output(run_dir, stage="synth",
                      text='{"sections":[{"section_id":"域0","title":"域0","body":"b"}]}')
 
     # Gate rounds: each advance re-fails; after MAX_GATE_ROUNDS → finalize_deterministic
     for _ in range(nw.MAX_GATE_ROUNDS + 2):
+        if nw.status_json(run_dir)["stage"] == "patch":
+            _complete_pending_patch(run_dir)
         state = nw.advance_run(run_dir, project_root=project_root)
         if state["stage"] == "blocked":
             break

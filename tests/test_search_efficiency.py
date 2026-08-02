@@ -25,9 +25,7 @@ def _make_search_overview_min(con, rows):
         """
     )
     if rows:
-        con.executemany(
-            "INSERT INTO search_overview VALUES (?, ?, ?, ?, ?)", rows
-        )
+        con.executemany("INSERT INTO search_overview VALUES (?, ?, ?, ?, ?)", rows)
 
 
 def _make_search_overview_full(con, rows):
@@ -47,9 +45,7 @@ def _make_search_overview_full(con, rows):
         )
         """
     )
-    con.executemany(
-        "INSERT INTO search_overview VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", rows
-    )
+    con.executemany("INSERT INTO search_overview VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", rows)
 
 
 def _make_search_terms(con, rows):
@@ -63,9 +59,7 @@ def _make_search_terms(con, rows):
         )
         """
     )
-    con.executemany(
-        "INSERT INTO search_terms VALUES (?, ?, ?, ?)", rows
-    )
+    con.executemany("INSERT INTO search_terms VALUES (?, ?, ?, ?)", rows)
 
 
 # declining pay_conversion across 3 dates; 笔记 clearly more effective than 商卡
@@ -102,8 +96,7 @@ def test_carrier_finding_compares_two_carriers(tmp_path):
     assert finding.key_numbers["significant"] is True
     assert finding.key_numbers["payers_source"] == "forward_derived"
     # forward-derived: never reverse-derive n = k / rate
-    note_row = next(r for r in result.tables["carrier_search_efficiency"]
-                    if r["carrier"] == "笔记")
+    note_row = next(r for r in result.tables["carrier_search_efficiency"] if r["carrier"] == "笔记")
     assert note_row["impressions"] == 10000
     assert note_row["payers"] == 1050  # 600 + 300 + 150
 
@@ -132,9 +125,129 @@ def test_prefers_real_paid_buyers(tmp_path):
     result = run_task(SLUG, db_path)
     finding = next(f for f in result.findings if f.title == "载体搜索效率对比")
     assert finding.key_numbers["payers_source"] == "real"
-    note_row = next(r for r in result.tables["carrier_search_efficiency"]
-                    if r["carrier"] == "笔记")
+    note_row = next(r for r in result.tables["carrier_search_efficiency"] if r["carrier"] == "笔记")
     assert note_row["payers"] == 250
+
+
+def test_carrier_rows_use_real_counts_then_explicit_row_fallback(tmp_path):
+    con, db_path = _con(tmp_path)
+    _make_search_overview_full(
+        con,
+        [
+            ("2026-05-31", "笔记", 1000.0, 0.9, 0.9, 5000.0, 30.0, 25.0, 100.0),
+            ("2026-05-31", "商卡", 1000.0, 0.2, 0.1, None, None, None, None),
+        ],
+    )
+    con.close()
+
+    result = run_task(SLUG, db_path)
+    finding = next(f for f in result.findings if f.title == "载体搜索效率对比")
+    rows = {row["carrier"]: row for row in result.tables["carrier_search_efficiency"]}
+
+    assert finding.key_numbers["payers_source"] == "mixed"
+    assert finding.key_numbers["click_users_coverage"] == {
+        "real_rows": 1,
+        "forward_derived_rows": 1,
+        "missing_rows": 0,
+    }
+    assert rows["笔记"]["product_click_users"] == 100
+    assert rows["笔记"]["paid_buyers"] == 25
+    assert rows["笔记"]["paid_orders"] == 30
+    assert rows["笔记"]["gmv"] == 5000.0
+    assert rows["笔记"]["click_users_source"] == "real"
+    assert rows["笔记"]["paid_buyers_source"] == "real"
+    assert rows["商卡"]["product_click_users"] == 200
+    assert rows["商卡"]["paid_buyers"] == 20
+    assert rows["商卡"]["click_users_source"] == "forward_derived"
+    assert rows["商卡"]["paid_buyers_source"] == "forward_derived"
+    assert rows["商卡"]["paid_orders"] is None
+    assert rows["商卡"]["gmv"] is None
+    assert rows["笔记"]["click_to_pay_rate"] == 0.25
+    assert rows["笔记"]["gmv_per_thousand_impressions"] == 5000.0
+
+
+def test_real_daily_clicks_and_buyers_weight_search_conversion_trend(tmp_path):
+    con, db_path = _con(tmp_path)
+    _make_search_overview_full(
+        con,
+        [
+            ("2026-05-31", "笔记", 1000.0, 0.9, 0.9, None, None, 10.0, 100.0),
+            ("2026-05-31", "商卡", 1000.0, 0.1, 0.1, None, None, 90.0, 900.0),
+            ("2026-06-30", "笔记", 1000.0, 0.9, 0.9, None, None, 40.0, 100.0),
+            ("2026-06-30", "商卡", 1000.0, 0.1, 0.1, None, None, 160.0, 900.0),
+        ],
+    )
+    con.close()
+
+    result = run_task(SLUG, db_path)
+    rows = result.tables["search_conversion_trend"]
+
+    assert rows[0]["avg_pay_conversion"] == 0.1
+    assert rows[0]["conversion_source"] == "real_weighted"
+    assert rows[1]["avg_pay_conversion"] == 0.2
+    assert rows[1]["conversion_source"] == "real_weighted"
+
+
+def test_search_trend_combines_real_and_row_fallback_records(tmp_path):
+    con, db_path = _con(tmp_path)
+    _make_search_overview_full(
+        con,
+        [
+            ("2026-05-31", "笔记", 1000, 0.1, 0.1, None, None, 10, 100),
+            ("2026-05-31", "商卡", 9000, 1.0, 0.9, None, None, None, None),
+            ("2026-06-30", "笔记", 1000, 0.1, 0.2, None, None, 20, 100),
+            ("2026-06-30", "商卡", 9000, 1.0, 0.1, None, None, None, None),
+        ],
+    )
+    con.close()
+
+    result = run_task(SLUG, db_path)
+    rows = result.tables["search_conversion_trend"]
+    assert rows[0]["avg_pay_conversion"] == (10 + 8100) / (100 + 9000)
+    assert rows[0]["conversion_source"] == "mixed"
+    assert rows[1]["avg_pay_conversion"] == (20 + 900) / (100 + 9000)
+    assert rows[1]["conversion_source"] == "mixed"
+
+
+def test_search_terms_surface_full_funnel_with_real_counts(tmp_path):
+    con, db_path = _con(tmp_path)
+    _make_search_overview_min(con, _MULTI_ROWS)
+    con.execute(
+        """
+        CREATE TABLE search_terms (
+          search_term VARCHAR,
+          card_impression_users DOUBLE,
+          product_click_rate DOUBLE,
+          pay_conversion DOUBLE,
+          product_click_users DOUBLE,
+          paid_buyers DOUBLE,
+          paid_orders DOUBLE,
+          gmv DOUBLE
+        )
+        """
+    )
+    con.executemany(
+        "INSERT INTO search_terms VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        [
+            ("真实词", 1000.0, 0.9, 0.9, 200.0, 20.0, 24.0, 6000.0),
+            ("回退词", 1000.0, 0.1, 0.2, None, None, None, None),
+        ],
+    )
+    con.close()
+
+    result = run_task(SLUG, db_path)
+    rows = {row["search_term"]: row for row in result.tables["search_term_opportunities"]}
+
+    assert rows["真实词"]["product_click_users"] == 200
+    assert rows["真实词"]["paid_buyers"] == 20
+    assert rows["真实词"]["paid_orders"] == 24
+    assert rows["真实词"]["gmv"] == 6000.0
+    assert rows["真实词"]["click_to_pay_rate"] == 0.1
+    assert rows["真实词"]["gmv_per_thousand_impressions"] == 6000.0
+    assert rows["回退词"]["product_click_users"] == 100
+    assert rows["回退词"]["paid_buyers"] == 20
+    assert rows["回退词"]["click_users_source"] == "forward_derived"
+    assert rows["回退词"]["paid_buyers_source"] == "forward_derived"
 
 
 def test_single_carrier_skips_comparison_but_emits_finding(tmp_path):
@@ -169,9 +282,9 @@ def test_search_terms_classify_opportunity_and_leak(tmp_path):
     _make_search_terms(
         con,
         [
-            ("opp", 1000.0, 0.8, 0.5),    # rate 0.40, well above baseline
+            ("opp", 1000.0, 0.8, 0.5),  # rate 0.40, well above baseline
             ("leak", 1000.0, 0.1, 0.05),  # rate 0.005, well below baseline
-            ("tiny", 10.0, 0.9, 0.9),     # n < 30 → small sample, unclassified
+            ("tiny", 10.0, 0.9, 0.9),  # n < 30 → small sample, unclassified
         ],
     )
     con.close()

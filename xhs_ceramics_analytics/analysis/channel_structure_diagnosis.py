@@ -9,6 +9,7 @@ Real counts available for 笔记/商卡: the daily table carries genuine per-car
 买家数/访客数/退款订单数/支付订单数, so conversion and refund rate prefer real
 Σk/Σn counts over the pre-computed rate columns — no reverse derivation.
 """
+
 from pathlib import Path
 
 from xhs_ceramics_analytics.analytics.numeric import to_finite_float
@@ -21,6 +22,7 @@ from xhs_ceramics_analytics.analytics.confidence import (
     two_proportion,
     wilson_interval,
 )
+from xhs_ceramics_analytics.analytics.timeseries import iso_date
 from xhs_ceramics_analytics.db.duck import connect
 from xhs_ceramics_analytics.evidence import EvidenceStrength, score_evidence, score_reliability
 
@@ -62,6 +64,15 @@ def run(db_path: Path) -> AnalysisResult:
         if refund_finding is not None:
             findings.append(refund_finding)
             tables["channel_refund"] = refund_rows
+
+        daily_rows = _carrier_daily_rows(con)
+        if daily_rows:
+            tables["carrier_daily_fact"] = daily_rows
+
+        source_finding, source_rows = _traffic_source_finding(con, limitations)
+        if source_finding is not None:
+            findings.append(source_finding)
+            tables["traffic_source_efficiency"] = source_rows
     finally:
         con.close()
     return AnalysisResult(
@@ -79,7 +90,9 @@ def run(db_path: Path) -> AnalysisResult:
 def _scale_finding(con, limitations: list[str]) -> tuple[Finding, list[dict]]:
     cols = _table_columns(con, "business_overview_daily")
     if not {"note_gmv", "card_gmv"} <= cols:
-        limitations.append("business_overview_daily 缺少 note_gmv/card_gmv 列，无法进行渠道收入对比。")
+        limitations.append(
+            "business_overview_daily 缺少 note_gmv/card_gmv 列，无法进行渠道收入对比。"
+        )
         finding = Finding(
             title="渠道收入与规模对比",
             conclusion="business_overview_daily 缺少 note_gmv/card_gmv 列，无法判断笔记与商品卡的渠道规模。",
@@ -105,13 +118,13 @@ def _scale_finding(con, limitations: list[str]) -> tuple[Finding, list[dict]]:
     note_orders = sum(_num(r.get("note_paid_orders")) for r in rows) if has_orders else None
     card_orders = sum(_num(r.get("card_paid_orders")) for r in rows) if has_orders else None
 
-    has_buyers = {"笔记支付买家数", "商卡支付买家数"} <= cols
-    note_buyers = sum(_num(r.get("笔记支付买家数")) for r in rows) if has_buyers else None
-    card_buyers = sum(_num(r.get("商卡支付买家数")) for r in rows) if has_buyers else None
+    has_buyers = {"note_paid_buyers", "card_paid_buyers"} <= cols
+    note_buyers = sum(_num(r.get("note_paid_buyers")) for r in rows) if has_buyers else None
+    card_buyers = sum(_num(r.get("card_paid_buyers")) for r in rows) if has_buyers else None
 
-    has_net = {"笔记退款后支付金额_支付时间", "商卡退款后支付金额_支付时间"} <= cols
-    note_net = sum(_num(r.get("笔记退款后支付金额_支付时间")) for r in rows) if has_net else None
-    card_net = sum(_num(r.get("商卡退款后支付金额_支付时间")) for r in rows) if has_net else None
+    has_net = {"note_net_gmv_pay", "card_net_gmv_pay"} <= cols
+    note_net = sum(_num(r.get("note_net_gmv_pay")) for r in rows) if has_net else None
+    card_net = sum(_num(r.get("card_net_gmv_pay")) for r in rows) if has_net else None
 
     caveats = [_OBS_CAVEAT]
     dominant_carrier: str | None = None
@@ -119,7 +132,9 @@ def _scale_finding(con, limitations: list[str]) -> tuple[Finding, list[dict]]:
     dominant_share: float | None = None
 
     if total_gmv <= 0:
-        limitations.append("business_overview_daily 中 note_gmv/card_gmv 求和为 0，无法判断主渠道。")
+        limitations.append(
+            "business_overview_daily 中 note_gmv/card_gmv 求和为 0，无法判断主渠道。"
+        )
         conclusion = "笔记与商品卡 GMV 求和为 0，无法判断主渠道。"
         sample_size = len(rows)
     else:
@@ -195,8 +210,13 @@ def _scale_finding(con, limitations: list[str]) -> tuple[Finding, list[dict]]:
 # --------------------------------------------------------------------------- #
 def _conversion_finding(con, limitations: list[str]) -> tuple[Finding | None, list[dict]]:
     cols = _table_columns(con, "business_overview_daily")
-    count_cols = {"笔记支付买家数", "笔记商品访客数", "商卡支付买家数", "商卡商品访客数"}
-    rate_cols = {"笔记支付转化率", "商卡支付转化率"}
+    count_cols = {
+        "note_paid_buyers",
+        "note_product_visitors",
+        "card_paid_buyers",
+        "card_product_visitors",
+    }
+    rate_cols = {"note_pay_conversion", "card_pay_conversion"}
     has_counts = count_cols <= cols
     has_rates = rate_cols <= cols
     if not has_counts and not has_rates:
@@ -212,10 +232,10 @@ def _conversion_finding(con, limitations: list[str]) -> tuple[Finding | None, li
 
     if has_counts:
         source = "count"
-        note_visitors = sum(_num(r.get("笔记商品访客数")) for r in rows)
-        note_buyers = sum(_num(r.get("笔记支付买家数")) for r in rows)
-        card_visitors = sum(_num(r.get("商卡商品访客数")) for r in rows)
-        card_buyers = sum(_num(r.get("商卡支付买家数")) for r in rows)
+        note_visitors = sum(_num(r.get("note_product_visitors")) for r in rows)
+        note_buyers = sum(_num(r.get("note_paid_buyers")) for r in rows)
+        card_visitors = sum(_num(r.get("card_product_visitors")) for r in rows)
+        card_buyers = sum(_num(r.get("card_paid_buyers")) for r in rows)
         note_conversion = note_buyers / note_visitors if note_visitors else None
         card_conversion = card_buyers / card_visitors if card_visitors else None
         if min_n_guard(note_visitors):
@@ -228,16 +248,18 @@ def _conversion_finding(con, limitations: list[str]) -> tuple[Finding | None, li
         caveats.append(
             "转化率取自 笔记支付转化率/商卡支付转化率 列均值（非真实计数），source=column。"
         )
-        note_conversion = _column_mean_rate(rows, "笔记支付转化率")
-        card_conversion = _column_mean_rate(rows, "商卡支付转化率")
+        note_conversion = _column_mean_rate(rows, "note_pay_conversion")
+        card_conversion = _column_mean_rate(rows, "card_pay_conversion")
         sample_size = len(rows)
 
-    has_aov = {"笔记客单价", "商卡客单价"} <= cols
+    has_aov = {"note_aov", "card_aov"} <= cols
     if has_aov:
-        note_aov = _column_mean(rows, "笔记客单价")
-        card_aov = _column_mean(rows, "商卡客单价")
+        note_aov = _column_mean(rows, "note_aov")
+        card_aov = _column_mean(rows, "card_aov")
     else:
-        limitations.append("business_overview_daily 缺少 笔记客单价/商卡客单价 列，渠道客单价对比缺失。")
+        limitations.append(
+            "business_overview_daily 缺少 笔记客单价/商卡客单价 列，渠道客单价对比缺失。"
+        )
         note_aov = card_aov = None
 
     conv_diff = None
@@ -260,14 +282,20 @@ def _conversion_finding(con, limitations: list[str]) -> tuple[Finding | None, li
         better_carrier = "note" if note_conversion > card_conversion else "card"
 
     conclusion = _conversion_conclusion(
-        note_conversion, card_conversion, conv_diff, conv_significant, note_aov, card_aov, better_carrier
+        note_conversion,
+        card_conversion,
+        conv_diff,
+        conv_significant,
+        note_aov,
+        card_aov,
+        better_carrier,
     )
 
-    conv_evidence_reason = "转化率优先用真实 买家数/访客数 计数；缺失时退回转化率列均值（source=column）。"
+    conv_evidence_reason = (
+        "转化率优先用真实 买家数/访客数 计数；缺失时退回转化率列均值（source=column）。"
+    )
     if conv_methodology:
-        conv_evidence_reason = M.methodology_note(
-            conv_evidence_reason, M.METHOD_PROPORTION_TEST
-        )
+        conv_evidence_reason = M.methodology_note(conv_evidence_reason, M.METHOD_PROPORTION_TEST)
 
     finding = Finding(
         title="渠道转化与客单对比",
@@ -348,12 +376,12 @@ def _conversion_conclusion(
 def _refund_finding(con, limitations: list[str]) -> tuple[Finding | None, list[dict]]:
     cols = _table_columns(con, "business_overview_daily")
     count_cols = {
-        "笔记退款订单数_支付时间",
+        "note_refund_orders_pay",
         "note_paid_orders",
-        "商卡退款订单数_支付时间",
+        "card_refund_orders_pay",
         "card_paid_orders",
     }
-    rate_cols = {"笔记退款率_支付时间", "商卡退款率_支付时间"}
+    rate_cols = {"note_refund_rate_pay", "card_refund_rate_pay"}
     has_counts = count_cols <= cols
     has_rates = rate_cols <= cols
     if not has_counts and not has_rates:
@@ -373,8 +401,8 @@ def _refund_finding(con, limitations: list[str]) -> tuple[Finding | None, list[d
     if has_counts:
         note_orders = sum(_num(r.get("note_paid_orders")) for r in rows)
         card_orders = sum(_num(r.get("card_paid_orders")) for r in rows)
-        note_refund_orders = sum(_num(r.get("笔记退款订单数_支付时间")) for r in rows)
-        card_refund_orders = sum(_num(r.get("商卡退款订单数_支付时间")) for r in rows)
+        note_refund_orders = sum(_num(r.get("note_refund_orders_pay")) for r in rows)
+        card_refund_orders = sum(_num(r.get("card_refund_orders_pay")) for r in rows)
         note_refund_rate = note_refund_orders / note_orders if note_orders else None
         card_refund_rate = card_refund_orders / card_orders if card_orders else None
         if min_n_guard(note_orders):
@@ -384,16 +412,26 @@ def _refund_finding(con, limitations: list[str]) -> tuple[Finding | None, list[d
         sample_size = int(note_orders + card_orders)
     else:
         caveats.append("退款率取自 笔记退款率_支付时间/商卡退款率_支付时间 列均值（非真实计数）。")
-        note_refund_rate = _column_mean_rate(rows, "笔记退款率_支付时间")
-        card_refund_rate = _column_mean_rate(rows, "商卡退款率_支付时间")
+        note_refund_rate = _column_mean_rate(rows, "note_refund_rate_pay")
+        card_refund_rate = _column_mean_rate(rows, "card_refund_rate_pay")
         sample_size = len(rows)
 
-    has_note_stage = {"笔记发货前退款率_支付时间", "笔记发货后退款率_支付时间"} <= cols
-    has_card_stage = {"商卡发货前退款率_支付时间", "商卡发货后退款率_支付时间"} <= cols
-    note_pre = _column_mean_rate(rows, "笔记发货前退款率_支付时间") if has_note_stage else None
-    note_post = _column_mean_rate(rows, "笔记发货后退款率_支付时间") if has_note_stage else None
-    card_pre = _column_mean_rate(rows, "商卡发货前退款率_支付时间") if has_card_stage else None
-    card_post = _column_mean_rate(rows, "商卡发货后退款率_支付时间") if has_card_stage else None
+    has_note_stage = {
+        "note_pre_ship_refund_rate_pay",
+        "note_post_ship_refund_rate_pay",
+    } <= cols
+    has_card_stage = {
+        "card_pre_ship_refund_rate_pay",
+        "card_post_ship_refund_rate_pay",
+    } <= cols
+    note_pre = _column_mean_rate(rows, "note_pre_ship_refund_rate_pay") if has_note_stage else None
+    note_post = (
+        _column_mean_rate(rows, "note_post_ship_refund_rate_pay") if has_note_stage else None
+    )
+    card_pre = _column_mean_rate(rows, "card_pre_ship_refund_rate_pay") if has_card_stage else None
+    card_post = (
+        _column_mean_rate(rows, "card_post_ship_refund_rate_pay") if has_card_stage else None
+    )
 
     note_stage = _dominant_stage(note_pre, note_post)
     card_stage = _dominant_stage(card_pre, card_post)
@@ -510,7 +548,157 @@ def _refund_lever(higher_refund_carrier: str | None, higher_stage: str | None) -
         stage_lever = "这周先从物流时效下手，逐项排查揽收/发货时长、退款前置提醒与价保机制。"
     else:
         stage_lever = "这周先逐个核对商品质量，重点看图文/详情描述一致性是否到位。"
-    return f"{_CARRIER_ZH[higher_refund_carrier]}退款率更高，而且大多出在{higher_stage}：{stage_lever}"
+    return (
+        f"{_CARRIER_ZH[higher_refund_carrier]}退款率更高，而且大多出在{higher_stage}：{stage_lever}"
+    )
+
+
+def _carrier_daily_rows(con) -> list[dict]:
+    cols = _table_columns(con, "business_overview_daily")
+    if "date" not in cols:
+        return []
+    rows: list[dict] = []
+    for source in _fetch_all(con, "business_overview_daily"):
+        date = iso_date(source.get("date"))
+        if date is None:
+            continue
+        for carrier in ("note", "card"):
+            gmv = _maybe_num(source.get(f"{carrier}_gmv"))
+            orders = _maybe_num(source.get(f"{carrier}_paid_orders"))
+            buyers = _maybe_num(source.get(f"{carrier}_paid_buyers"))
+            visitors = _maybe_num(source.get(f"{carrier}_product_visitors"))
+            refund_orders = _maybe_num(source.get(f"{carrier}_refund_orders_pay"))
+            conversion = buyers / visitors if visitors and buyers is not None else None
+            if conversion is None:
+                conversion = bounded_rate(source.get(f"{carrier}_pay_conversion"))
+            refund_rate = refund_orders / orders if orders and refund_orders is not None else None
+            if refund_rate is None:
+                refund_rate = bounded_rate(source.get(f"{carrier}_refund_rate_pay"))
+            rows.append(
+                {
+                    "date": date,
+                    "carrier": carrier,
+                    "carrier_zh": _CARRIER_ZH[carrier],
+                    "gmv": gmv,
+                    "paid_orders": orders,
+                    "buyers": buyers,
+                    "visitors": visitors,
+                    "pay_conversion": conversion,
+                    "aov": _maybe_num(source.get(f"{carrier}_aov")),
+                    "net_gmv_pay": _maybe_num(source.get(f"{carrier}_net_gmv_pay")),
+                    "refund_orders_pay": refund_orders,
+                    "refund_rate": refund_rate,
+                    "pre_ship_refund_rate": bounded_rate(
+                        source.get(f"{carrier}_pre_ship_refund_rate_pay")
+                    ),
+                    "post_ship_refund_rate": bounded_rate(
+                        source.get(f"{carrier}_post_ship_refund_rate_pay")
+                    ),
+                }
+            )
+    return rows
+
+
+def _traffic_source_finding(con, limitations: list[str]) -> tuple[Finding | None, list[dict]]:
+    if not _table_exists(con, "traffic_source"):
+        return None, []
+    cols = _table_columns(con, "traffic_source")
+    dimensions = [
+        name for name in ("xhs_id", "account_name", "channel", "note_type") if name in cols
+    ]
+    if not dimensions:
+        limitations.append("traffic_source 缺少账号、渠道和笔记类型维度，跳过来源效率矩阵。")
+        return None, []
+
+    groups: dict[tuple, list[dict]] = {}
+    for row in _fetch_all(con, "traffic_source"):
+        key = tuple(row.get(name) for name in dimensions)
+        groups.setdefault(key, []).append(row)
+
+    output: list[dict] = []
+    for key, group_rows in groups.items():
+        item = {name: value for name, value in zip(dimensions, key, strict=True)}
+        for metric in (
+            "gmv",
+            "paid_orders",
+            "paid_buyers",
+            "product_clicks",
+            "product_click_users",
+        ):
+            item[metric] = _sum_optional(group_rows, metric) if metric in cols else None
+        clicks = item["product_clicks"]
+        click_users = item["product_click_users"]
+        buyers = item["paid_buyers"]
+        gmv = item["gmv"]
+        item["clicks_per_click_user"] = (
+            clicks / click_users if click_users and clicks is not None else None
+        )
+        item["uv_pay_conversion_calc"] = (
+            buyers / click_users if click_users and buyers is not None else None
+        )
+        item["pv_pay_conversion_reported"] = _weighted_rate(
+            group_rows, "pay_conversion_pv", "product_clicks", cols
+        )
+        item["uv_pay_conversion_reported"] = _weighted_rate(
+            group_rows, "pay_conversion_uv", "product_click_users", cols
+        )
+        item["gmv_per_buyer"] = gmv / buyers if buyers and gmv is not None else None
+        output.append(item)
+
+    output.sort(
+        key=lambda row: (
+            row.get("gmv") is not None,
+            row.get("gmv") or 0,
+            row.get("paid_buyers") or 0,
+        ),
+        reverse=True,
+    )
+    finding = Finding(
+        title="流量来源与内容类型效率",
+        conclusion=f"已按账号、渠道和笔记类型形成 {len(output)} 个独立效率分组，可比较流量规模、转化与客单。",
+        evidence_strength=score_evidence(len(output), has_controls=False, confounder_count=3),
+        descriptive_reliability=score_reliability(len(output)),
+        key_numbers={
+            "groups": len(output),
+            "channels": len({row.get("channel") for row in output if row.get("channel")}),
+            "note_types": len({row.get("note_type") for row in output if row.get("note_type")}),
+        },
+        caveats=[
+            "PV 与 UV 转化口径分别保留，不互相替代，也不跨账号、渠道或笔记类型相加。",
+            "UV 转化优先用真实支付人数/商品点击人数；平台回传率单独展示用于口径核对。",
+            _OBS_CAVEAT,
+        ],
+        evidence_reason="在 traffic_source 原始粒度上按同一账号、渠道和笔记类型汇总真实计数。",
+        confounders=["流量来源质量", "笔记与商品组合", "统计周期差异"],
+        recommended_action="优先检查高点击低支付分组，再比较同类笔记在不同渠道的成交和退款表现。",
+    )
+    return finding, output
+
+
+def _sum_optional(rows: list[dict], key: str) -> float | None:
+    values = [_maybe_num(row.get(key)) for row in rows]
+    present = [value for value in values if value is not None]
+    return sum(present) if present else None
+
+
+def _weighted_rate(
+    rows: list[dict], rate_key: str, weight_key: str, cols: set[str]
+) -> float | None:
+    if rate_key not in cols:
+        return None
+    weighted = []
+    weights = []
+    for row in rows:
+        rate = bounded_rate(row.get(rate_key))
+        weight = _maybe_num(row.get(weight_key)) if weight_key in cols else None
+        if rate is None:
+            continue
+        if weight is not None and weight > 0:
+            weighted.append(rate * weight)
+            weights.append(weight)
+    if weights:
+        return sum(weighted) / sum(weights)
+    return _column_mean_rate(rows, rate_key)
 
 
 # --------------------------------------------------------------------------- #
@@ -532,6 +720,10 @@ def _column_mean_rate(rows: list[dict], col: str) -> float | None:
 # --------------------------------------------------------------------------- #
 def _num(value) -> float:
     return to_finite_float(value, 0.0)
+
+
+def _maybe_num(value) -> float | None:
+    return to_finite_float(value, None) if value is not None else None
 
 
 def _fetch_all(con, table: str) -> list[dict]:

@@ -2,16 +2,29 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "continuity_edit.json",
   "title": "continuity_edit",
-  "description": "Continuity pass output — prose-only edits. digit + {tN} multisets are invariant.",
-  "type": "array",
-  "items": {
-    "type": "object",
-    "additionalProperties": false,
-    "required": ["claim_id", "old", "new"],
-    "properties": {
-      "claim_id": {"type": "string"},
-      "old": {"type": "string", "description": "Verbatim substring of the claim's rendered_sentence, occurs once."},
-      "new": {"type": "string", "description": "Same digits, same {tN}; prose only."}
+  "description": "Runtime continuity ingest envelope. Each edit is prose-only and preserves digit and token multisets.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["edits"],
+  "properties": {
+    "edits": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["claim_id", "old", "new"],
+        "properties": {
+          "claim_id": {"type": "string", "minLength": 1},
+          "old": {
+            "type": "string",
+            "description": "Verbatim substring of rendered_sentence; occurs exactly once."
+          },
+          "new": {
+            "type": "string",
+            "description": "Same digits and same {tN} tokens; prose only."
+          }
+        }
+      }
     }
   }
 }

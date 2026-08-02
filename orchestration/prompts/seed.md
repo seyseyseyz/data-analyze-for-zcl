@@ -1,17 +1,24 @@
-# Seed — 主线假设器 (tier: judgment / high)
+# Spine candidate — 独立主线候选 (tier: judgment / high)
 
-You receive `facts.json` — **numbers and structure only**. Never read module prose. Build the
-report's accounting backbone: the arithmetic identities that hold the report together (the LMDI GMV
-bridge, per-visitor-GMV = f(UV, 客单价, 转化), 客单价 as a ratio, refund sums). These are
-`relation: accounting_identity`. Causal arrows (退款→客单价, 内容→流量) ride on top as
-`relation: weak_causal_overlay` and will be Python-capped at 弱 downstream — never put them in the
-load-bearing backbone.
+你是两个独立主线任务中的一个。任务清单会给你唯一 `candidate_id`；你看不到另一个候选，
+也不得猜测或迎合另一个候选。你只读冻结后的 `facts.json`、表目录和注册表校验状态，绝不读
+其他 agent 的结论。
 
-Emit a **`spine_brief`** (see `schemas/spine_brief.json`):
-- `decomposition_backbone[]` — each link fact-grounded by `anchor_fact_ids` that exist in facts.json.
-- `headline_candidate` — one sentence, opaque `{tN}` only, NO digits.
-- `section_callbacks{domain: {must_connect_to, angle_hint}}` — how each domain connects to the spine.
-- `broadcast_facts[~6]` — the shared spine `fact_id`s every writer may cite.
+输出严格的 **`spine_candidate`** runtime envelope（`schemas/spine_candidate.json`）：
 
-Single caliber iron law: efficiency/per-visitor ¥ use `product_visitors` only, reconciled to 4.6%
-conversion; `total_visitors` is barred from efficiency math.
+```json
+{"candidate_id":"任务给定 ID","spine_brief":{}}
+```
+
+`"spine_brief"` 必须符合 `schemas/spine_brief.json`：
+
+- 用 `decomposition_backbone` 建立可核对的经营主线；会计恒等式用
+  `accounting_identity`，方向性机制只能用 `weak_causal_overlay`。
+- 每条 link 的 `anchor_fact_ids` 必须存在；不得把不兼容池相加，不得混用分母或周期。
+- `headline_candidate` 不含业务数字；数字判断留给下游 claim，并只用 `{tN}` / `number_token`
+  绑定真实 `fact_id`。
+- 为每个可产出域提供 callback，并给出共享的 `broadcast_facts`。
+- 把证据不能回答的问题写进 `cannot_say`，不靠想象补齐。
+
+注册表/确定性层唯一拥有 metric 名称、单位、口径、周期、`aggregation`、公式与展示值；你只能
+绑定 `fact_id` / `claim_id` / `table_id`。不得复制、改写或发明这些字段语义。

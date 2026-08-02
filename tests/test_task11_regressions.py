@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from xhs_ceramics_analytics.analysis.registry import run_task
+from xhs_ceramics_analytics.analysis.experiment_matrix import _fetch_top_skus
 from xhs_ceramics_analytics.db.duck import connect
 
 
@@ -129,6 +130,42 @@ def test_reshoot_downranks_tiny_samples(tmp_path: Path):
     assert top != "strong"
 
 
+def test_reshoot_includes_exposure_commerce_age_and_refund_penalty(tmp_path: Path):
+    db_path = _build_db(
+        tmp_path / "reshoot-commercial.duckdb",
+        [
+            """
+            CREATE TABLE notes (
+              note_id VARCHAR,
+              title VARCHAR,
+              publish_time DATE,
+              impressions DOUBLE,
+              reads DOUBLE,
+              collects DOUBLE,
+              product_clicks DOUBLE,
+              note_paid_orders DOUBLE,
+              note_gmv DOUBLE,
+              note_refund_amount_pay DOUBLE
+            )
+            """,
+            "INSERT INTO notes VALUES ('n1', '高意向低退款', DATE '2026-06-01', 1000, 400, 40, 80, 8, 800, 80)",
+            "INSERT INTO notes VALUES ('n2', '高退款', DATE '2026-06-10', 1000, 400, 40, 80, 8, 800, 400)",
+        ],
+    )
+
+    result = run_task("reshoot_repost_candidates", db_path)
+    rows = {row["note_id"]: row for row in result.tables["reshoot_candidates"]}
+
+    assert rows["n1"]["read_rate"] == pytest.approx(0.4)
+    assert rows["n1"]["read_to_product_click"] == pytest.approx(0.2)
+    assert rows["n1"]["product_click_to_order"] == pytest.approx(0.1)
+    assert rows["n1"]["gmv_per_1k_impressions"] == pytest.approx(800)
+    assert rows["n1"]["net_note_gmv"] == 720
+    assert rows["n1"]["content_age_days"] == 9
+    assert rows["n1"]["refund_penalty"] < rows["n2"]["refund_penalty"]
+    assert rows["n1"]["rank"] < rows["n2"]["rank"]
+
+
 def test_hypothesis_without_comment_signal_stays_unknown(tmp_path: Path):
     db_path = _build_db(
         tmp_path / "hypothesis-no-comments.duckdb",
@@ -143,7 +180,9 @@ def test_hypothesis_without_comment_signal_stays_unknown(tmp_path: Path):
     )
 
     result = run_task("hypothesis_knowledge_base", db_path)
-    demand_row = next(row for row in result.tables["hypotheses"] if row["theme"] == "comment_demand")
+    demand_row = next(
+        row for row in result.tables["hypotheses"] if row["theme"] == "comment_demand"
+    )
 
     assert demand_row["status"] == "needs_data"
     assert demand_row["label"] == "unknown"
@@ -189,7 +228,9 @@ def test_hypothesis_ignores_blank_comment_text(tmp_path: Path):
     )
 
     result = run_task("hypothesis_knowledge_base", db_path)
-    demand_row = next(row for row in result.tables["hypotheses"] if row["theme"] == "comment_demand")
+    demand_row = next(
+        row for row in result.tables["hypotheses"] if row["theme"] == "comment_demand"
+    )
 
     assert demand_row["status"] == "needs_data"
     assert demand_row["label"] == "unknown"
@@ -212,12 +253,58 @@ def test_hypothesis_ignores_null_sku_sales_metrics(tmp_path: Path):
     )
 
     result = run_task("hypothesis_knowledge_base", db_path)
-    sku_row = next(row for row in result.tables["hypotheses"] if row["theme"] == "product_opportunity")
+    sku_row = next(
+        row for row in result.tables["hypotheses"] if row["theme"] == "product_opportunity"
+    )
 
     assert sku_row["status"] == "needs_data"
     assert sku_row["label"] == "unknown"
     assert sku_row["evidence_count"] == 0
     assert sku_row["metric"] is None
+
+
+def test_hypothesis_copy_angle_does_not_invent_sku_pairing(tmp_path: Path):
+    db_path = _build_db(
+        tmp_path / "hypothesis-copy-only.duckdb",
+        [
+            "CREATE TABLE content_features (note_id VARCHAR, copy_angle VARCHAR)",
+            "CREATE TABLE notes (note_id VARCHAR, reads DOUBLE, collects DOUBLE)",
+            "INSERT INTO content_features VALUES ('n1', 'gift')",
+            "INSERT INTO notes VALUES ('n1', 100, 10)",
+        ],
+    )
+
+    result = run_task("hypothesis_knowledge_base", db_path)
+    copy_row = next(row for row in result.tables["hypotheses"] if row["theme"] == "copy_angle")
+
+    assert "SKU" not in str(copy_row["hypothesis"])
+    assert "内容变量" in str(copy_row["hypothesis"])
+
+
+def test_experiment_matrix_does_not_use_price_as_gmv_or_claim_controlled_causality(
+    tmp_path: Path,
+):
+    db_path = _build_db(
+        tmp_path / "experiment-price-only.duckdb",
+        [
+            "CREATE TABLE skus (sku_id VARCHAR, sku_name VARCHAR, price DOUBLE)",
+            "INSERT INTO skus VALUES ('s1', '青釉咖啡杯', 129)",
+            "CREATE TABLE content_features (copy_angle VARCHAR)",
+            "INSERT INTO content_features VALUES ('gift')",
+        ],
+    )
+
+    con = connect(db_path)
+    try:
+        skus, limitations = _fetch_top_skus(con)
+    finally:
+        con.close()
+    result = run_task("weekly_experiment_matrix", db_path)
+
+    assert skus == [{"sku_id": "s1", "sku_name": "青釉咖啡杯", "units": None, "gmv": None}]
+    text = " ".join([result.findings[0].conclusion, *result.findings[0].caveats])
+    assert "价格不能替代 GMV" in " ".join(limitations)
+    assert "不构成受控因果" in text
 
 
 def test_experiment_matrix_uses_future_default_planning_date(

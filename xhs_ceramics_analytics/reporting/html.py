@@ -1,3 +1,4 @@
+import hashlib
 import re
 from html import escape, unescape
 
@@ -14,6 +15,10 @@ from xhs_ceramics_analytics.reporting.domains import (
     group_by_domain,
 )
 from xhs_ceramics_analytics.reporting.markdown import render_markdown
+from xhs_ceramics_analytics.reporting.facts_export import (
+    fact_id_map_for_result,
+    iter_result_finding_refs,
+)
 from xhs_ceramics_analytics.reporting.priority import build_priority_table
 from xhs_ceramics_analytics.reporting.section_order import APPENDIX_TASKS
 from xhs_ceramics_analytics.reporting.chart_style import CHART_STYLE
@@ -279,7 +284,6 @@ _USER_TABLE_COLUMNS = {
 }
 
 
-
 _DEFAULT_REPORT_TITLE = "小红书账号分析报告"
 
 
@@ -287,6 +291,7 @@ def render_html(
     results: list[AnalysisResult],
     title: str | None = None,
     assistant: str | None = None,
+    factbook: object | None = None,
 ) -> str:
     report_title = title or _DEFAULT_REPORT_TITLE
     env = Environment(
@@ -300,7 +305,7 @@ def render_html(
     template = env.get_template("report.html.j2")
     return template.render(
         markdown_report=render_markdown(results, title=report_title),
-        report=_build_report_context(results, assistant=assistant),
+        report=_build_report_context(results, assistant=assistant, factbook=factbook),
         results=results,
         report_title=report_title,
     )
@@ -561,8 +566,7 @@ def _markdown_document_body(
                     {"level": heading_level, "anchor": anchor, "label": _toc_label(text)}
                 )
                 blocks.append(
-                    f'<h{heading_level} id="{anchor}">'
-                    f"{_inline_markdown(text)}</h{heading_level}>"
+                    f'<h{heading_level} id="{anchor}">{_inline_markdown(text)}</h{heading_level}>'
                 )
             else:
                 blocks.append(f"<h{heading_level}>{_inline_markdown(text)}</h{heading_level}>")
@@ -580,9 +584,7 @@ def _markdown_document_body(
                 items.append(lines[index].strip()[2:].strip())
                 index += 1
             blocks.append(
-                "<ul>"
-                + "".join(f"<li>{_inline_markdown(item)}</li>" for item in items)
-                + "</ul>"
+                "<ul>" + "".join(f"<li>{_inline_markdown(item)}</li>" for item in items) + "</ul>"
             )
             continue
 
@@ -592,9 +594,7 @@ def _markdown_document_body(
                 items.append(re.sub(r"^\d+\.\s+", "", lines[index].strip()).strip())
                 index += 1
             blocks.append(
-                "<ol>"
-                + "".join(f"<li>{_inline_markdown(item)}</li>" for item in items)
-                + "</ol>"
+                "<ol>" + "".join(f"<li>{_inline_markdown(item)}</li>" for item in items) + "</ol>"
             )
             continue
 
@@ -666,7 +666,7 @@ def _render_markdown_table(lines: list[str], index: int) -> tuple[str, int]:
         cells = "".join(f"<td>{_inline_markdown(cell)}</td>" for cell in padded[: len(headers)])
         row_html.append(f"<tr>{cells}</tr>")
     return (
-        "<div class=\"table-wrap\"><table>"
+        '<div class="table-wrap"><table>'
         f"<thead><tr>{header_html}</tr></thead>"
         f"<tbody>{''.join(row_html)}</tbody>"
         "</table></div>",
@@ -754,11 +754,16 @@ def _fact_toc_entries(
 
 
 def _build_report_context(
-    results: list[AnalysisResult], assistant: str | None = None
+    results: list[AnalysisResult],
+    assistant: str | None = None,
+    factbook: object | None = None,
 ) -> dict[str, object]:
     findings = [finding for result in results for finding in result.findings]
     total_table_rows = sum(len(rows) for result in results for rows in result.tables.values())
-    result_views = [_result_view(result) for result in results]
+    result_views = [
+        _result_view(result, result_index=index, factbook=factbook)
+        for index, result in enumerate(results)
+    ]
     assistant_name = (assistant or _DEFAULT_ASSISTANT_NAME).strip() or _DEFAULT_ASSISTANT_NAME
     priority_table = _priority_table_view(results)
     analysis_groups = _analysis_groups(results, result_views)
@@ -815,34 +820,74 @@ def _build_report_context(
     }
 
 
-def _result_view(result: AnalysisResult) -> dict[str, object]:
+def _result_view(
+    result: AnalysisResult,
+    *,
+    result_index: int = 0,
+    factbook: object | None = None,
+) -> dict[str, object]:
+    result_scope = f"result-{result_index}-{result.task_id}"
+    fact_id_map = fact_id_map_for_result(result) if factbook is not None else {}
+    finding_paths = {id(ref.finding): ref.path for ref in iter_result_finding_refs(result)}
     return {
         "task_id": result.task_id,
         "title": result.title,
         "label": _result_label(result.task_id, result.title),
-        "findings": [_finding_view(finding) for finding in result.findings],
+        "findings": [
+            _finding_view(
+                finding,
+                tooltip_scope=f"{result_scope}-finding-{finding_index}",
+                factbook=factbook,
+                finding_path=finding_paths.get(id(finding)),
+                fact_id_map=fact_id_map,
+            )
+            for finding_index, finding in enumerate(result.findings)
+        ],
         "chart_svg": charts.for_result(result),
         "table_views": [
-            _table_view(table_name, rows)
-            for table_name, rows in result.tables.items()
+            _table_view(
+                table_name,
+                rows,
+                tooltip_scope=f"{result_scope}-table-{table_index}",
+            )
+            for table_index, (table_name, rows) in enumerate(result.tables.items())
             if _should_render_table(rows)
         ],
         "limitations": result.limitations,
-        "subsections": [_subsection_view(subsection) for subsection in result.subsections],
+        "subsections": [
+            _subsection_view(
+                subsection,
+                tooltip_scope=f"{result_scope}-subsection-{subsection_index}",
+                factbook=factbook,
+                finding_paths=finding_paths,
+                fact_id_map=fact_id_map,
+            )
+            for subsection_index, subsection in enumerate(result.subsections)
+        ],
         "named_examples": result.named_examples,
     }
 
 
-def _finding_view(finding: Finding) -> dict[str, object]:
+def _finding_view(
+    finding: Finding,
+    *,
+    tooltip_scope: str = "finding",
+    factbook: object | None = None,
+    finding_path: str | None = None,
+    fact_id_map: dict[tuple[str, str], str] | None = None,
+) -> dict[str, object]:
     summary = _finding_summary(finding)
     return {
         **summary,
         "key_numbers": [
-            {
-                "label": _field_label(key),
-                "help": _field_help(key),
-                "value": _display_cell(key, value),
-            }
+            _key_number_view(
+                key,
+                value,
+                tooltip_scope=tooltip_scope,
+                factbook=factbook,
+                finding_path=finding_path,
+                fact_id_map=fact_id_map,
+            )
             for key, value in finding.key_numbers.items()
         ],
         "caveats": _caveats_with_causal(finding),
@@ -853,16 +898,37 @@ def _finding_view(finding: Finding) -> dict[str, object]:
     }
 
 
-def _subsection_view(subsection: Subsection) -> dict[str, object]:
+def _subsection_view(
+    subsection: Subsection,
+    *,
+    tooltip_scope: str = "subsection",
+    factbook: object | None = None,
+    finding_paths: dict[int, str] | None = None,
+    fact_id_map: dict[tuple[str, str], str] | None = None,
+) -> dict[str, object]:
     return {
         "title": subsection.title,
         "body": subsection.body,
         "table_name": subsection.table_name,
-        "findings": [_finding_view(finding) for finding in subsection.findings],
+        "findings": [
+            _finding_view(
+                finding,
+                tooltip_scope=f"{tooltip_scope}-finding-{finding_index}",
+                factbook=factbook,
+                finding_path=(finding_paths or {}).get(id(finding)),
+                fact_id_map=fact_id_map,
+            )
+            for finding_index, finding in enumerate(subsection.findings)
+        ],
     }
 
 
-def _table_view(table_name: str, rows: list[dict[str, object]]) -> dict[str, object]:
+def _table_view(
+    table_name: str,
+    rows: list[dict[str, object]],
+    *,
+    tooltip_scope: str = "table",
+) -> dict[str, object]:
     all_columns = list(rows[0].keys()) if rows else []
     preferred_columns = _USER_TABLE_COLUMNS.get(table_name, tuple(all_columns[:6]))
     user_columns = [column for column in preferred_columns if column in all_columns]
@@ -903,17 +969,83 @@ def _table_view(table_name: str, rows: list[dict[str, object]]) -> dict[str, obj
         "display_text": display_text,
         # 只保留用户视图；原始机器列名在 markdown 表格预览(附录)里留证，HTML 不再
         # 叠一层「技术追溯」制造工程噪音(#12)。
-        "user_columns": [_column_view(column) for column in user_columns],
+        "user_columns": [
+            _column_view(column, tooltip_scope=tooltip_scope) for column in user_columns
+        ],
         "user_rows": [_row_cells(row, user_columns) for row in rows[:_MAX_TABLE_ROWS]],
     }
 
 
-def _column_view(column: str) -> dict[str, str]:
+def _column_view(column: str, *, tooltip_scope: str = "table") -> dict[str, str]:
     return {
         "name": column,
         "label": _field_label(column),
         "help": _field_help(column),
+        "tooltip_id": _field_tooltip_id(tooltip_scope, column),
     }
+
+
+def _field_tooltip_id(scope: str, field_name: str) -> str:
+    """Return a deterministic, document-safe id without leaking raw field names."""
+    digest = hashlib.sha256(f"{scope}:{field_name}".encode("utf-8")).hexdigest()[:12]
+    return f"field-tip-{digest}"
+
+
+def _key_number_view(
+    key: str,
+    value: object,
+    *,
+    tooltip_scope: str,
+    factbook: object | None,
+    finding_path: str | None,
+    fact_id_map: dict[tuple[str, str], str] | None,
+) -> dict[str, str]:
+    fact = _fact_for_key_number(
+        factbook,
+        finding_path=finding_path,
+        metric_key=str(key),
+        fact_id_map=fact_id_map,
+    )
+    validated = _has_validated_metric_semantics(fact)
+    label = getattr(fact, "display_name", None) if validated else _field_label(key)
+    rendered = _fact_rendered_value(fact) if fact is not None else _display_cell(key, value)
+    return {
+        "label": str(label),
+        "help": _field_help(key),
+        "value": rendered,
+        "tooltip_id": _field_tooltip_id(tooltip_scope, key),
+    }
+
+
+def _fact_for_key_number(
+    factbook: object | None,
+    *,
+    finding_path: str | None,
+    metric_key: str,
+    fact_id_map: dict[tuple[str, str], str] | None,
+):
+    if factbook is None or finding_path is None or not fact_id_map:
+        return None
+    fact_id = fact_id_map.get((finding_path, metric_key))
+    facts = getattr(factbook, "facts", None)
+    fact = facts.get(fact_id) if fact_id is not None and hasattr(facts, "get") else None
+    return fact
+
+
+def _has_validated_metric_semantics(fact: object | None) -> bool:
+    return bool(
+        fact is not None
+        and getattr(fact, "mapping_error", None) is None
+        and getattr(fact, "metric_id", None)
+        and getattr(fact, "display_name", None)
+    )
+
+
+def _fact_rendered_value(fact: object) -> str:
+    rendered = str(getattr(fact, "rendered"))
+    if getattr(fact, "unit", None) == "person_day" and not rendered.endswith("人次"):
+        return f"{rendered} 人次"
+    return rendered
 
 
 def _row_cells(row: dict[str, object], columns: list[str]) -> list[dict[str, str]]:
@@ -971,9 +1103,7 @@ def _analysis_groups(
         if not views:
             continue
         grouped.append(
-            _domain_group_view(
-                domain.title, domain.intro, views, f"analysis-{len(grouped) + 1}"
-            )
+            _domain_group_view(domain.title, domain.intro, views, f"analysis-{len(grouped) + 1}")
         )
 
     appendix_views = [

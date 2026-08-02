@@ -11,6 +11,7 @@ LMDI、Wilson 区间、赫芬达尔/基尼、分位、效应量、"观察性")�
 
 纯函数,never-raise。
 """
+
 from xhs_ceramics_analytics.analysis.result import Finding
 
 
@@ -26,9 +27,7 @@ def causal_disclaimer(alt_drivers: str) -> str:
 METHOD_PROPORTION_TEST = (
     "组间差异用两样本比例 z 检验,并要求效应量超过最小门槛后才判定为真实差异,仅作比较、非因果。"
 )
-METHOD_TREND_SLOPE = (
-    "趋势方向按逐期数值的最小二乘斜率判定(非首末两点),未对趋势另做显著性检验。"
-)
+METHOD_TREND_SLOPE = "趋势方向按逐期数值的最小二乘斜率判定(非首末两点),未对趋势另做显著性检验。"
 METHOD_FDR = "多类同时比较时用 BH-FDR 控制预计假阳性数,避免小样本误报,非逐类因果证明。"
 METHOD_WILSON = "小样本比率用 Wilson 置信区间守卫(取区间边界而非点估计),避免个别样本误报。"
 METHOD_OBSERVATIONAL = "以上为观察性聚合描述,反映方向与规模,非因果推断。"

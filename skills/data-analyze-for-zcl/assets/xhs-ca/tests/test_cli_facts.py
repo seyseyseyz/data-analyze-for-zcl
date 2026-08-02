@@ -42,3 +42,32 @@ def test_facts_command_is_deterministic(tmp_path, fixture_dir):
     runner.invoke(app, ["facts", "core_business_diagnosis", "--project-root", str(tmp_path)])
     second = (tmp_path / ".xhs-ceramics-analytics" / "facts.json").read_text("utf-8")
     assert first == second  # byte-identical re-run
+
+
+def test_facts_command_invalidates_previous_pair_when_build_fails(
+    tmp_path,
+    fixture_dir,
+    monkeypatch,
+):
+    _build_db(tmp_path, fixture_dir)
+    state = tmp_path / ".xhs-ceramics-analytics"
+    (state / "facts.json").write_text('{"facts_hash":"old"}', encoding="utf-8")
+    (state / "results.json").write_text('{"facts_hash":"old"}', encoding="utf-8")
+
+    import xhs_ceramics_analytics.reporting.facts_export as facts_export
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("factbook build failed")
+
+    monkeypatch.setattr(facts_export, "build_factbook", _boom)
+    result = CliRunner().invoke(
+        app,
+        ["facts", "core_business_diagnosis", "--project-root", str(tmp_path)],
+    )
+
+    assert result.exit_code != 0
+    assert not (state / "facts.json").exists()
+    assert not (state / "results.json").exists()
+    status = json.loads((state / "sidecar_status.json").read_text(encoding="utf-8"))
+    assert status["status"] == "unavailable"
+    assert "factbook build failed" in status["error"]

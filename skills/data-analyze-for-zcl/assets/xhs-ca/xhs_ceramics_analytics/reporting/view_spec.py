@@ -15,6 +15,7 @@ report. :func:`count_view_kinds` is a small cross-view helper that splits a view
 list into {tables, charts} counts so callers can describe a section's visuals;
 there is deliberately no per-domain cap — a section may carry any number of each.
 """
+
 from __future__ import annotations
 
 import re
@@ -104,11 +105,8 @@ def contains_fabricated_number(text: object) -> bool:
     Pure and never raises — non-str input is stringified, so callers can scan any
     agent-authored caption/sentence uniformly."""
     s = str(text)
-    return bool(
-        _DIGIT_RE.search(s)
-        or _CJK_MAGNITUDE_RE.search(s)
-        or _has_foreign_numeric_glyph(s)
-    )
+    return bool(_DIGIT_RE.search(s) or _CJK_MAGNITUDE_RE.search(s) or _has_foreign_numeric_glyph(s))
+
 
 # evidence_strength → reader-facing confidence tag (rule 5). NOT_JUDGABLE and any
 # unrecognized value degrade to the weakest tag rather than raising.
@@ -227,9 +225,7 @@ def validate_view_spec(spec: object, result_tables: object) -> list[str]:
 def _check_template(spec: dict, errors: list[str]) -> None:
     template = _template_of(spec)
     if template not in TEMPLATES:
-        errors.append(
-            f"未知模板 template={template!r}(允许:{sorted(TEMPLATES)})"
-        )
+        errors.append(f"未知模板 template={template!r}(允许:{sorted(TEMPLATES)})")
 
 
 def _check_supports_claim(spec: dict, errors: list[str]) -> None:
@@ -287,8 +283,7 @@ def _check_rows(
     extra = set(rows) - _ALLOWED_ROW_KEYS
     if extra:
         errors.append(
-            f"rows 含非法键 {sorted(extra)}(仅允许 select/sort/TopN/highlight,"
-            "禁止聚合或数值阈值)"
+            f"rows 含非法键 {sorted(extra)}(仅允许 select/sort/TopN/highlight,禁止聚合或数值阈值)"
         )
 
     sort_by = rows.get("sort_by")
@@ -300,9 +295,7 @@ def _check_rows(
         errors.append(f"rows.order={order!r} 只能是 asc/desc")
 
     top_n = rows.get("top_n")
-    if top_n is not None and (
-        not isinstance(top_n, int) or isinstance(top_n, bool) or top_n <= 0
-    ):
+    if top_n is not None and (not isinstance(top_n, int) or isinstance(top_n, bool) or top_n <= 0):
         errors.append(f"rows.top_n={top_n!r} 必须是正整数")
 
     _check_highlight(rows.get("highlight"), table_rows, real_columns, errors)
@@ -320,18 +313,14 @@ def _check_highlight(
     for col, value in highlight.items():
         # A dict value is how you'd smuggle a numeric threshold ({">": 10000}).
         if isinstance(value, (dict, list, tuple, set)):
-            errors.append(
-                f"rows.highlight[{col!r}] 只能按已有类别值高亮,不能是数值阈值/操作符"
-            )
+            errors.append(f"rows.highlight[{col!r}] 只能按已有类别值高亮,不能是数值阈值/操作符")
             continue
         if not real_columns:
             continue
         if col not in real_columns:
             errors.append(f"rows.highlight 列 {col!r} 不存在于源表")
         elif not _value_in_column(table_rows, col, value):
-            errors.append(
-                f"rows.highlight[{col!r}]={value!r} 不是该列已有的类别值"
-            )
+            errors.append(f"rows.highlight[{col!r}]={value!r} 不是该列已有的类别值")
 
 
 def _check_chart(spec: dict, real_columns: set[str], errors: list[str]) -> None:
@@ -368,9 +357,7 @@ def _check_no_digits(spec: dict, errors: list[str]) -> None:
     if isinstance(labels, dict):
         for col, label in labels.items():
             if label is not None and contains_fabricated_number(label):
-                errors.append(
-                    f"column_labels[{col!r}] 含裸数字(数字只能出现在表格单元格中)"
-                )
+                errors.append(f"column_labels[{col!r}] 含裸数字(数字只能出现在表格单元格中)")
     source = spec.get("source")
     if isinstance(source, dict):
         task_id = source.get("task_id")

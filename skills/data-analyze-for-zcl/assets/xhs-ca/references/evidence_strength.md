@@ -43,3 +43,18 @@ Use when:
 - or confounders overwhelm the signal.
 
 Reports must not hide weak evidence. Weak findings should become hypotheses, not recommendations.
+
+## Action license projection (2026-07-10)
+
+Internal `EvidenceStrength` remains for statistics and gates. Reader-facing output
+must project to **行动许可**, not a second competing "证据强/弱" headline:
+
+| claim_kind / situation | descriptive confidence | action_license cap |
+| --- | --- | --- |
+| measurement / composition, adequate n | may be 高 | 可执行 |
+| comparison with controls/repetition | may be 高 | 可执行 or 可试点 |
+| mechanism_hypothesis (no controls) | may be 高 for the number | **可试点** max |
+| missing data / incompatible caliber | 暂不下定论 | 先补数据 |
+
+Weak causal evidence must become hypotheses or pilots, not unconditional recommendations.
+See Decision Compiler ADR §3.3.

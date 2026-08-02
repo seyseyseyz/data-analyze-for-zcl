@@ -20,6 +20,7 @@ clear ``not_judgable`` evidence, otherwise there is no lever to pull. Appendix
 (data-quality) modules are excluded: they back conclusions, they are not levers.
 Pure and never-raise; degrades to ``[]`` when nothing is actionable.
 """
+
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.evidence import EvidenceStrength
 from xhs_ceramics_analytics.reporting.confidence import reader_confidence

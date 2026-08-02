@@ -79,7 +79,7 @@ Source: `references/report_contract.md`.
 
 Tone: direct, plain language, no fake certainty, no statistics jargon unless necessary.
 
-Output: Always produce a Markdown report and a single-file HTML report. Built-in `xhs-ca run <task>` reports already write both files. For any custom integrated Markdown report created outside the built-in task registry, run `xhs-ca render-html <report.md>` before delivery. If HTML fails, keep Markdown, log/report the error, and state clearly that HTML was not delivered.
+Output: Keep Markdown, facts, reviews and caches internal. Deliver exactly one single-file HTML report. Built-in legacy `xhs-ca run <task>` commands may still create Markdown checkpoints, but the skill workflow must not expose them. If HTML rendering fails, mark delivery failed and do not substitute Markdown as the user-facing report.
 
 ---
 

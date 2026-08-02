@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "action_card.json",
+  "title": "action_card",
+  "description": "Executable merchant action grounded by claim_id and fact_id. Registry semantics are never agent-authored.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "action_id",
+    "action_family",
+    "title",
+    "owner_role",
+    "steps",
+    "primary_fact_id",
+    "stop_rule",
+    "license",
+    "supporting_claim_ids",
+    "number_tokens"
+  ],
+  "properties": {
+    "action_id": {"type": "string", "minLength": 1},
+    "action_family": {"type": "string", "minLength": 1},
+    "title": {"type": "string", "minLength": 1},
+    "owner_role": {
+      "type": "string",
+      "enum": ["运营负责人", "内容负责人", "售后负责人", "商品负责人", "店铺负责人"]
+    },
+    "cadence_label": {"type": ["string", "null"]},
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "primary_fact_id": {"type": "string", "minLength": 1},
+    "guardrail_fact_id": {"type": ["string", "null"]},
+    "observe_window_label": {"type": ["string", "null"]},
+    "stop_rule": {"type": "string", "minLength": 1},
+    "impact_hypothesis": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["kind", "supporting_fact_ids", "supporting_claim_ids"],
+      "properties": {
+        "kind": {"enum": ["bounded", "directional", "qualitative"]},
+        "supporting_fact_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string"}
+        },
+        "supporting_claim_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string"}
+        }
+      }
+    },
+    "license": {"enum": ["execute", "pilot", "observe", "blocked"]},
+    "supporting_claim_ids": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string"}
+    },
+    "number_tokens": {
+      "type": "array",
+      "items": {"$ref": "number_token.json"}
+    }
+  }
+}

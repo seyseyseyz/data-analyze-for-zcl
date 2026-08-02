@@ -10,6 +10,7 @@ Numbers live only in the ``result_tables`` fixture; the engine surfaces them ver
 so a value appearing in the output proves it came from the source, never from prose.
 """
 from xhs_ceramics_analytics.reporting import narrative_render as nr
+from xhs_ceramics_analytics.reporting.frozen_narrative import payload_hash
 from xhs_ceramics_analytics.reporting.html import render_markdown_document_html
 
 
@@ -124,6 +125,21 @@ def test_bundle_to_markdown_renders_curated_view_tables_and_charts():
     # provenance stamp footer — de-leaked: table named by label, no task_id
     assert "来源:growth bridge · 证据:" in md
     assert "core_business_diagnosis" not in md
+
+
+def test_render_frozen_regates_curated_views_with_frozen_tables():
+    bundle = nr.render_draft(_bundle([_table_view()]), _facts())
+    frozen = {
+        "facts_hash": "h",
+        "narrative_bundle_hash": payload_hash(bundle),
+        "narrative_bundle": bundle,
+        "result_tables": _tables(),
+    }
+
+    markdown, _html = nr.render_frozen(frozen, _facts())
+
+    assert "<td>转化</td>" in markdown
+    assert "1.2万" in markdown
 
 
 # ---- D2: one per-section confidence pill, not a （强/中/弱）after every sentence ----

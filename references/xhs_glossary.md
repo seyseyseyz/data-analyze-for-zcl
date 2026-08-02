@@ -86,19 +86,19 @@ Source of truth: `xhs_ceramics_analytics/importing/mapping.py` FIELD_ALIASES.
 
 ### comments
 
-No FIELD_ALIASES defined. TABLE_SIGNATURES requires: `note_id`, `comment_time`, `comment_text`. Import with English column names or rely on fuzzy matching.
+TABLE_SIGNATURES requires `note_id`, `comment_time`, `comment_text`. 中文表头支持笔记ID、评论时间/留言时间、评论内容/评论文本/留言内容，以及评论ID、父评论ID、点赞数和用户哈希等可选字段。
 
 ### content_features
 
-No FIELD_ALIASES defined. TABLE_SIGNATURES requires: `note_id`, `composition_type`, `scene_hint`, `copy_angle`. Import with English column names or rely on fuzzy matching.
+TABLE_SIGNATURES requires `note_id`, `composition_type`, `scene_hint`, `copy_angle`. 中文表头支持笔记ID、封面构图、场景提示、文案角度、购买动机，并覆盖本地契约定义的封面视觉和文案语义可选字段。
 
 ### calendar_events
 
-No FIELD_ALIASES defined. TABLE_SIGNATURES requires: `date`, `event_type`, `event_name`, `severity`. Import with English column names or rely on fuzzy matching.
+TABLE_SIGNATURES requires `date`, `event_type`, `event_name`, `severity`. 中文表头支持日期/事件日期、事件类型/活动类型、事件名称/活动名称、影响等级/严重程度/事件等级；也支持关联商品、关联规格与备注字段。
 
 ### note_sku_links
 
-No TABLE_SIGNATURES or FIELD_ALIASES entry. Must be imported with exact English column names: `note_id`, `sku_id`.
+TABLE_SIGNATURES requires `note_id`, `sku_id`. 中文表头支持笔记ID/笔记id和规格ID/规格id/SKU ID；只有两个关联键同时命中才会识别为关联表，避免把普通笔记表误判为关联表。
 
 ---
 

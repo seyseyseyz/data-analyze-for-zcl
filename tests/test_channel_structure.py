@@ -25,22 +25,22 @@ def _make_full(con, rows):
           card_gmv DOUBLE,
           note_paid_orders DOUBLE,
           card_paid_orders DOUBLE,
-          "笔记支付买家数" DOUBLE,
-          "商卡支付买家数" DOUBLE,
-          "笔记商品访客数" DOUBLE,
-          "商卡商品访客数" DOUBLE,
-          "笔记退款后支付金额_支付时间" DOUBLE,
-          "商卡退款后支付金额_支付时间" DOUBLE,
-          "笔记客单价" DOUBLE,
-          "商卡客单价" DOUBLE,
-          "笔记退款订单数_支付时间" DOUBLE,
-          "商卡退款订单数_支付时间" DOUBLE,
-          "笔记退款率_支付时间" DOUBLE,
-          "商卡退款率_支付时间" DOUBLE,
-          "笔记发货前退款率_支付时间" DOUBLE,
-          "商卡发货前退款率_支付时间" DOUBLE,
-          "笔记发货后退款率_支付时间" DOUBLE,
-          "商卡发货后退款率_支付时间" DOUBLE
+          note_paid_buyers DOUBLE,
+          card_paid_buyers DOUBLE,
+          note_product_visitors DOUBLE,
+          card_product_visitors DOUBLE,
+          note_net_gmv_pay DOUBLE,
+          card_net_gmv_pay DOUBLE,
+          note_aov DOUBLE,
+          card_aov DOUBLE,
+          note_refund_orders_pay DOUBLE,
+          card_refund_orders_pay DOUBLE,
+          note_refund_rate_pay DOUBLE,
+          card_refund_rate_pay DOUBLE,
+          note_pre_ship_refund_rate_pay DOUBLE,
+          card_pre_ship_refund_rate_pay DOUBLE,
+          note_post_ship_refund_rate_pay DOUBLE,
+          card_post_ship_refund_rate_pay DOUBLE
         )
         """
     )
@@ -96,29 +96,49 @@ def test_full_fixture_emits_all_findings(tmp_path):
     rows = [
         (
             20260601,
-            300.0, 600.0,  # note_gmv, card_gmv
-            10.0, 20.0,  # note_paid_orders, card_paid_orders
-            10.0, 20.0,  # 笔记支付买家数, 商卡支付买家数
-            200.0, 250.0,  # 笔记商品访客数, 商卡商品访客数
-            280.0, 580.0,  # 笔记退款后支付金额_支付时间, 商卡退款后支付金额_支付时间
-            30.0, 30.0,  # 笔记客单价, 商卡客单价
-            2.0, 1.0,  # 笔记退款订单数_支付时间, 商卡退款订单数_支付时间
-            0.20, 0.05,  # 笔记退款率_支付时间, 商卡退款率_支付时间
-            0.15, 0.03,  # 笔记发货前退款率_支付时间, 商卡发货前退款率_支付时间
-            0.05, 0.02,  # 笔记发货后退款率_支付时间, 商卡发货后退款率_支付时间
+            300.0,
+            600.0,  # note_gmv, card_gmv
+            10.0,
+            20.0,  # note_paid_orders, card_paid_orders
+            10.0,
+            20.0,  # note_paid_buyers, card_paid_buyers
+            200.0,
+            250.0,  # note_product_visitors, card_product_visitors
+            280.0,
+            580.0,  # note_net_gmv_pay, card_net_gmv_pay
+            30.0,
+            30.0,  # note_aov, card_aov
+            2.0,
+            1.0,  # note_refund_orders_pay, card_refund_orders_pay
+            0.20,
+            0.05,  # note_refund_rate_pay, card_refund_rate_pay
+            0.15,
+            0.03,  # note_pre_ship_refund_rate_pay, card_pre_ship_refund_rate_pay
+            0.05,
+            0.02,  # note_post_ship_refund_rate_pay, card_post_ship_refund_rate_pay
         ),
         (
             20260602,
-            250.0, 550.0,
-            8.0, 18.0,
-            8.0, 18.0,
-            180.0, 230.0,
-            230.0, 530.0,
-            31.0, 30.5,
-            1.0, 1.0,
-            0.18, 0.06,
-            0.14, 0.04,
-            0.04, 0.02,
+            250.0,
+            550.0,
+            8.0,
+            18.0,
+            8.0,
+            18.0,
+            180.0,
+            230.0,
+            230.0,
+            530.0,
+            31.0,
+            30.5,
+            1.0,
+            1.0,
+            0.18,
+            0.06,
+            0.14,
+            0.04,
+            0.04,
+            0.02,
         ),
     ]
     _make_full(con, rows)
@@ -207,6 +227,79 @@ def test_empty_rows_do_not_raise(tmp_path):
     con.close()
     result = channel_structure_diagnosis.run(db_path)
     assert any(f.title == "渠道收入与规模对比" for f in result.findings)
+
+
+def test_channel_daily_fact_and_traffic_source_matrix(tmp_path):
+    con, db_path = _con(tmp_path)
+    _make_full(
+        con,
+        [
+            (
+                20260601,
+                300.0,
+                600.0,
+                10.0,
+                20.0,
+                10.0,
+                20.0,
+                200.0,
+                250.0,
+                280.0,
+                580.0,
+                30.0,
+                30.0,
+                2.0,
+                1.0,
+                0.20,
+                0.05,
+                0.15,
+                0.03,
+                0.05,
+                0.02,
+            )
+        ],
+    )
+    con.execute(
+        """
+        CREATE TABLE traffic_source (
+          xhs_id VARCHAR,
+          account_name VARCHAR,
+          channel VARCHAR,
+          note_type VARCHAR,
+          gmv DOUBLE,
+          paid_orders DOUBLE,
+          paid_buyers DOUBLE,
+          product_clicks DOUBLE,
+          product_click_users DOUBLE,
+          pay_conversion_pv DOUBLE,
+          pay_conversion_uv DOUBLE
+        )
+        """
+    )
+    con.executemany(
+        "INSERT INTO traffic_source VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [
+            ("x1", "店铺", "搜索", "图文", 500, 10, 8, 200, 100, 0.05, 0.08),
+            ("x1", "店铺", "搜索", "图文", 300, 5, 4, 100, 50, 0.05, 0.08),
+        ],
+    )
+    con.close()
+
+    result = channel_structure_diagnosis.run(db_path)
+
+    daily = result.tables["carrier_daily_fact"]
+    source = result.tables["traffic_source_efficiency"][0]
+    assert len(daily) == 2
+    note = next(row for row in daily if row["carrier"] == "note")
+    assert note["date"] == "2026-06-01"
+    assert note["pay_conversion"] == pytest.approx(0.05)
+    assert note["refund_rate"] == pytest.approx(0.2)
+    assert source["channel"] == "搜索"
+    assert source["gmv"] == 800
+    assert source["uv_pay_conversion_calc"] == pytest.approx(12 / 150)
+    assert source["pv_pay_conversion_reported"] == pytest.approx(0.05)
+    assert source["gmv_per_buyer"] == pytest.approx(800 / 12)
+    assert any(f.title == "流量来源与内容类型效率" for f in result.findings)
 
 
 # ---- Real DB smoke check ------------------------------------------------

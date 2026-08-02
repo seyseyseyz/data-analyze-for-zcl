@@ -8,6 +8,7 @@ bare ``round()`` / f-strings, so the same value read one way in the headline
 SAME primitives as the table path (``reporting.labels``), so a number reads
 identically wherever it appears.
 """
+
 from __future__ import annotations
 
 from xhs_ceramics_analytics.reporting.labels import (

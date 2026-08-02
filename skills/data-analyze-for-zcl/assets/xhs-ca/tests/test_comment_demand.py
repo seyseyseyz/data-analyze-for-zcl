@@ -4,6 +4,7 @@ The seed-lexicon grouping (Finding 1) stays intact; these tests pin the new
 emergent-theme finding: n-gram themes + polarity + objection→hook, all
 observational.
 """
+
 from pathlib import Path
 
 from xhs_ceramics_analytics.analysis.comment_demand import run
@@ -120,9 +121,39 @@ def test_emergent_themes_cold_start_uses_seed_fallback(tmp_path):
     _make_comments(con, ["价格多少", "怎么下单"])
     con.close()
     result = run(db_path)
-    theme_finding = next(
-        (f for f in result.findings if f.title == "涌现需求主题与异议"), None
-    )
+    theme_finding = next((f for f in result.findings if f.title == "涌现需求主题与异议"), None)
     assert theme_finding is not None
     rows = result.tables["comment_emergent_themes"]
     assert all(r["source"] == "seed" for r in rows)
+
+
+def test_comment_demands_include_explicit_note_context_without_sku_inference(tmp_path):
+    con, db_path = _con(tmp_path)
+    con.execute("CREATE TABLE comments (note_id VARCHAR, comment_text VARCHAR)")
+    con.executemany(
+        "INSERT INTO comments VALUES (?, ?)",
+        [("n1", "容量多少毫升"), ("n1", "这个容量适合送礼吗")],
+    )
+    con.execute(
+        """
+        CREATE TABLE notes (
+          note_id VARCHAR,
+          note_type VARCHAR,
+          related_product_id VARCHAR,
+          related_product_name VARCHAR
+        )
+        """
+    )
+    con.execute("INSERT INTO notes VALUES ('n1', '图文', 'p1', '青釉杯')")
+    con.execute("CREATE TABLE content_features (note_id VARCHAR, scene_hint VARCHAR)")
+    con.execute("INSERT INTO content_features VALUES ('n1', '送礼')")
+    con.close()
+
+    result = run(db_path)
+    capacity = next(
+        row for row in result.tables["comment_demands"] if row["demand_group"] == "capacity"
+    )
+    assert capacity["note_types"] == ["图文"]
+    assert capacity["scene_hints"] == ["送礼"]
+    assert capacity["related_products"] == [{"product_id": "p1", "product_name": "青釉杯"}]
+    assert "sku_id" not in capacity

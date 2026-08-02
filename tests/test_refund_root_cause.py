@@ -76,9 +76,29 @@ def _make_business_overview_daily(con, rows):
         )
         """
     )
-    con.executemany(
-        "INSERT INTO business_overview_daily VALUES (?, ?, ?, ?, ?, ?)", rows
+    con.executemany("INSERT INTO business_overview_daily VALUES (?, ?, ?, ?, ?, ?)", rows)
+
+
+def _make_dual_caliber_sku_table(con, rows):
+    con.execute(
+        """
+        CREATE TABLE sku_performance (
+          sku_id VARCHAR,
+          sku_name VARCHAR,
+          product_id VARCHAR,
+          product_name VARCHAR,
+          category_l1 VARCHAR,
+          paid_orders DOUBLE,
+          refund_amount_pay DOUBLE,
+          refund_orders_pay DOUBLE,
+          refund_rate_pay DOUBLE,
+          net_gmv_pay DOUBLE,
+          refund_amount_refundtime DOUBLE,
+          refund_rate_refundtime DOUBLE
+        )
+        """
     )
+    con.executemany("INSERT INTO sku_performance VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", rows)
 
 
 def _build_category_price_rows():
@@ -233,6 +253,66 @@ def test_business_overview_daily_preferred_source(tmp_path):
     ship = next(f for f in result.findings if f.title == "发货前后退款分解")
     assert ship.key_numbers["source"] == "business_overview"
     assert ship.key_numbers["dominant_stage"] == "pre_ship"
+
+
+def test_business_overview_only_emits_ship_stage_and_degrades_sku_findings(tmp_path):
+    con, db_path = _con(tmp_path)
+    _make_business_overview_daily(
+        con,
+        [
+            (20260601, 0.12, 0.05, 0.17, 34.0, 200.0),
+            (20260602, 0.10, 0.06, 0.16, 32.0, 200.0),
+        ],
+    )
+    con.close()
+
+    result = run(db_path)
+
+    assert [f.title for f in result.findings] == ["发货前后退款分解"]
+    assert result.findings[0].key_numbers["source"] == "business_overview"
+    assert result.tables["refund_by_ship_stage"]
+    assert "refund_by_category" not in result.tables
+    assert "refund_by_price_band" not in result.tables
+    assert any("sku_performance" in limitation for limitation in result.limitations)
+
+
+def test_sku_paytime_and_refundtime_facts_never_mix_calibers(tmp_path):
+    con, db_path = _con(tmp_path)
+    _make_dual_caliber_sku_table(
+        con,
+        [
+            (
+                "sku-1",
+                "茶杯",
+                "product-1",
+                "茶杯商品",
+                "杯具",
+                100.0,
+                1000.0,
+                10.0,
+                0.10,
+                9000.0,
+                9000.0,
+                0.90,
+            )
+        ],
+    )
+    con.close()
+
+    result = run(db_path)
+    pay_row = result.tables["sku_refund_paytime"][0]
+    refundtime_row = result.tables["sku_refund_refundtime"][0]
+
+    assert pay_row["caliber"] == "pay_time"
+    assert pay_row["refund_amount_pay"] == 1000.0
+    assert pay_row["refund_rate_pay"] == 0.10
+    assert "refund_amount_refundtime" not in pay_row
+    assert "refund_rate_refundtime" not in pay_row
+    assert refundtime_row["caliber"] == "refund_time"
+    assert refundtime_row["refund_amount_refundtime"] == 9000.0
+    assert refundtime_row["refund_rate_refundtime"] == 0.90
+    assert "refund_amount_pay" not in refundtime_row
+    assert "refund_rate_pay" not in refundtime_row
 
 
 # ---- Never raises on empty data ---------------------------------------------

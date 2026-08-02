@@ -9,13 +9,13 @@ Same module contract: never-raise degradation, ``_table_exists`` /
 ``_table_columns`` / ``_fetch_all`` / ``_num`` helpers, per-Finding
 confounders + observational caveats. Observational only — 报方向与规模，非因果。
 """
+
 from pathlib import Path
 
 from xhs_ceramics_analytics.analytics.numeric import to_finite_float
 from xhs_ceramics_analytics.analysis.prose import cn_date, qty
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.analysis import methodology as M
-from xhs_ceramics_analytics.analytics.confidence import min_n_guard, rate_band, wilson_interval
 from xhs_ceramics_analytics.analytics.trends import trend_summary
 from xhs_ceramics_analytics.db.duck import connect
 from xhs_ceramics_analytics.evidence import (
@@ -27,7 +27,7 @@ from xhs_ceramics_analytics.evidence import (
 TASK_ID = "demand_funnel_diagnosis"
 TITLE = "需求漏斗与心愿单诊断"
 
-_WISHLIST_COL = "新增加入心愿单人数"
+_WISHLIST_COL = "new_wishlist_users"
 
 _CONFOUNDERS = ["流量质量", "促销与活动节奏", "客群构成", "季节性"]
 
@@ -91,19 +91,49 @@ def _funnel_finding(
                 "无法计算账号级加购→成交漏斗，需补充真实加购与支付买家列。"
             ),
             evidence_strength=EvidenceStrength.NOT_JUDGABLE,
-            key_numbers={"total_add_to_cart_users": None, "total_paid_buyers": None},
+            key_numbers={
+                "avg_daily_add_to_cart_users": None,
+                "avg_daily_paid_buyers": None,
+            },
             caveats=["加购人数/支付买家列缺失应视为导入缺口。"],
             confounders=list(_CONFOUNDERS),
             evidence_reason="缺少 add_to_cart_users/paid_buyers 列，无法计算加购→成交转化。",
         )
         return finding, []
 
-    total_cart = sum(_num(r.get("add_to_cart_users")) for r in rows)
-    total_buyers = sum(_num(r.get("paid_buyers")) for r in rows)
-    # Ratio caliber, not a strict funnel — some buyers never add to cart, so the
-    # ratio can approach or exceed 1. Kept raw (never through bounded_rate, which
-    # would misread a legit 1.2 as 1.2%).
-    cart_to_pay = (total_buyers / total_cart) if total_cart else None
+    cart_values = [
+        _num(r.get("add_to_cart_users")) for r in rows if r.get("add_to_cart_users") is not None
+    ]
+    buyer_values = [_num(r.get("paid_buyers")) for r in rows if r.get("paid_buyers") is not None]
+    has_product_visitors = "product_visitors" in cols
+    product_visitor_values = (
+        [_num(r.get("product_visitors")) for r in rows if r.get("product_visitors") is not None]
+        if has_product_visitors
+        else []
+    )
+    add_to_cart_user_days = sum(cart_values) if cart_values else None
+    paid_buyer_days = sum(buyer_values) if buyer_values else None
+    avg_daily_cart = _mean(cart_values)
+    avg_daily_buyers = _mean(buyer_values)
+    avg_daily_product_visitors = _mean(product_visitor_values)
+    daily_ratios: list[float] = []
+    product_to_cart_ratios: list[float] = []
+    for row in rows:
+        raw_cart = row.get("add_to_cart_users")
+        raw_buyers = row.get("paid_buyers")
+        if raw_cart is not None and raw_buyers is not None:
+            cart = _num(raw_cart)
+            if cart > 0:
+                daily_ratios.append(_num(raw_buyers) / cart)
+        if (
+            has_product_visitors
+            and raw_cart is not None
+            and row.get("product_visitors") is not None
+        ):
+            cart = _num(raw_cart)
+            visitors = _num(row.get("product_visitors"))
+            if visitors > 0:
+                product_to_cart_ratios.append(cart / visitors)
 
     # Per-day cart→pay series for the trend (only days with positive carts).
     has_date = "date" in cols
@@ -117,19 +147,34 @@ def _funnel_finding(
             # so table rows and chart series share one date form (same source as
             # core_business._gmv_trend).
             iso_date = cn_date(r.get("date"))
-            cart = _num(r.get("add_to_cart_users"))
-            buyers = _num(r.get("paid_buyers"))
-            rate = (buyers / cart) if cart else None
-            funnel_rows.append(
-                {
+            raw_cart = r.get("add_to_cart_users")
+            raw_buyers = r.get("paid_buyers")
+            cart = _num(raw_cart) if raw_cart is not None else None
+            buyers = _num(raw_buyers) if raw_buyers is not None else None
+            rate = (buyers / cart) if cart and buyers is not None else None
+            row = {
+                "date": iso_date,
+                "add_to_cart_users": cart,
+                "paid_buyers": buyers,
+                "cart_to_pay": rate,
+            }
+            if has_product_visitors:
+                raw_visitors = r.get("product_visitors")
+                visitors = _num(raw_visitors) if raw_visitors is not None else None
+                row = {
                     "date": iso_date,
+                    "product_visitors": visitors,
                     "add_to_cart_users": cart,
                     "paid_buyers": buyers,
+                    "product_to_cart": (cart / visitors) if visitors and cart is not None else None,
                     "cart_to_pay": rate,
                 }
-            )
+            funnel_rows.append(row)
             if rate is not None:
                 series.append((iso_date, rate))
+
+    avg_daily_cart_to_pay = _mean(daily_ratios)
+    avg_daily_product_to_cart = _mean(product_to_cart_ratios)
 
     trend_direction = None
     if len(series) >= 2:
@@ -139,46 +184,71 @@ def _funnel_finding(
     else:
         limitations.append("business_overview_daily 缺少 date 列，跳过加购→成交趋势。")
 
-    # Wilson band only when the ratio is a genuine sub-funnel (buyers ≤ carts).
-    ci_low = ci_high = ci_band = None
-    if total_cart and total_buyers <= total_cart and min_n_guard(int(total_cart)):
-        ci_low, ci_high = wilson_interval(total_buyers, int(total_cart))
-        ci_band = rate_band(ci_low, ci_high)
-
-    conclusion = (
-        f"累计加购 {qty(total_cart)} 人、支付买家 {qty(total_buyers)} 人，"
-        f"加购→成交比约 {round((cart_to_pay or 0) * 100, 1)}%"
-        + (f"，趋势{trend_direction}。" if trend_direction else "，趋势数据不足。")
+    ratio_summary = (
+        f"日均加购→支付比约 {round(avg_daily_cart_to_pay * 100, 1)}%"
+        if avg_daily_cart_to_pay is not None
+        else "日均加购→支付比数据不足"
+    )
+    cart_summary = (
+        f"日均加购 {qty(avg_daily_cart)} 人" if avg_daily_cart is not None else "日均加购数据不足"
+    )
+    buyer_summary = (
+        f"日均支付买家 {qty(avg_daily_buyers)} 人"
+        if avg_daily_buyers is not None
+        else "日均支付买家数据不足"
+    )
+    conclusion = f"{cart_summary}、{buyer_summary}，{ratio_summary}" + (
+        f"，趋势{trend_direction}。" if trend_direction else "，趋势数据不足。"
     )
 
     caveats = [
         M.causal_disclaimer("流量质量、活动折扣和客群不同"),
         "不是严格的漏斗、只是个比值：有些人没先加购就直接下单了，所以这个比值可能接近甚至超过 100%，看走势比看具体数字更靠谱。",
+        "加购人数和支付买家数均为逐日去重；跨日可能重复计入，因此只报告日均值和逐日比率，不解释为观察期唯一人数。",
+        "商品访客→加购→支付是逐日阶段事实，不是严格的用户漏斗：同一用户跨日可能重复，且支付未必先加购。",
     ]
 
     key_numbers: dict[str, object] = {
-        "total_add_to_cart_users": total_cart,
-        "total_paid_buyers": total_buyers,
-        "cart_to_pay": cart_to_pay,
+        "add_to_cart_user_days": add_to_cart_user_days,
+        "paid_buyer_days": paid_buyer_days,
+        "avg_daily_add_to_cart_users": avg_daily_cart,
+        "avg_daily_paid_buyers": avg_daily_buyers,
+        "avg_daily_cart_to_pay": avg_daily_cart_to_pay,
+        "add_to_cart_observed_days": len(cart_values),
+        "paid_buyer_observed_days": len(buyer_values),
+        "paired_ratio_observed_days": len(daily_ratios),
         "cart_to_pay_trend": trend_direction,
     }
-    if ci_band is not None:
-        key_numbers["ci_low"] = ci_low
-        key_numbers["ci_high"] = ci_high
+    if has_product_visitors:
+        key_numbers.update(
+            {
+                "product_visitor_days": sum(product_visitor_values)
+                if product_visitor_values
+                else None,
+                "avg_daily_product_visitors": avg_daily_product_visitors,
+                "avg_daily_product_to_cart": avg_daily_product_to_cart,
+                "product_visitor_observed_days": len(product_visitor_values),
+                "product_to_cart_paired_observed_days": len(product_to_cart_ratios),
+            }
+        )
 
-    sample_size = int(total_cart) if total_cart else len(rows)
+    sample_size = len(daily_ratios)
+    if sample_size == 0:
+        limitations.append(
+            "加购人数与支付买家数的有效配对日为 0，无法判断加购→支付比或给出经营动作；"
+            "需补齐同日有效的加购与支付买家数据。"
+        )
     finding = Finding(
         title="加购→成交需求漏斗",
         conclusion=conclusion,
         evidence_strength=score_evidence(sample_size, has_controls=False, confounder_count=1),
-        descriptive_reliability=score_reliability(sample_size, ci_low, ci_high),
+        descriptive_reliability=score_reliability(sample_size),
         key_numbers=key_numbers,
         caveats=caveats,
-        recommended_action=_LEVER_FUNNEL,
+        recommended_action=_LEVER_FUNNEL if sample_size > 0 else None,
         evidence_reason=M.methodology_note(
-            "加购与支付买家为 business_overview_daily 真实列聚合，"
+            "商品访客（如已导出）、加购与支付买家为 business_overview_daily 逐日去重真实列，跨日不求唯一人数；"
             "趋势按逐日加购→成交比的最小二乘斜率判定；观察性描述，非因果。",
-            "加购→成交比的 95% 置信区间见 ci_low/ci_high。" if ci_band is not None else None,
         ),
         confounders=list(_CONFOUNDERS),
     )
@@ -192,10 +262,14 @@ def _wishlist_finding(
     rows: list[dict], cols: set[str], limitations: list[str]
 ) -> tuple[Finding | None, list[dict]]:
     if _WISHLIST_COL not in cols:
-        limitations.append(f"business_overview_daily 缺少「{_WISHLIST_COL}」列，跳过心愿单需求蓄水。")
+        limitations.append(
+            f"business_overview_daily 缺少「{_WISHLIST_COL}」列，跳过心愿单需求蓄水。"
+        )
         return None, []
 
-    total_wishlist = sum(_num(r.get(_WISHLIST_COL)) for r in rows)
+    wishlist_values = [_num(r.get(_WISHLIST_COL)) for r in rows if r.get(_WISHLIST_COL) is not None]
+    new_wishlist_user_days = sum(wishlist_values) if wishlist_values else None
+    avg_daily_wishlist = _mean(wishlist_values)
 
     has_date = "date" in cols
     series: list[tuple[str, float]] = []
@@ -205,11 +279,11 @@ def _wishlist_finding(
         dated.sort(key=lambda r: str(r.get("date")))
         for r in dated:
             iso_date = cn_date(r.get("date"))
-            users = _num(r.get(_WISHLIST_COL))
-            wishlist_rows.append(
-                {"date": iso_date, "new_wishlist_users": users}
-            )
-            series.append((iso_date, users))
+            raw_users = r.get(_WISHLIST_COL)
+            users = _num(raw_users) if raw_users is not None else None
+            wishlist_rows.append({"date": iso_date, "new_wishlist_users": users})
+            if users is not None:
+                series.append((iso_date, users))
 
     trend_direction = None
     if len(series) >= 2:
@@ -218,37 +292,54 @@ def _wishlist_finding(
         limitations.append("business_overview_daily 心愿单序列不足两期，跳过心愿单趋势。")
 
     # Depth indicator: 心愿单 relative to 加购（both蓄水，但心愿单是更弱意向）。
-    wishlist_to_cart = None
+    daily_wishlist_to_cart: list[float] = []
     if "add_to_cart_users" in cols:
-        total_cart = sum(_num(r.get("add_to_cart_users")) for r in rows)
-        wishlist_to_cart = (total_wishlist / total_cart) if total_cart else None
+        for row in rows:
+            cart = _num(row.get("add_to_cart_users"))
+            if cart > 0 and row.get(_WISHLIST_COL) is not None:
+                daily_wishlist_to_cart.append(_num(row.get(_WISHLIST_COL)) / cart)
+    avg_daily_wishlist_to_cart = _mean(daily_wishlist_to_cart)
 
-    conclusion = (
-        f"心愿单累计新增 {qty(total_wishlist)} 人"
-        + (f"，趋势{trend_direction}。" if trend_direction else "，趋势数据不足。")
+    wishlist_summary = (
+        f"心愿单日均新增 {qty(avg_daily_wishlist)} 人"
+        if avg_daily_wishlist is not None
+        else "心愿单日均新增数据不足"
     )
-    if wishlist_to_cart is not None:
-        conclusion += f" 心愿单/加购约 {round(wishlist_to_cart * 100)}%，反映延迟需求蓄水深度。"
+    conclusion = wishlist_summary + (
+        f"，趋势{trend_direction}。" if trend_direction else "，趋势数据不足。"
+    )
+    if avg_daily_wishlist_to_cart is not None:
+        conclusion += (
+            f" 日均心愿单/加购比约 {round(avg_daily_wishlist_to_cart * 100)}%，"
+            "反映延迟需求蓄水深度。"
+        )
 
     key_numbers: dict[str, object] = {
-        "total_new_wishlist": total_wishlist,
+        "new_wishlist_user_days": new_wishlist_user_days,
+        "avg_daily_new_wishlist_users": avg_daily_wishlist,
         "wishlist_trend": trend_direction,
     }
-    if wishlist_to_cart is not None:
-        key_numbers["wishlist_to_cart_ratio"] = wishlist_to_cart
+    if avg_daily_wishlist_to_cart is not None:
+        key_numbers["avg_daily_wishlist_to_cart"] = avg_daily_wishlist_to_cart
 
+    sample_size = len(wishlist_values)
+    if sample_size == 0:
+        limitations.append(
+            "心愿单有效观察日为 0，无法判断需求蓄水或给出经营动作；需补齐有效的心愿单新增数据。"
+        )
     finding = Finding(
         title="心愿单需求蓄水",
         conclusion=conclusion,
-        evidence_strength=score_evidence(len(series) or 1, has_controls=False, confounder_count=1),
-        descriptive_reliability=score_reliability(len(series) or 1),
+        evidence_strength=score_evidence(sample_size, has_controls=False, confounder_count=1),
+        descriptive_reliability=score_reliability(sample_size),
         key_numbers=key_numbers,
         caveats=[
             "心愿单是延迟需求信号。" + M.causal_disclaimer("上新、提醒和权益节奏不同"),
             "心愿单和加购是两种不同热度的想买信号，不能加在一起算；心愿单/加购只当作蓄水深浅的参考。",
+            "心愿单新增和加购人数均为逐日去重；跨日可能重复计入，因此不解释为观察期唯一人数。",
         ],
-        recommended_action=_LEVER_WISHLIST,
-        evidence_reason="心愿单新增为真实列逐日聚合，趋势按最小二乘斜率判定；观察性描述，非因果。",
+        recommended_action=_LEVER_WISHLIST if sample_size > 0 else None,
+        evidence_reason="心愿单新增为逐日去重真实列，报告日均值并按逐日序列判趋势；观察性描述，非因果。",
         confounders=list(_CONFOUNDERS),
     )
     return finding, wishlist_rows
@@ -259,6 +350,10 @@ def _wishlist_finding(
 # --------------------------------------------------------------------------- #
 def _num(value) -> float:
     return to_finite_float(value, 0.0)
+
+
+def _mean(values: list[float]) -> float | None:
+    return sum(values) / len(values) if values else None
 
 
 def _fetch_all(con, table: str) -> list[dict]:

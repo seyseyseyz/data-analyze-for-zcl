@@ -8,6 +8,7 @@ never diverge between layers (the recurring "narrative diverged from the fact la
 meta-bug, applied to provenance). Pure, never raises: an unknown or non-string key
 degrades to a readable form of the key itself so provenance always renders something.
 """
+
 from __future__ import annotations
 
 # key == the bare table name as the analysis engine keys result.tables.
@@ -16,6 +17,7 @@ TABLE_LABELS: dict[str, str] = {
     "daily_posts": "账号日发布与互动",
     "posting_windows": "最优发布窗口",
     "note_funnel": "笔记漏斗明细",
+    "note_commercial_funnel": "笔记商业漏斗",
     "cover_effects": "封面效果对比",
     "copy_effects": "文案角度对比",
     "product_opportunities": "商品机会明细",
@@ -31,9 +33,14 @@ TABLE_LABELS: dict[str, str] = {
     "weekly_sections": "周复盘模块",
     "ad_data_quality": "投放数据可用性",
     "paid_traffic_efficiency": "投放效率明细",
+    "paid_funnel_summary": "投放漏斗汇总",
+    "paid_hierarchy": "投放层级下钻",
     "paid_spend_response": "投放弹性（花费→成交响应）",
     # --- 经营/搜索/人群/退款/渠道 深度诊断模块 ---
     "business_snapshot": "整体经营快照",
+    "business_net_revenue": "支付口径净收入",
+    "refund_time_pressure": "退款时间运营压力",
+    "business_traffic_depth": "流量深度与加购承接",
     "business_trend": "GMV 趋势与结构性变化",
     "business_self_benchmark": "自身历史基准分位",
     "event_activity_lift": "活动期抬升对比",
@@ -51,6 +58,9 @@ TABLE_LABELS: dict[str, str] = {
     "first_purchase_cycle_funnel": "首购周期漏斗",
     "audience_gmv_contribution": "人群 GMV 贡献",
     "sku_gmv_pareto": "SKU GMV 帕累托",
+    "sku_net_value_fact": "SKU 净价值",
+    "product_net_value": "商品净价值",
+    "sku_intent_funnel": "SKU 意向承接",
     "sku_category_mix": "SKU 类目结构",
     "sku_category_l2_mix": "二级品类营收与退款",
     "sku_refund_outliers": "高退款 SKU",
@@ -65,14 +75,20 @@ TABLE_LABELS: dict[str, str] = {
     "refund_layer_breakdown": "退款分层拆解",
     "refund_trend": "退款趋势",
     "carrier_refund_comparison": "载体退款对比",
+    "refund_overview_by_period_account_carrier": "退款原始粒度事实",
+    "refund_reason_breakdown": "退款原因结构",
     "shop_source_structure": "店铺来源结构",
     "product_refund_concentration": "商品退款集中度",
     "channel_scale": "渠道规模结构",
     "channel_conversion": "渠道转化对比",
     "channel_refund": "渠道退款对比",
+    "carrier_daily_fact": "渠道日级经营事实",
+    "traffic_source_efficiency": "流量来源与内容类型效率",
     "refund_by_category": "分品类退款",
     "refund_by_price_band": "分价格带退款",
     "refund_by_ship_stage": "分发货环节退款",
+    "sku_refund_paytime": "SKU 退款（支付时间）",
+    "sku_refund_refundtime": "SKU 退款（退款时间）",
 }
 
 

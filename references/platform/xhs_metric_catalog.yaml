@@ -1,0 +1,3613 @@
+version: 1
+platform: xiaohongshu_qianfan
+source_snapshot_sha256: fc9dc7bbb69b602e7ea59fc777878ac6d56969fac2f576a6fb29abe136e7b1c0
+summary:
+  metric_count: 134
+  current_count: 82
+  deferred_count: 52
+  bound_count: 0
+  new_contract_count: 82
+  rejected_count: 0
+metrics:
+- platform_metric_id: 14
+  display_name: 商品访客数
+  description: 统计时间内，点击店铺商品的去重人数（同一位用户多次点击，只计为1人）
+  modules:
+  - 商品数据
+  - 数据总览
+  - 流量数据
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - product
+  - overview
+  - traffic
+  measure_kind: distinct_count
+  unit: count
+  caliber: user_count
+  time_anchor: analysis_window
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: proposed_exact
+  review_required: true
+  review_reasons:
+  - proposed_binding_not_approved
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 8897bbeecb11ea9ea6933f3df5ac14ba4161097b44ed18ad1bdb32daa9867c49
+- platform_metric_id: 15
+  display_name: 商品访问量
+  description: 统计时间内，点击店铺商品的总次数（同一位用户多次点击，记为多次访问）
+  modules:
+  - 商品数据
+  - 流量数据
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - product
+  - traffic
+  measure_kind: event_count
+  unit: count
+  caliber: event_count
+  time_anchor: analysis_window
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 6423b8c288ccef31f307f2f1d5ee539f498677695c0b0fa9cf74cd5161fc5f9a
+- platform_metric_id: 16
+  display_name: 加购人数
+  description: 统计时间内，用户将商品加入购物车的去重人数，未剔除从购物车删除的人数
+  modules:
+  - 商品数据
+  - 流量数据
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - product
+  - traffic
+  measure_kind: distinct_count
+  unit: count
+  caliber: user_count
+  time_anchor: analysis_window
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: proposed_exact
+  review_required: true
+  review_reasons:
+  - proposed_binding_not_approved
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: c0e7204f4d920eb76afc89d6d7123dadcd4f2c4f4fa4b33c9272a6440a6beccb
+- platform_metric_id: 19
+  display_name: 支付买家数
+  description: 统计时间（订单支付时间）内，支付订单的去重买家人数，同一位买家，多次支付，记为一位支付买家，未剔除成功退款买家。预售阶段，在付清尾款当日，才计入支付买家
+  modules:
+  - 商品数据
+  - 数据总览
+  - 流量数据
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - product
+  - overview
+  - traffic
+  measure_kind: distinct_count
+  unit: count
+  caliber: user_count
+  time_anchor: payment_time
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: gross_includes_refunds
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: proposed_exact
+  review_required: true
+  review_reasons:
+  - proposed_binding_not_approved
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 21adf47e6794871928f2e7c94ccbdfab91f95242197a380b4de3cc01110fa19d
+- platform_metric_id: 20
+  display_name: 支付金额
+  description: 统计时间（订单支付时间）内，支付订单的总金额，包括买家实付金额和平台优惠，未剔除成功退款金额。预售阶段，在付清尾款当日，将定金和尾款一同计入支付金额
+  modules:
+  - 交易数据/成交分析
+  - 商品数据
+  - 数据总览
+  - 流量数据
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - transaction
+  - product
+  - overview
+  - traffic
+  measure_kind: amount_total
+  unit: cny
+  caliber: amount
+  time_anchor: payment_time
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: gross_includes_refunds
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: proposed_exact
+  review_required: true
+  review_reasons:
+  - proposed_binding_not_approved
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 5049d02b826e596052f9507b7a37d90098631bf5da5c55a12f13c8030b7d1b3d
+- platform_metric_id: 21
+  display_name: 支付转化率（人数）
+  description: 统计时间内，支付买家数 / 商品访客数
+  modules:
+  - 交易数据/成交分析
+  - 商品数据
+  - 数据总览
+  - 流量数据
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - transaction
+  - product
+  - overview
+  - traffic
+  measure_kind: ratio
+  unit: percent
+  caliber: dimensionless
+  time_anchor: analysis_window
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: true
+  classification_confidence: high
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 8bcd5027eeecd7784653a0822eabe17dc51c878fe41176530eaadc839c267bc8
+- platform_metric_id: 22
+  display_name: 客单价
+  description: 支付金额/支付买家数
+  modules:
+  - 商品数据
+  - 流量数据
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - product
+  - traffic
+  measure_kind: average_amount
+  unit: cny
+  caliber: amount
+  time_anchor: unknown
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: true
+  classification_confidence: high
+  candidate_binding_status: proposed_exact
+  review_required: true
+  review_reasons:
+  - proposed_binding_not_approved
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 1bff0efcb325149329a881ce08496ca6f43690baaa52fd28c2185410b812f610
+- platform_metric_id: 37
+  display_name: 支付订单数
+  description: 统计时间（订单支付时间）内，支付订单的总数，未剔除成功退款订单。预售阶段，在付清尾款当日，才计入支付订单数。订单概念对齐千帆-订单管理，一笔订单内可能包含多个SKU，只计为一个订单。
+  modules:
+  - 交易数据/成交分析
+  - 商品数据
+  - 数据总览
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - transaction
+  - product
+  - overview
+  measure_kind: event_count
+  unit: count
+  caliber: order_count
+  time_anchor: payment_time
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: gross_includes_refunds
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: review_required
+  review_required: true
+  review_reasons:
+  - duplicate_display_name
+  - proposed_binding_not_approved
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 4bd8b824bbd6a3528328d40f195b0da3df28c80445cebe4623d26ef3fd395939
+- platform_metric_id: 38
+  display_name: 支付件数
+  description: 统计时间内，支付商品的总件数，同一订单内不同商品的多个规格记为多件，未剔除成功退款商品件数。预售阶段，在付清尾款当日，才计入支付件数
+  modules:
+  - 商品数据
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - product
+  measure_kind: event_count
+  unit: count
+  caliber: item_count
+  time_anchor: analysis_window
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: gross_includes_refunds
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: proposed_exact
+  review_required: true
+  review_reasons:
+  - proposed_binding_not_approved
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: ec2de0c98ee2deaf0ff180e32b2ae4d6e21fec31f0bbcb92e0981411cd3c5662
+- platform_metric_id: 41
+  display_name: 退款金额(退款时间)
+  description: 成功完成退款的商品金额；统计逻辑：（1）根据完成退款的时间统计，非订单支付时间、非用户申请退款时间（举例：用户10/1支付，10/2申请退款，10/5退款成功，数据计入10/5）；（2）只要订单支付成功，未发货、已发货的退款（已发货仅退款、退货退款）均包含在内；（3）仅统计商品实退金额部分，未包含运费、平台优惠的退款（4）仅包含走售后系统且退款成功的订单，不包含线下退款（如小额打款
+    等）
+  modules:
+  - 交易数据/成交分析
+  - 交易数据/退款分析
+  - 商品数据
+  - 数据总览
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - transaction
+  - refund
+  - product
+  - overview
+  measure_kind: amount_total
+  unit: cny
+  caliber: amount
+  time_anchor: refund_completion_time
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: refund_pool
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: proposed_exact
+  review_required: true
+  review_reasons:
+  - proposed_binding_not_approved
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 8bcd349058a3c0ccc9aaddf7640c950fe180f374cb4ab01b1c5439327cb1c2b3
+- platform_metric_id: 42
+  display_name: 退款买家数(退款时间)
+  description: 成功完成退款的用户人数；统计逻辑：（1）根据完成退款的时间统计，非订单支付时间、非用户申请退款时间（举例：用户10/1支付，10/2申请退款，10/5退款成功，数据计入10/5）；（2）只要订单支付成功，未发货、已发货的退款（已发货仅退款、退货退款）均包含在内；（3）仅统计商品实退金额部分，未包含运费、平台优惠的退款（4）仅包含走售后系统且退款成功的订单，不包含线下退款（如小额打款
+    等）（5）仅包含走售后系统且退款成功的订单，不包含线下退款（如小额打款 等）
+  modules:
+  - 交易数据/退款分析
+  - 商品数据
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - refund
+  - product
+  measure_kind: count
+  unit: count
+  caliber: user_count
+  time_anchor: refund_completion_time
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: refund_pool
+  division_formula_explicit: false
+  classification_confidence: medium
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 424762d718a680eb7fad9303e431fe8c04ecbcb772055731efeb77dbc30f4260
+- platform_metric_id: 43
+  display_name: 退款订单数(退款时间)
+  description: 成功完成退款的订单数；统计逻辑：（1）根据完成退款的时间统计，非订单支付时间、非用户申请退款时间（举例：用户10/1支付，10/2申请退款，10/5退款成功，数据计入10/5）；（2）只要订单支付成功，未发货、已发货的退款（已发货仅退款、退货退款）均包含在内；（3）仅统计商品实退金额部分，未包含运费、平台优惠的退款（4）仅包含走售后系统且退款成功的订单，不包含线下退款（如小额打款
+    等）
+  modules:
+  - 交易数据/成交分析
+  - 交易数据/退款分析
+  - 商品数据
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - transaction
+  - refund
+  - product
+  measure_kind: event_count
+  unit: count
+  caliber: order_count
+  time_anchor: refund_completion_time
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: refund_pool
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 15a4703eebef0d7e4a1712d8f24f57b76e6a1cdff97f7d9685b8c07713599e5b
+- platform_metric_id: 50
+  display_name: 商品笔记加购件数
+  description: 统计时间内，用户通过本店发布笔记，点击关联商品进入商品详情页加购件数（未剔除从购物车删除的件数）
+  modules:
+  - 笔记数据/商品笔记
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - notes
+  measure_kind: event_count
+  unit: count
+  caliber: item_count
+  time_anchor: analysis_window
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 53d03b838f308152aa84b0b3f06e8109d719faf51ab373381a707954883cc795
+- platform_metric_id: 51
+  display_name: 笔记涨粉人数
+  description: 统计时间内，通过笔记中头像点击关注成为粉丝的人数，不剔除用户取消关注人数
+  modules:
+  - 笔记数据/商品笔记
+  - 笔记数据/普通笔记
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - notes
+  measure_kind: count
+  unit: count
+  caliber: user_count
+  time_anchor: analysis_window
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: medium
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 67fab8e1a27ff4122f4da055bcb1e9f722df0856aabd0773e38a639a3d2eec89
+- platform_metric_id: 52
+  display_name: 笔记商品点击率
+  description: 笔记商品点击次数/阅读次数，体现商品受喜爱的程度，若用户在一次笔记阅读中多次点击商详，阅读记1次，引导商品点击记多次，因此商品点击率可能会大于100%
+  modules:
+  - 笔记数据/商品笔记
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - notes
+  measure_kind: ratio
+  unit: percent
+  caliber: dimensionless
+  time_anchor: unknown
+  cross_period_additive: 'false'
+  boundedness: may_exceed_1
+  refund_inclusion: unknown
+  division_formula_explicit: true
+  classification_confidence: high
+  candidate_binding_status: review_required
+  review_required: true
+  review_reasons:
+  - duplicate_display_name
+  - ratio_may_exceed_100_percent
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: e7df21361af2b67d9be317d364209324db081b4202d362bab08e76f7ab7cc642
+- platform_metric_id: 54
+  display_name: 商笔阅读次数
+  description: 统计时间内，本店发布笔记被阅读的次数。实时阅读次数与离线略有差异：若普通笔记转换成商品笔记，实时只统计转换成商品笔记后的阅读数，无法回补转化前普通笔记的阅读次数。含主理人和员工账号发布的商品笔记阅读，不包含其他人发布的合作笔记、晒单笔记、带货笔记。与C端观看次数（小眼睛）不同。阅读次数会采用多项严苛的统计口径：如单人单日单篇笔记的阅读次数上限为10次，超过10次记为10次，若系统判断为作弊的流量，阅读不予统计等条件；
+  modules:
+  - 笔记数据/商品笔记
+  - 笔记数据/普通笔记
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - notes
+  measure_kind: event_count
+  unit: count
+  caliber: event_count
+  time_anchor: analysis_window
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: ae10ecdc54f6cdbf8866bcb8209f7b822fb8295b372370d6bfd4bfbffd6c28c1
+- platform_metric_id: 55
+  display_name: 点赞次数
+  description: 统计时间内，本店发布笔记被点赞次数，剔除当日点赞且在当日取消的次数，不剔除历史点赞在当日取消点赞的次数，离线指标，C端点赞为实时指标，略有差异
+  modules:
+  - 笔记数据/商品笔记
+  - 笔记数据/普通笔记
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - notes
+  measure_kind: event_count
+  unit: count
+  caliber: event_count
+  time_anchor: analysis_window
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: proposed_exact
+  review_required: true
+  review_reasons:
+  - proposed_binding_not_approved
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 39a7e12b816b662f853cfbeaa5626e7c87abf39f8b989da2d4ae77e14102150a
+- platform_metric_id: 56
+  display_name: 收藏次数
+  description: 统计时间内，本店发布笔记被收藏次数，剔除当日收藏且在当日取消的次数，不剔除历史收藏在当日取消收藏的次数，离线指标，C端收藏为实时指标，略有差异
+  modules:
+  - 笔记数据/商品笔记
+  - 笔记数据/普通笔记
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - notes
+  measure_kind: event_count
+  unit: count
+  caliber: event_count
+  time_anchor: analysis_window
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: proposed_exact
+  review_required: true
+  review_reasons:
+  - proposed_binding_not_approved
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: e3d01ed1b7c4e7224f7015c9ed7c1043549e8277524120f1be35820b5ebf3944
+- platform_metric_id: 57
+  display_name: 评论次数
+  description: 统计时间内，本店发布笔记被评论次数，包含笔记作者本人回复，剔除当日评论且在当日取消的次数，不剔除历史评论在当日取消评论的次数，离线指标，C端评论为实时指标，略有差异
+  modules:
+  - 笔记数据/商品笔记
+  - 笔记数据/普通笔记
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - notes
+  measure_kind: event_count
+  unit: count
+  caliber: event_count
+  time_anchor: analysis_window
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: proposed_exact
+  review_required: true
+  review_reasons:
+  - proposed_binding_not_approved
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 5e180515b05d0da1b513c4e8ccab21ad9f6637c9c98eef198c6b7464ecb7d138
+- platform_metric_id: 58
+  display_name: 分享次数
+  description: 统计时间内，本店发布笔记被分享次数，包含作者本人分享的次数，是离线指标，C端分享为实时指标，略有差异
+  modules:
+  - 笔记数据/商品笔记
+  - 笔记数据/普通笔记
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - notes
+  measure_kind: event_count
+  unit: count
+  caliber: event_count
+  time_anchor: analysis_window
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: proposed_exact
+  review_required: true
+  review_reasons:
+  - proposed_binding_not_approved
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 705b1fb7f0e82a4cf2b1b21e3ad001aa5d8f83cfd1303503cde859b5e9533bd0
+- platform_metric_id: 71
+  display_name: 平均阅读(观播)时长
+  description: 笔记发布至今，总浏览时长/阅读次数，单位秒
+  modules:
+  - 笔记数据/商品笔记
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - notes
+  measure_kind: duration_average
+  unit: seconds
+  caliber: duration
+  time_anchor: lifetime_since_publish
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: true
+  classification_confidence: high
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - lifetime_metric_not_window_additive
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: c2872c44d61d4a4663ac02d0d7c3b98bdbae34203d25c1131a0bee60acccf4a6
+- platform_metric_id: 94
+  display_name: 退款率(退款时间)
+  description: 统计时间内，退款金额(退款时间)/支付金额 * 100%，由于成功退款日期一般晚于支付日期，因此该指标可能出现大于100%的情况
+  modules:
+  - 交易数据/退款分析
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - refund
+  measure_kind: ratio
+  unit: percent
+  caliber: dimensionless
+  time_anchor: refund_completion_time
+  cross_period_additive: 'false'
+  boundedness: may_exceed_1
+  refund_inclusion: refund_pool
+  division_formula_explicit: true
+  classification_confidence: high
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - ratio_may_exceed_100_percent
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 83745b6377a0cfaac717c2ac1d00457c67fa318d72de653f2a961857e7c74c4a
+- platform_metric_id: 95
+  display_name: 平均退款时长
+  description: 统计时间内，退款成功售后单的平均完成时长（用户申请 ～ 退款成功的时间）
+  modules:
+  - 服务数据/售后数据
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - after_sales
+  measure_kind: duration_average
+  unit: unknown
+  caliber: duration
+  time_anchor: analysis_window
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: refund_pool
+  division_formula_explicit: false
+  classification_confidence: low
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons:
+  - unknown_duration_unit
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 080ac5e399d8e6aa4cac77528d03ed5b93e656418b7935717ad79082f5963348
+- platform_metric_id: 96
+  display_name: 仅退款自主完结时长
+  description: 统计时间内，完成、拒绝的仅退款售后单，处理的平均时长（用户申请 ～ 商家审核的时间）
+  modules:
+  - 服务数据/售后数据
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - after_sales
+  measure_kind: duration_average
+  unit: unknown
+  caliber: duration
+  time_anchor: analysis_window
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: refund_pool
+  division_formula_explicit: false
+  classification_confidence: low
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons:
+  - unknown_duration_unit
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 33d2f6347fc89db7224f65e2e0fbd97449a8c527671dc0c3555cf853014aaf3c
+- platform_metric_id: 97
+  display_name: 退货退款自主完结时长
+  description: 统计时间内，完成、拒绝的退货退款售后单，处理的平均时长（用户申请 ～ 商家审核 + 退货寄回上传单号 ～ 商家确认收货的时间）
+  modules:
+  - 服务数据/售后数据
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - after_sales
+  measure_kind: duration_average
+  unit: unknown
+  caliber: duration
+  time_anchor: analysis_window
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: refund_pool
+  division_formula_explicit: false
+  classification_confidence: low
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons:
+  - unknown_duration_unit
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 3a41d523540eb527eb1d842864ef9a61bd81aef99193cfbb91b718daccf0a398
+- platform_metric_id: 99
+  display_name: 3分钟回复率
+  description: 统计周期内，客服每轮回复都在3分钟内的会话量 / 会话量（1.仅统计用户主动发起且已关闭的case；2.case创建时间：9点-23点；3.若case分配成功，转人工后机器人回复算作客服回复；4.不统计仅有撤回、广告、辱骂消息的case）
+  modules:
+  - 数据总览
+  - 服务数据/客服数据
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - overview
+  - customer_service
+  measure_kind: ratio
+  unit: percent
+  caliber: dimensionless
+  time_anchor: analysis_window
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: true
+  classification_confidence: high
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 7d7dcdd7bbefa5fbcbe95e727306b66774f779ee5400a3d5f32015cc480397b7
+- platform_metric_id: 102
+  display_name: 会话量
+  description: 统计周期内，用户主动发起的case量（不统计仅有撤回、广告、辱骂消息的case）
+  modules:
+  - 服务数据/客服数据
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - customer_service
+  measure_kind: event_count
+  unit: count
+  caliber: session_count
+  time_anchor: analysis_window
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons: []
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: daa22aaeb3e8f77a7011a5ac6d6fbf0d8a04be30fbfdde8920b9803275614b3b
+- platform_metric_id: 104
+  display_name: 客服差评率
+  description: 差评数 / 评价数（1.仅统计用户主动发起的case；2.case创建时间：9点-23点；3.不统计仅有撤回、广告、辱骂消息的case）
+  modules:
+  - 服务数据/客服数据
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - customer_service
+  measure_kind: ratio
+  unit: percent
+  caliber: dimensionless
+  time_anchor: unknown
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: true
+  classification_confidence: high
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons: []
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 1981c93dfe03ebe695502bc2bad43f180f02eb213a25e059bc6034b6b869c875
+- platform_metric_id: 105
+  display_name: 客服好评率
+  description: 好评数 / 评价数
+  modules:
+  - 服务数据/客服数据
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - customer_service
+  measure_kind: ratio
+  unit: percent
+  caliber: dimensionless
+  time_anchor: unknown
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: true
+  classification_confidence: high
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons: []
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: e97409759af16de723db85f2844ed8d1dc8962e27923bceef01fb8429898aae1
+- platform_metric_id: 106
+  display_name: 评价率
+  description: 用户评价过的会话量 / 会话量
+  modules:
+  - 服务数据/客服数据
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - customer_service
+  measure_kind: ratio
+  unit: percent
+  caliber: dimensionless
+  time_anchor: unknown
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: true
+  classification_confidence: high
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons: []
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 75a5f988f68678b0f19ad477db57ad65cc72ff878d3117641c3a36f33956fc2d
+- platform_metric_id: 107
+  display_name: 客服差评数
+  description: 统计周期内，评分为“1星”、“2星”和“3星”的会话量（1.仅统计用户主动发起的case；2.case创建时间：9点-23点；3.不统计仅有撤回、广告、辱骂消息的case）
+  modules:
+  - 服务数据/客服数据
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - customer_service
+  measure_kind: count
+  unit: count
+  caliber: unknown
+  time_anchor: analysis_window
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: medium
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons: []
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: ad1c61316e15d04f374feab53977b1e8b752307a952032ed0830660382f2c3de
+- platform_metric_id: 108
+  display_name: 客服好评数
+  description: 统计周期内，评分为“4星”和“5星”的会话量（1.仅统计用户主动发起的case；2.case创建时间：9点-23点；3.不统计仅有撤回、广告、辱骂消息的case）
+  modules:
+  - 服务数据/客服数据
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - customer_service
+  measure_kind: count
+  unit: count
+  caliber: unknown
+  time_anchor: analysis_window
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: medium
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons: []
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 4c1ba21cde7a36e13fac2443c66ce5bc264a5fad54e4a637c5823a5deb354fc7
+- platform_metric_id: 109
+  display_name: 客服评价数
+  description: 统计周期内，用户评价过的会话量（1.仅统计用户主动发起的case；2.case创建时间：9点-23点；3.不统计仅有撤回、广告、辱骂消息的case）
+  modules:
+  - 服务数据/客服数据
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - customer_service
+  measure_kind: event_count
+  unit: count
+  caliber: event_count
+  time_anchor: analysis_window
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons: []
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: af7712b2f0de205217b2b0c9f0bb977652cc574b0fa8915ae869324e90fe7fe6
+- platform_metric_id: 143
+  display_name: 支付订单数
+  description: 统计时间内，支付订单的总数，未剔除成功退款订单。预售阶段，在付清尾款当日，才计入支付订单数
+  modules:
+  - 服务数据/物流数据
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - logistics
+  measure_kind: event_count
+  unit: count
+  caliber: order_count
+  time_anchor: analysis_window
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: gross_includes_refunds
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons:
+  - duplicate_display_name
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 4cdc08db780134338f3ec441f8733ce5c27116e032a0687fdea889206d34a6df
+- platform_metric_id: 144
+  display_name: 发货包裹数
+  description: 统计时间内，完成发货的包裹数；不含NFT、O2O、换货发货（RP）、补发货（BP）、外平台（OD）的订单
+  modules:
+  - 服务数据/物流数据
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - logistics
+  measure_kind: event_count
+  unit: count
+  caliber: package_count
+  time_anchor: analysis_window
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons: []
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 07d4aef4e75097a095ebe51ae5ae118e66e96854a80e536ce195a9b338b883ae
+- platform_metric_id: 145
+  display_name: 揽收包裹数
+  description: 统计时间内，完成揽收的包裹数；不含NFT、O2O、无物流发货、换货发货（RP）、补发货（BP）、外平台（OD）的订单
+  modules:
+  - 服务数据/物流数据
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - logistics
+  measure_kind: event_count
+  unit: count
+  caliber: package_count
+  time_anchor: analysis_window
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons: []
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 1b1942e0e5365600f377fdc70e5f27db5faff526fe94772add6d52b814a44ab4
+- platform_metric_id: 146
+  display_name: 签收包裹数
+  description: 统计时间内，有轨迹签收的包裹数；不含NFT、O2O、无物流发货、换货发货（RP）、补发货（BP）、外平台（OD）的订单
+  modules:
+  - 服务数据/物流数据
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - logistics
+  measure_kind: event_count
+  unit: count
+  caliber: package_count
+  time_anchor: analysis_window
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons: []
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 00ecd1442d272bc46262d5aad37fd4a6da2eab6af3f8a35b8f51215bb57695e9
+- platform_metric_id: 147
+  display_name: 支付-签收时长
+  description: 统计时间内，订单支付到包裹签收的平均时长（仅计算已签收的包裹）
+  modules:
+  - 服务数据/物流数据
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - logistics
+  measure_kind: duration_average
+  unit: unknown
+  caliber: duration
+  time_anchor: analysis_window
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: low
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons:
+  - unknown_duration_unit
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 6cd5e3db1f35f0fb413c70ff0ea6f4c52683aa2af7131ef29adbecbcc642b498
+- platform_metric_id: 148
+  display_name: 支付-发货时长
+  description: 统计时间内，订单支付到包裹发货的平均时长（仅计算已发货的包裹）
+  modules:
+  - 数据总览
+  - 服务数据/物流数据
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - overview
+  - logistics
+  measure_kind: duration_average
+  unit: unknown
+  caliber: duration
+  time_anchor: analysis_window
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: low
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - unknown_duration_unit
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: bc8a6a519f1d4d76749f7948d17dfc19c61db4e4fd6d394ec9f7c2044c902c9f
+- platform_metric_id: 149
+  display_name: 按时发货率
+  description: 统计时间内，承诺且完成发货订单量 / 承诺发货订单量
+  modules:
+  - 服务数据/物流数据
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - logistics
+  measure_kind: ratio
+  unit: percent
+  caliber: dimensionless
+  time_anchor: analysis_window
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: true
+  classification_confidence: high
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons: []
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 7aa0570b4d8c86d5f4e92bd5ca518f0dd1e64ab7a60faf71139c59d440095be9
+- platform_metric_id: 150
+  display_name: 发货-揽件时长
+  description: 统计时间内，包裹发货到快递商揽件的平均时长（仅计算已揽件的包裹）
+  modules:
+  - 服务数据/物流数据
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - logistics
+  measure_kind: duration_average
+  unit: unknown
+  caliber: duration
+  time_anchor: analysis_window
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: low
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons:
+  - unknown_duration_unit
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 32e85f959aaf0cc5dcfe0f53ac337c36bdbca54ffe2b5cfbdb1b5a0ddd89afc1
+- platform_metric_id: 151
+  display_name: 揽件-签收时长
+  description: 统计时间内，快递商揽件到包裹签收的平均时长（仅计算已签收的包裹）
+  modules:
+  - 服务数据/物流数据
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - logistics
+  measure_kind: duration_average
+  unit: unknown
+  caliber: duration
+  time_anchor: analysis_window
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: low
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons:
+  - unknown_duration_unit
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 548fad7d7fc65fab9b74aed645c91658385640721998acb27daaa1182d6447d8
+- platform_metric_id: 152
+  display_name: 48H支付-揽收率
+  description: 统计时间内，支付 - 揽收时间 < 48小时的订单量 / 已揽收的订单量
+  modules:
+  - 服务数据/物流数据
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - logistics
+  measure_kind: ratio
+  unit: percent
+  caliber: dimensionless
+  time_anchor: analysis_window
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: true
+  classification_confidence: high
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons: []
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 853e67e59e46bc079aa11bc2d24037cec8ce96fbd2bc9eeda9310c73d3e2d4bb
+- platform_metric_id: 158
+  display_name: 回复率（考核）
+  description: 统计周期内，24小时内已回复会话量 / 会话量。（1.仅统计用户主动发起且已关闭的case；2.case创建时间：0点-24点；3.若case分配成功，转人工后机器人回复算作客服回复；4.不统计仅有撤回、广告、辱骂消息的case）
+  modules:
+  - 服务数据/客服数据
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - customer_service
+  measure_kind: ratio
+  unit: percent
+  caliber: dimensionless
+  time_anchor: analysis_window
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: true
+  classification_confidence: high
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons: []
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 2bbf57ed4a7e3de0d0df2776fa64a53a605a1be320cef1de015374300952092a
+- platform_metric_id: 185
+  display_name: 直播支付金额
+  description: 统计时间内，直播支付金额=用户实付（含运费）+平台优惠，不剔除退款。以下三种情况都会算直播带来的订单：①直播期间支付，用户在直播间内直接支付的订单金额；②在直播间内点击过商品，直播后24小时内支付的订单金额；③在直播间内加购，直播后7日内支付的订单金额
+  modules:
+  - 直播数据/直播总览
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - live
+  measure_kind: amount_total
+  unit: cny
+  caliber: amount
+  time_anchor: analysis_window
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: gross_includes_refunds
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons:
+  - duplicate_display_name
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 3e9db98db7eca67b3fd83f6546f9770f12718e28dd5e46e071481b8286676d2f
+- platform_metric_id: 186
+  display_name: 直播支付买家数
+  description: 统计时间内，通过直播支付的用户人数
+  modules:
+  - 直播数据/直播总览
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - live
+  measure_kind: count
+  unit: count
+  caliber: user_count
+  time_anchor: analysis_window
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: medium
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons: []
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 3c8ff68760a536cf8c20db31eee8a6fd97930a6f633170b3e298908c1b1276ba
+- platform_metric_id: 187
+  display_name: 直播支付订单数
+  description: 统计时间内，通过直播支付的订单数
+  modules:
+  - 直播数据/直播总览
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - live
+  measure_kind: event_count
+  unit: count
+  caliber: order_count
+  time_anchor: analysis_window
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons: []
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 1189554aea09ab98cd4bfa0a1d4fb793a763d110361c660f02184d701d3d0830
+- platform_metric_id: 190
+  display_name: 直播商品点击人数
+  description: 统计时间内，点击直播间内本店商品的去重人数
+  modules:
+  - 直播数据/直播总览
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - live
+  measure_kind: distinct_count
+  unit: count
+  caliber: user_count
+  time_anchor: analysis_window
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons: []
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 54daaf8b61fde4e1dcca10280fb2e4dce96f2ccc3a4f10cb05505c6b26cd137a
+- platform_metric_id: 192
+  display_name: 直播加购人数
+  description: 统计时间内，点击直播间内本店商品并加入购物车的去重人数，不剔除取消加购人数
+  modules:
+  - 直播数据/直播总览
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - live
+  measure_kind: distinct_count
+  unit: count
+  caliber: user_count
+  time_anchor: analysis_window
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons: []
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: c8a9280a071af91dd4e8cd5fbb02d790205bd2058a3a93fd793910eef272733c
+- platform_metric_id: 193
+  display_name: 直播加购次数
+  description: 统计时间内，点击直播间内本店商品加购次数，不是件数，不剔除取消加购次数
+  modules:
+  - 直播数据/直播总览
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - live
+  measure_kind: event_count
+  unit: count
+  caliber: event_count
+  time_anchor: analysis_window
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons: []
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: f5ac1c0bb3974c51821ba6e5f02a8a77edfd8c8d3dabe265738825280068ca7c
+- platform_metric_id: 263
+  display_name: 搜索支付金额
+  description: 用户在搜索渠道下产生的支付金额，未剔除成功退款金额。搜索渠道包括：综合搜索页、搜索商品页、搜索用户页、图片搜索页
+  modules:
+  - 搜索数据
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - search
+  measure_kind: amount_total
+  unit: cny
+  caliber: amount
+  time_anchor: unknown
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: gross_includes_refunds
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 511bd7fb00a0f5dd72114b6b24cc8b8ef39783700767a0bbecee9260f93cb198
+- platform_metric_id: 325
+  display_name: 直播支付转化率（人数）
+  description: 统计时间内，支付买家数/直播商品点击人数*100%
+  modules:
+  - 直播数据/直播总览
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - live
+  measure_kind: ratio
+  unit: percent
+  caliber: dimensionless
+  time_anchor: analysis_window
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: true
+  classification_confidence: high
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons: []
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 751a63900677c03ae6f1671b65c952d5dd15b4651ab88f5ba6ad00862d7dd264
+- platform_metric_id: 370
+  display_name: 笔记支付金额
+  description: 统计时间内，用户在笔记页面内直接下单（或通过笔记直接进店购买同款商品）或加购后下单的订单支付金额，未剔除成功退款金额。预售阶段，在付清尾款当日，将定金和尾款一同计入支付金额
+  modules:
+  - 数据总览
+  - 流量数据
+  - 笔记数据/商品笔记
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - overview
+  - traffic
+  - notes
+  measure_kind: amount_total
+  unit: cny
+  caliber: amount
+  time_anchor: analysis_window
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: gross_includes_refunds
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: review_required
+  review_required: true
+  review_reasons:
+  - duplicate_display_name
+  - proposed_binding_not_approved
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: c9ad213338c88772309a05675e437b1c27c883af96d3092ded15d54050e91e7c
+- platform_metric_id: 371
+  display_name: 直播支付金额
+  description: 统计时间内，直播支付金额=用户实付（含运费）+ 平台优惠，不剔除退款。以下三种情况都会算直播带来的订单：①直播期间支付，用户在直播间内直接支付的订单金额；②在直播间内点击过商品，直播后24小时内支付的订单金额；③在直播间内加购，直播后7日内支付的订单金额
+  modules:
+  - 数据总览
+  - 流量数据
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - overview
+  - traffic
+  measure_kind: amount_total
+  unit: cny
+  caliber: amount
+  time_anchor: analysis_window
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: gross_includes_refunds
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: review_required
+  review_required: true
+  review_reasons:
+  - duplicate_display_name
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 0b918979b4803dfb6373d8de9d001ece55003f843f5c638a5929f59aae939243
+- platform_metric_id: 372
+  display_name: 商品卡支付金额
+  description: 统计时间内，用户在除笔记、直播间以外直接下单或加购后下单的订单支付金额，未剔除成功退款金额。预售阶段，在付清尾款当日，将定金和尾款一同计入支付金额。商品卡主要为货架场景，例如市集页面、店铺页、搜索商品结果页 等
+  modules:
+  - 数据总览
+  - 流量数据
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - overview
+  - traffic
+  measure_kind: amount_total
+  unit: cny
+  caliber: amount
+  time_anchor: analysis_window
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: gross_includes_refunds
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 208aae4c0dc98237d68eb6b6d4dd7f006067d2d3ca426d1e29a356b7b74a427d
+- platform_metric_id: 382
+  display_name: 笔记支付人数
+  description: 统计时间内，用户在笔记页面内直接支付或加购支付的人数，未剔除退款订单。预售阶段，在付清尾款当日，才会计入支付人数
+  modules:
+  - 笔记数据/商品笔记
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - notes
+  measure_kind: count
+  unit: count
+  caliber: user_count
+  time_anchor: analysis_window
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: gross_includes_refunds
+  division_formula_explicit: false
+  classification_confidence: medium
+  candidate_binding_status: review_required
+  review_required: true
+  review_reasons:
+  - duplicate_display_name
+  - proposed_binding_not_approved
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 629db506dbbeefbad97e6c33c77496a64387b3ad74468bc35fd1195161c87351
+- platform_metric_id: 383
+  display_name: 笔记支付订单数
+  description: 统计时间内，用户在笔记页面内直接下单（或通过笔记直接进店购买同款商品）或加购后下单的订单数，未剔除成功退款的订单。预售阶段，在付清尾款当日计入
+  modules:
+  - 笔记数据/商品笔记
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - notes
+  measure_kind: event_count
+  unit: count
+  caliber: order_count
+  time_anchor: analysis_window
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: gross_includes_refunds
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: review_required
+  review_required: true
+  review_reasons:
+  - duplicate_display_name
+  - proposed_binding_not_approved
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 12c7dbcf4848d4e1c9df2dd09bbdab0d900c7738785905daba0b1ce20f027eb5
+- platform_metric_id: 384
+  display_name: 笔记支付转化率(UV)
+  description: 笔记支付人数 / 笔记商品点击人数
+  modules:
+  - 笔记数据/商品笔记
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - notes
+  measure_kind: ratio
+  unit: percent
+  caliber: dimensionless
+  time_anchor: unknown
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: true
+  classification_confidence: high
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: d11d33cc91a01218708a26a90d1b165245733e1ca301702a38686e29b43d9939
+- platform_metric_id: 387
+  display_name: 搜索支付金额占比
+  description: 搜索支付金额 / 店铺总支付金额
+  modules:
+  - 搜索数据
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - search
+  measure_kind: share
+  unit: percent
+  caliber: dimensionless
+  time_anchor: unknown
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: true
+  classification_confidence: high
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: c16a59220314cb9a4d89a7d4fb021130222d0e8bba01c50d8d4ea5b290dd4ec4
+- platform_metric_id: 388
+  display_name: 搜索商品点击人数
+  description: 用户在搜索结果下，点击商品卡/直播间内商品/笔记挂载商品的人数（去重）
+  modules:
+  - 搜索数据
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - search
+  measure_kind: distinct_count
+  unit: count
+  caliber: user_count
+  time_anchor: unknown
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: true
+  classification_confidence: high
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: c31f1ef0e80a991d9c0cc0fb8ade0a72df238ab6569fe9a78cb063d0e2b40450
+- platform_metric_id: 389
+  display_name: 搜索商品点击率
+  description: 搜索商品点击人数 / 搜索商品曝光人数
+  modules:
+  - 搜索数据
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - search
+  measure_kind: ratio
+  unit: percent
+  caliber: dimensionless
+  time_anchor: unknown
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: true
+  classification_confidence: high
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: a1653adbce03c0eaec7b2d6aae330bef1bd6e0d5fb98f6648d84b93e88bb4007
+- platform_metric_id: 390
+  display_name: 搜索支付转化率
+  description: 搜索支付买家数 / 搜索商品点击人数
+  modules:
+  - 搜索数据
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - search
+  measure_kind: ratio
+  unit: percent
+  caliber: dimensionless
+  time_anchor: unknown
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: true
+  classification_confidence: high
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: e5c10973aff500ac901ae6a7ce84136f67cab11ff9c443a30413ae4d37584ef3
+- platform_metric_id: 391
+  display_name: 搜索支付买家数
+  description: 搜索渠道购下购买人数（去重）
+  modules:
+  - 搜索数据
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - search
+  measure_kind: distinct_count
+  unit: count
+  caliber: user_count
+  time_anchor: unknown
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: e051d48dde3a85d8176906b2b691c982874c50f65383179bc2ff2dfcfce2b2d3
+- platform_metric_id: 392
+  display_name: 搜索支付订单数
+  description: 搜索渠道下产生的支付订单的总数，未剔除成功退款订单
+  modules:
+  - 搜索数据
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - search
+  measure_kind: event_count
+  unit: count
+  caliber: order_count
+  time_anchor: unknown
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: gross_includes_refunds
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 997c39058d8d9829cf6db77158c1f1686450575bbc6a5f3b4f103f69ca43918c
+- platform_metric_id: 393
+  display_name: 笔记商品曝光人数
+  description: 搜索渠道下，笔记挂载商品的曝光人数（去重）
+  modules:
+  - 搜索数据
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - search
+  measure_kind: distinct_count
+  unit: count
+  caliber: user_count
+  time_anchor: unknown
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 3c9874e9159e0345995880573612d0e85ba9ae74b950d0fe078355efc8997308
+- platform_metric_id: 394
+  display_name: 笔记商品点击人数
+  description: 搜索渠道下，笔记挂载商品的点击人数（去重）
+  modules:
+  - 搜索数据
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - search
+  measure_kind: distinct_count
+  unit: count
+  caliber: user_count
+  time_anchor: unknown
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: review_required
+  review_required: true
+  review_reasons:
+  - duplicate_display_name
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 8fd1d531125f67a186ce7ac27d18c936d8deb393bf8c827a3e720df0deb27877
+- platform_metric_id: 395
+  display_name: 笔记商品点击率
+  description: 笔记商品点击人数 / 笔记商品曝光人数
+  modules:
+  - 搜索数据
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - search
+  measure_kind: ratio
+  unit: percent
+  caliber: dimensionless
+  time_anchor: unknown
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: true
+  classification_confidence: high
+  candidate_binding_status: review_required
+  review_required: true
+  review_reasons:
+  - duplicate_display_name
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: d16a7737daac91364435570990ce2c243e14e4d85a731c453e0220fb2e66d48e
+- platform_metric_id: 396
+  display_name: 笔记支付转化率
+  description: 笔记支付人数 / 笔记商品点击人数
+  modules:
+  - 搜索数据
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - search
+  measure_kind: ratio
+  unit: percent
+  caliber: dimensionless
+  time_anchor: unknown
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: true
+  classification_confidence: high
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 2e527746e30affbead47915a2c8921c76a972d1af412d34ec636cfda2d983760
+- platform_metric_id: 397
+  display_name: 笔记支付金额
+  description: 搜索渠道下，笔记产生的支付金额，未剔除成功退款金额
+  modules:
+  - 搜索数据
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - search
+  measure_kind: amount_total
+  unit: cny
+  caliber: amount
+  time_anchor: unknown
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: gross_includes_refunds
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: review_required
+  review_required: true
+  review_reasons:
+  - duplicate_display_name
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 6fc6b378f455ae8269052aeb1d35a075fd7edba9daa7f1f4f56e4d013852bbc4
+- platform_metric_id: 398
+  display_name: 笔记支付人数
+  description: 搜索渠道下，笔记产生的购买人数（去重），未剔除成功退款订单
+  modules:
+  - 搜索数据
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - search
+  measure_kind: distinct_count
+  unit: count
+  caliber: user_count
+  time_anchor: unknown
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: gross_includes_refunds
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: review_required
+  review_required: true
+  review_reasons:
+  - duplicate_display_name
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: c4a5c4feb59d6ff6de9bbc0317888e9ee5e840b1be6e21025015078d99a04975
+- platform_metric_id: 399
+  display_name: 笔记支付订单数
+  description: 搜索渠道下，笔记产生的支付订单总数，未剔除成功退款订单
+  modules:
+  - 搜索数据
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - search
+  measure_kind: event_count
+  unit: count
+  caliber: order_count
+  time_anchor: unknown
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: gross_includes_refunds
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: review_required
+  review_required: true
+  review_reasons:
+  - duplicate_display_name
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 456e9fb0cbebfc676986d0d5a80dc69f2c556e186c2f605862420ab223e3ef02
+- platform_metric_id: 1265
+  display_name: 引流主页支付金额
+  description: 统计时间内，用户通过笔记进入商家主页，并在主页内【店铺模块】下完成商品成交的支付金额（即笔记的引流价值）
+  modules:
+  - 笔记数据/商品笔记
+  - 笔记数据/带货笔记
+  - 笔记数据/普通笔记
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - notes
+  measure_kind: amount_total
+  unit: cny
+  caliber: amount
+  time_anchor: analysis_window
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 40f4d764155c35ea320e51178402d547165a274e7b0b4274a8dd195227a15065
+- platform_metric_id: 1289
+  display_name: 评价总数
+  description: 时间范围内，用户发布的评价数，不计算商家已申诉成功后执行剔除的评价
+  modules:
+  - 服务数据/评价数据
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - reviews
+  measure_kind: count
+  unit: count
+  caliber: unknown
+  time_anchor: unknown
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: medium
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons: []
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 3b06ff89bc91b85d2efa9cf761b6b01d63e8c88c3ce10e074860df125e6354aa
+- platform_metric_id: 1290
+  display_name: 差评数
+  description: 时间范围内，用户发布的评价中，商品分、服务分、物流分任一项<=2分的评价数；不计算商家已申诉成功后执行剔除的评价
+  modules:
+  - 服务数据/评价数据
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - reviews
+  measure_kind: count
+  unit: count
+  caliber: unknown
+  time_anchor: unknown
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: medium
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons: []
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: f1b4417afd3f91fb066c9b00f0d7f6a95a6e4c494feb20acd924059b4c8e735b
+- platform_metric_id: 1291
+  display_name: 差评率
+  description: 差评数/评价总数
+  modules:
+  - 服务数据/评价数据
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - reviews
+  measure_kind: ratio
+  unit: percent
+  caliber: dimensionless
+  time_anchor: unknown
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: true
+  classification_confidence: high
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons: []
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 7f734e676b963e0b96e659d28e93daa58f8408695beff236ae8f213c99a78c41
+- platform_metric_id: 1292
+  display_name: 好评数
+  description: 时间范围内，用户发布的评价中，商品分、服务分、物流分各项均>=4分的评价数；不计算商家已申诉成功后执行剔除的评价
+  modules:
+  - 服务数据/评价数据
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - reviews
+  measure_kind: count
+  unit: count
+  caliber: unknown
+  time_anchor: unknown
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: medium
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons: []
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 5dc760f1565bbd0ab5b649e3aa4594ce7805932089ca7bdb5d5ab3aba3b3dc9d
+- platform_metric_id: 1293
+  display_name: 好评率
+  description: 好评数/评价总数
+  modules:
+  - 服务数据/评价数据
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - reviews
+  measure_kind: ratio
+  unit: percent
+  caliber: dimensionless
+  time_anchor: unknown
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: true
+  classification_confidence: high
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons: []
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 5382a79f7225fc02ccd1a09e21d5a80f952ec8b97627febfdf51951b5a70d56f
+- platform_metric_id: 1294
+  display_name: 中评数
+  description: 时间范围内，用户发布的评价中，商品分、服务分、物流分各项均>=3分，但有任一项=3分的评价数；不计算商家已申诉成功后执行剔除的评价
+  modules:
+  - 服务数据/评价数据
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - reviews
+  measure_kind: count
+  unit: count
+  caliber: unknown
+  time_anchor: unknown
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: medium
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons: []
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 31987c449f642abe29bdaa1593293361ec70b77ab5d26cd013082f15fdde378e
+- platform_metric_id: 1295
+  display_name: 中评率
+  description: 中评数/评价总数
+  modules:
+  - 服务数据/评价数据
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - reviews
+  measure_kind: ratio
+  unit: percent
+  caliber: dimensionless
+  time_anchor: unknown
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: true
+  classification_confidence: high
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons: []
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 16c28220bb823a68e0544a5106c843ca50956ef48b855caac4847f5804831837
+- platform_metric_id: 1319
+  display_name: 群聊支付金额
+  description: 统计时间内，用户通过群聊渠道产生的支付金额，未剔除成功退款金额
+  modules:
+  - 店铺数据/群聊数据
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - group_chat
+  measure_kind: amount_total
+  unit: cny
+  caliber: amount
+  time_anchor: analysis_window
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: gross_includes_refunds
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons: []
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: fc54d6108d4c0deb30b0a35645ccd29131912df180d1c52dda3eee13c00bb2e1
+- platform_metric_id: 1320
+  display_name: 群聊支付买家数
+  description: 统计时间内，通过聊渠道购买的人数（去重）
+  modules:
+  - 店铺数据/群聊数据
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - group_chat
+  measure_kind: distinct_count
+  unit: count
+  caliber: user_count
+  time_anchor: analysis_window
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons: []
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 0ae355d0ea2752af52462ea486504156f2e547336c3625e7e3be72784fab64af
+- platform_metric_id: 1321
+  display_name: 群聊商品访客数
+  description: 统计时间内，通过群聊渠道访问店铺商品的人数（去重）
+  modules:
+  - 店铺数据/群聊数据
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - group_chat
+  measure_kind: distinct_count
+  unit: count
+  caliber: user_count
+  time_anchor: analysis_window
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons: []
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 9aa65e32ba0add4f214f948bc2e3a9922f4082da0619dafa43e3ade3ae0b11d1
+- platform_metric_id: 1322
+  display_name: 群聊支付转化率
+  description: 群聊支付买家数 / 群聊商品访客数
+  modules:
+  - 店铺数据/群聊数据
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - group_chat
+  measure_kind: ratio
+  unit: percent
+  caliber: dimensionless
+  time_anchor: unknown
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: true
+  classification_confidence: high
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons: []
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 56106049157ae0f32759fd0edb1a86c623c3502e50cc045fbca6e5308979a159
+- platform_metric_id: 1323
+  display_name: 群内用户复购率
+  description: 统计时间内在群，且在统计时间内购买过店铺商品的人数 / 统计时间内在群，且历史上购买过店铺商品的人数
+  modules:
+  - 店铺数据/群聊数据
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - group_chat
+  measure_kind: ratio
+  unit: percent
+  caliber: dimensionless
+  time_anchor: analysis_window
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: true
+  classification_confidence: high
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons: []
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 6424acae29e9d7c96395969524c61f6b3f6862273c97386fdd89f8bcb318a61a
+- platform_metric_id: 1324
+  display_name: 群聊客单价
+  description: 群聊支付金额 / 群聊支付买家数
+  modules:
+  - 店铺数据/群聊数据
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - group_chat
+  measure_kind: average_amount
+  unit: cny
+  caliber: amount
+  time_anchor: unknown
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: true
+  classification_confidence: high
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons: []
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 14fa70daad9ca016c83fb6012e4d690750e7e45251aa3f46d4dddea3d2509947
+- platform_metric_id: 1325
+  display_name: 群聊支付订单数
+  description: 统计时间内，通过群聊渠道产生的支付订单总数，未剔除成功退款订单
+  modules:
+  - 店铺数据/群聊数据
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - group_chat
+  measure_kind: event_count
+  unit: count
+  caliber: order_count
+  time_anchor: analysis_window
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: gross_includes_refunds
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons: []
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 2e128019d6b6f9810cb1ec43b2203884b9fb168d128dff0b86fa24e8b3b814b3
+- platform_metric_id: 1326
+  display_name: 群聊支付件数
+  description: 统计时间内，通过群聊渠道支付商品的总件数
+  modules:
+  - 店铺数据/群聊数据
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - group_chat
+  measure_kind: event_count
+  unit: count
+  caliber: item_count
+  time_anchor: analysis_window
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons: []
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 4d6152734db269350cd2f217946bc2ca512367a9c457198625075f04529a6dd8
+- platform_metric_id: 1327
+  display_name: 群聊引导进商家直播间人数
+  description: 统计时间内，通过群聊进入店铺直播间的人数（去重）
+  modules:
+  - 店铺数据/群聊数据
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - group_chat
+  measure_kind: distinct_count
+  unit: count
+  caliber: user_count
+  time_anchor: analysis_window
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons: []
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 4ad623dbd041e9e065e25659854e5eaab91492e3e9653f0a378c805fda45e323
+- platform_metric_id: 1328
+  display_name: 群聊总人数
+  description: 统计时间内，群内人数累计去重（已剔除退群人数）
+  modules:
+  - 店铺数据/群聊数据
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - group_chat
+  measure_kind: distinct_count
+  unit: count
+  caliber: user_count
+  time_anchor: analysis_window
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons: []
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 60553b5887615208c195fe115a81e0da52e682041d6aa04dc8315289b2abc915
+- platform_metric_id: 1335
+  display_name: 平响时长
+  description: 会话回复时长之和 / 会话轮次（计算时间 9:00 - 23:00，用户分流进入人工咨询后，人工回复超过10分钟或未回复的，本轮时长记为10分钟）
+  modules:
+  - 服务数据/客服数据
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - customer_service
+  measure_kind: duration_average
+  unit: minutes
+  caliber: duration
+  time_anchor: event_time
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: true
+  classification_confidence: high
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons: []
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: e7863d865d91c55fda476b1f47505ff39f28f49281ceff15508891586d1ca8c4
+- platform_metric_id: 1378
+  display_name: 未发货仅退款金额(退款时间)
+  description: 统计时间内，用户完成支付后，商家尚未发货用户申请退款成功的商品总金额
+  modules:
+  - 交易数据/退款分析
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - refund
+  measure_kind: amount_total
+  unit: cny
+  caliber: amount
+  time_anchor: refund_completion_time
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: refund_pool
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 300b02280d3a0bcbf37acacb751d5e359e9ce37bee76824a6529c7eab997b26f
+- platform_metric_id: 1379
+  display_name: 已发货仅退款金额(退款时间)
+  description: 统计时间内，用户完成支付后，商家已发货用户申请仅退款成功的商品总金额
+  modules:
+  - 交易数据/退款分析
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - refund
+  measure_kind: amount_total
+  unit: cny
+  caliber: amount
+  time_anchor: refund_completion_time
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: refund_pool
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 360cf9733b8858bd293015b0da4481e758be6cdbc6dc8e2f0fd710c8eb95a02f
+- platform_metric_id: 1380
+  display_name: 退货退款金额(退款时间)
+  description: 统计时间内，用户完成支付后，申请退货退款成功的商品总金额
+  modules:
+  - 交易数据/退款分析
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - refund
+  measure_kind: amount_total
+  unit: cny
+  caliber: amount
+  time_anchor: refund_completion_time
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: refund_pool
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 388ff7f15b1cbd5da999c10fc579846c88062eabe391f8780cc0a4343d922694
+- platform_metric_id: 1487
+  display_name: 有阅读笔记数
+  description: 统计时间内，阅读数>0的笔记篇数
+  modules:
+  - 笔记数据/商品笔记
+  - 笔记数据/普通笔记
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - notes
+  measure_kind: event_count
+  unit: count
+  caliber: note_count
+  time_anchor: analysis_window
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 1a74bdba7a5c57abe628b569b095b68498155521e7e15af62160ecf55256fd44
+- platform_metric_id: 1488
+  display_name: 动销笔记数
+  description: 统计时间内，有动销的笔记篇数
+  modules:
+  - 笔记数据/商品笔记
+  - 笔记数据/普通笔记
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - notes
+  measure_kind: event_count
+  unit: count
+  caliber: note_count
+  time_anchor: analysis_window
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 122455a27a065f8048547e7ee803dcc8db503c6e37b05eb65f0f66415183df38
+- platform_metric_id: 1489
+  display_name: 关联商品数
+  description: 统计时间内，新发商品笔记关联的商品数（去重）
+  modules:
+  - 笔记数据/商品笔记
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - notes
+  measure_kind: count
+  unit: count
+  caliber: unknown
+  time_anchor: analysis_window
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: medium
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 661962830a61021313a4501b25f0ba31f6f8cc141e3dd1619fe96c93213ba64e
+- platform_metric_id: 1490
+  display_name: 新发笔记数
+  description: 统计时间内，新发布的笔记篇数
+  modules:
+  - 笔记数据/商品笔记
+  - 笔记数据/普通笔记
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - notes
+  measure_kind: event_count
+  unit: count
+  caliber: note_count
+  time_anchor: analysis_window
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 5f8ca6ccaa7c232a9ecb068c6e9cf3947971839de9a7ef3af750255a8718abb7
+- platform_metric_id: 1491
+  display_name: 完播率(PV)
+  description: 统计时间内，播放完毕的次数 / 视频笔记阅读（播放）数
+  modules:
+  - 笔记数据/商品笔记
+  - 笔记数据/普通笔记
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - notes
+  measure_kind: ratio
+  unit: percent
+  caliber: dimensionless
+  time_anchor: analysis_window
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: true
+  classification_confidence: high
+  candidate_binding_status: proposed_exact
+  review_required: true
+  review_reasons:
+  - proposed_binding_not_approved
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 14d15d5ac208d45fd13279e031d89a7cb6203a31c50a1fd40cabe077ec955db6
+- platform_metric_id: 1492
+  display_name: 引流主页次数
+  description: 统计时间内，用户通过笔记进入店铺主页的次数
+  modules:
+  - 笔记数据/商品笔记
+  - 笔记数据/普通笔记
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - notes
+  measure_kind: event_count
+  unit: count
+  caliber: event_count
+  time_anchor: analysis_window
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: c17675a1c41418d143abe310cf13ba9a05e5715d2441e54593a94427fa2ff7fa
+- platform_metric_id: 1493
+  display_name: 引流直播间次数
+  description: 统计时间内，用户通过笔记呼吸灯进入直播间的次数
+  modules:
+  - 笔记数据/商品笔记
+  - 笔记数据/普通笔记
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - notes
+  measure_kind: event_count
+  unit: count
+  caliber: event_count
+  time_anchor: analysis_window
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: d91847acce7bf12507bc94be09ab1e22360751ac9921778ce6cf22335bdf4a7b
+- platform_metric_id: 1494
+  display_name: 引流直播间支付金额
+  description: 统计时间内，用户通过笔记呼吸灯进入直播间并完成购买的金额
+  modules:
+  - 笔记数据/商品笔记
+  - 笔记数据/普通笔记
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - notes
+  measure_kind: amount_total
+  unit: cny
+  caliber: amount
+  time_anchor: analysis_window
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 9bff028addd868162413260e331ca5649c06aacda763e25e9283e4aed4c0a4e2
+- platform_metric_id: 1495
+  display_name: 笔记商品点击次数
+  description: 统计时间内，用户点击笔记内挂载商品的次数
+  modules:
+  - 笔记数据/商品笔记
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - notes
+  measure_kind: event_count
+  unit: count
+  caliber: event_count
+  time_anchor: analysis_window
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: proposed_exact
+  review_required: true
+  review_reasons:
+  - proposed_binding_not_approved
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 77878ae3e306c54689d523d58930b1a5a9d15dc904dbfea8da8fd7396c7ada71
+- platform_metric_id: 1496
+  display_name: 笔记商品点击人数
+  description: 统计时间内，点击笔记内挂载商品的人数
+  modules:
+  - 笔记数据/商品笔记
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - notes
+  measure_kind: count
+  unit: count
+  caliber: user_count
+  time_anchor: analysis_window
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: medium
+  candidate_binding_status: review_required
+  review_required: true
+  review_reasons:
+  - duplicate_display_name
+  - proposed_binding_not_approved
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 4ccf285676ad310008b243275142a644be0b99055642ae7487d41b3d9c293875
+- platform_metric_id: 1497
+  display_name: 笔记支付转化率(PV)
+  description: 统计时间内，笔记支付订单数 / 笔记商品点击次数
+  modules:
+  - 笔记数据/商品笔记
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - notes
+  measure_kind: ratio
+  unit: percent
+  caliber: dimensionless
+  time_anchor: analysis_window
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: true
+  classification_confidence: high
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 45ebb9f86da5193c527e649d7c54498dbd6ff413ad7040a329250d335253ba22
+- platform_metric_id: 1498
+  display_name: 笔记退款金额(退款时间)
+  description: 成功完成退款的商品金额；统计逻辑：（1）根据完成退款的时间统计，非订单支付时间、非用户申请退款时间（举例：用户10/1支付，10/2申请退款，10/5退款成功，数据计入10/5）；（2）只要订单支付成功，未发货、已发货的退款（已发货仅退款、退货退款）均包含在内；（3）仅统计商品实退金额部分，未包含运费、平台优惠的退款（4）仅包含走售后系统且退款成功的订单，不包含线下退款（如小额打款
+    等）
+  modules:
+  - 笔记数据/商品笔记
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - notes
+  measure_kind: amount_total
+  unit: cny
+  caliber: amount
+  time_anchor: refund_completion_time
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: refund_pool
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 81681351d767bdc9669adf02bc6e7e9816c8fc4931256defb95a20b28f0c515a
+- platform_metric_id: 1499
+  display_name: 笔记退款订单数(退款时间)
+  description: 成功完成退款的订单数；统计逻辑：（1）根据完成退款的时间统计，非订单支付时间、非用户申请退款时间（举例：用户10/1支付，10/2申请退款，10/5退款成功，数据计入10/5）；（2）只要订单支付成功，未发货、已发货的退款（已发货仅退款、退货退款）均包含在内；（3）仅统计商品实退金额部分，未包含运费、平台优惠的退款（4）仅包含走售后系统且退款成功的订单，不包含线下退款（如小额打款
+    等）
+  modules:
+  - 笔记数据/商品笔记
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - notes
+  measure_kind: event_count
+  unit: count
+  caliber: order_count
+  time_anchor: refund_completion_time
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: refund_pool
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: b7daf897f18b8a64f3ea71a37c3ca44acfcc075c3a23d1b3ace115b6f88fe91b
+- platform_metric_id: 1500
+  display_name: 笔记退款人数(退款时间)
+  description: 成功完成退款的用户人数；统计逻辑：（1）根据完成退款的时间统计，非订单支付时间、非用户申请退款时间（举例：用户10/1支付，10/2申请退款，10/5退款成功，数据计入10/5）；（2）只要订单支付成功，未发货、已发货的退款（已发货仅退款、退货退款）均包含在内；（3）仅统计商品实退金额部分，未包含运费、平台优惠的退款（4）仅包含走售后系统且退款成功的订单，不包含线下退款（如小额打款
+    等）
+  modules:
+  - 笔记数据/商品笔记
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - notes
+  measure_kind: count
+  unit: count
+  caliber: user_count
+  time_anchor: refund_completion_time
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: refund_pool
+  division_formula_explicit: false
+  classification_confidence: medium
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 063e549b84a14f510cd84907e9ad4d8af69838ad2a6421c603e354467a00413c
+- platform_metric_id: 1572
+  display_name: 直播支付件数
+  description: 统计时间内，通过直播支付的商品件数
+  modules:
+  - 直播数据/直播总览
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - live
+  measure_kind: event_count
+  unit: count
+  caliber: item_count
+  time_anchor: analysis_window
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons: []
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 2b29287a1ea5fc3b5c6ed2849407434cdc907aa3daa52518f9022299fd01dae6
+- platform_metric_id: 1723
+  display_name: 店铺页支付金额
+  description: 统计时间内，用户进入商家店铺页后，访问店铺页内的商品卡产生成交的支付金额（即成交的上一步，是发生在店铺主页内）。
+  modules:
+  - 店铺数据/店铺主页
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - shop_page
+  measure_kind: amount_total
+  unit: cny
+  caliber: amount
+  time_anchor: analysis_window
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: proposed_exact
+  review_required: true
+  review_reasons:
+  - proposed_binding_not_approved
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 87c4dea23feb9673683b2c1ecac48d36ed0bee17d35518c585a4de2d90ce827c
+- platform_metric_id: 1724
+  display_name: 店铺页访问人数
+  description: 统计时间内，进入商家店铺页的去重人数，一个用户多次进入，只记为一人
+  modules:
+  - 店铺数据/店铺主页
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - shop_page
+  measure_kind: distinct_count
+  unit: count
+  caliber: user_count
+  time_anchor: analysis_window
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 5325a524327e3be2596cb975ca425d48aa64829fed8c431430a12a9ce9f1fda0
+- platform_metric_id: 1725
+  display_name: 进店支付转化率
+  description: 统计时间内，进入商家店铺页后产生交易的去重人数/进入商家店铺页的去重人数
+  modules:
+  - 店铺数据/店铺主页
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - shop_page
+  measure_kind: ratio
+  unit: percent
+  caliber: dimensionless
+  time_anchor: analysis_window
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: true
+  classification_confidence: high
+  candidate_binding_status: proposed_exact
+  review_required: true
+  review_reasons:
+  - proposed_binding_not_approved
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: e6cce16dc47698417b52ae6ca25a89b591823ed1313c6c500f83e50fba727478
+- platform_metric_id: 1726
+  display_name: 人均支付金额
+  description: 统计时间内，用户进入商家店铺页后产生成交的支付金额/进入商家店铺页后产生交易的去重人数
+  modules:
+  - 店铺数据/店铺主页
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - shop_page
+  measure_kind: average_amount
+  unit: cny
+  caliber: amount
+  time_anchor: analysis_window
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: true
+  classification_confidence: high
+  candidate_binding_status: proposed_exact
+  review_required: true
+  review_reasons:
+  - proposed_binding_not_approved
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 000cbea55c094c8fd4de944aee8212ade08f75dd25593727e42e1c779b444671
+- platform_metric_id: 1727
+  display_name: 个人页（店铺页支付金额）
+  description: 通过商户的个人主页进入店铺页并产生的支付金额
+  modules:
+  - 店铺数据/店铺主页
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - shop_page
+  measure_kind: amount_total
+  unit: cny
+  caliber: amount
+  time_anchor: unknown
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: fd399996edb80588a9066131e5450640ec4bd52392a0a4240f09b227f9b63bae
+- platform_metric_id: 1728
+  display_name: 购物车页（店铺页支付金额）
+  description: 通过购物车列表进入店铺页并产生的支付金额
+  modules:
+  - 店铺数据/店铺主页
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - shop_page
+  measure_kind: amount_total
+  unit: cny
+  caliber: amount
+  time_anchor: unknown
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: f92d55dd8c04146b36388f8707ef1cc2eea98c7fe729e2839124689a0945da38
+- platform_metric_id: 1730
+  display_name: 其他页（店铺页支付金额）
+  description: 通过其他次要流量渠道（如：商品详情页、直播页、客服页等）进入店铺页并产生的支付金额
+  modules:
+  - 店铺数据/店铺主页
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - shop_page
+  measure_kind: amount_total
+  unit: cny
+  caliber: amount
+  time_anchor: unknown
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 043b5a72f541e43f4e29369f6c25e6a8dc41955962f64795def3d41f359831bc
+- platform_metric_id: 1762
+  display_name: 笔记退款金额(支付时间)
+  description: 订单支付成功时间在所选统计时间范围内，且截止昨晚24:00前已退款成功的订单产生的退款商品金额总和；说明：（1）该指标每日更新到前一日24:00，最长追踪90天（期间会持续刷新）；（2）用户10/1支付，10/2申请退款，10/5退款成功，数据计入10/1；（3）只要订单支付成功，未发货、已发货的退款（已发货仅退款、退货退款）均包含在内；（4）仅统计商品实退金额部分，未包含运费、平台优惠的退款（5）仅包含走售后系统且退款成功的订单，不包含线下退款（如小额打款
+    等）
+  modules:
+  - 笔记数据/商品笔记
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - notes
+  measure_kind: amount_total
+  unit: cny
+  caliber: amount
+  time_anchor: payment_time
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: refund_pool
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: proposed_exact
+  review_required: true
+  review_reasons:
+  - refund_maturity_window_90_days
+  - proposed_binding_not_approved
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 3e669f44099d56306fc062492c1161e3a6f00964d17753e6ffc3d9a772e0fd79
+- platform_metric_id: 1766
+  display_name: 直播退款金额(支付时间)
+  description: 订单支付成功时间在所选统计时间范围内（成交载体为直播），且截止昨晚24:00前已退款成功的订单产生的退款商品金额总和；说明：（1）该指标每日更新到前一日24:00，最长追踪90天（期间会持续刷新）；（2）用户10/1支付，10/2申请退款，10/5退款成功，数据计入10/1；（3）只要订单支付成功，未发货、已发货的退款（已发货仅退款、退货退款）均包含在内；（4）仅统计商品实退金额部分，未包含运费、平台优惠的退款（5）仅包含走售后系统且退款成功的订单，不包含线下退款（如小额打款
+    等）
+  modules:
+  - 直播数据/直播总览
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - live
+  measure_kind: amount_total
+  unit: cny
+  caliber: amount
+  time_anchor: payment_time
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: refund_pool
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons:
+  - refund_maturity_window_90_days
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 8a71dc08c88c180bc5da79713a635c2a95b3141ba7817f12560e47dac8012f15
+- platform_metric_id: 1767
+  display_name: 退款率(支付时间)
+  description: 直播退款金额(支付时间) / 直播支付金额
+  modules:
+  - 直播数据/直播总览
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - live
+  measure_kind: ratio
+  unit: percent
+  caliber: dimensionless
+  time_anchor: payment_time
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: refund_pool
+  division_formula_explicit: true
+  classification_confidence: high
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons:
+  - duplicate_display_name
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 883d1cea6b7640e98b11c46dd14b14360c8e53e98919a3122b19c5f54cba8a2f
+- platform_metric_id: 1774
+  display_name: 退款金额(支付时间)
+  description: 订单支付成功时间在所选统计时间范围内，且截止昨晚24:00前已退款成功的订单产生的退款商品金额总和；说明：【1】该指标每日更新到前一日24:00，最长追踪90天（期间会持续刷新）；【2】用户10/1支付，10/2申请退款，10/5退款成功，数据计入10/1；【3】只要订单支付成功，未发货、已发货的退款（已发货仅退款、退货退款）均包含在内；【4】仅统计商品实退金额部分，未包含运费、平台优惠的退款【5】仅包含走售后系统且退款成功的订单，不包含线下退款（如小额打款
+    等）
+  modules:
+  - 交易数据/成交分析
+  - 商品数据
+  - 数据总览
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - transaction
+  - product
+  - overview
+  measure_kind: amount_total
+  unit: cny
+  caliber: amount
+  time_anchor: payment_time
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: refund_pool
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: proposed_exact
+  review_required: true
+  review_reasons:
+  - refund_maturity_window_90_days
+  - proposed_binding_not_approved
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 5d3109793e7d162b925ac8fed52fb5f14d0cfc2034fc14d7e8ffdcbae135267c
+- platform_metric_id: 1775
+  display_name: 退款后支付金额(支付时间)
+  description: 订单支付成功时间在所选统计时间范围内，支付金额 - 退款金额(支付时间)；该指标最长追踪90天
+  modules:
+  - 交易数据/成交分析
+  - 商品数据
+  - 数据总览
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - transaction
+  - product
+  - overview
+  measure_kind: net_amount
+  unit: cny
+  caliber: amount
+  time_anchor: payment_time
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: net_after_refund
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: proposed_exact
+  review_required: true
+  review_reasons:
+  - refund_maturity_window_90_days
+  - proposed_binding_not_approved
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: f5877c81f756e80b835a27a94a481d3a4b9e1ac5dc9d21c22a7c85274ef11431
+- platform_metric_id: 1776
+  display_name: 退款率(支付时间)
+  description: 订单支付成功时间在所选统计时间范围内，退款金额(支付时间) / 支付金额。说明：（1）该指标每日更新到前一日24:00，最长追踪90天（期间会持续刷新）；（2）用户10/1支付，10/2申请退款，10/5退款成功，退款数据计入10/1（3）只要订单支付成功，未发货、已发货的退款（已发货仅退款、退货退款）均包含在内；（4）仅统计商品实退金额部分，未包含运费、平台优惠的退款（5）仅包含走售后系统且退款成功的订单，不包含线下退款（如小额打款
+    等）
+  modules:
+  - 交易数据/成交分析
+  - 商品数据
+  - 数据总览
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - transaction
+  - product
+  - overview
+  measure_kind: ratio
+  unit: percent
+  caliber: dimensionless
+  time_anchor: payment_time
+  cross_period_additive: 'false'
+  boundedness: unknown
+  refund_inclusion: refund_pool
+  division_formula_explicit: true
+  classification_confidence: high
+  candidate_binding_status: review_required
+  review_required: true
+  review_reasons:
+  - duplicate_display_name
+  - refund_maturity_window_90_days
+  - proposed_binding_not_approved
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: f4f0d8ddb998c7e2e34c027f49ef6bc638ff2cc007d5acc07c99bcbe5b4b3c27
+- platform_metric_id: 1777
+  display_name: 退款订单数(支付时间)
+  description: 订单支付成功时间在所选统计时间范围内，且截止昨晚24:00前已退款成功的订单数；说明：（1）该指标每日更新到前一日24:00，最长追踪90天（期间会持续刷新）；（2）用户10/1支付，10/2申请退款，10/5退款成功，数据计入10/1；（3）只要订单支付成功，未发货、已发货的退款（已发货仅退款、退货退款）均包含在内；（4）仅统计商品实退金额部分，未包含运费、平台优惠的退款（5）仅包含走售后系统且退款成功的订单，不包含线下退款（如小额打款
+    等）
+  modules:
+  - 交易数据/成交分析
+  - 商品数据
+  - 数据总览
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - transaction
+  - product
+  - overview
+  measure_kind: event_count
+  unit: count
+  caliber: order_count
+  time_anchor: payment_time
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: refund_pool
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: proposed_exact
+  review_required: true
+  review_reasons:
+  - refund_maturity_window_90_days
+  - proposed_binding_not_approved
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 41b93d84ae8604bc6a5423892651405e09b1d01d565b87d40bc90522699e23e4
+- platform_metric_id: 1780
+  display_name: 发货前退款金额(支付时间)
+  description: 退款金额(支付时间) 统计口径范围内，商家未发货，用户已经退款成功的退款商品金额总和
+  modules:
+  - 商品数据
+  - 数据总览
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - product
+  - overview
+  measure_kind: amount_total
+  unit: cny
+  caliber: amount
+  time_anchor: payment_time
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: refund_pool
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 448454b5efe2ed12151fdcaba2a8c9e6e8134528c256ad6c961487cdd93a49fc
+- platform_metric_id: 1781
+  display_name: 发货后退款金额(支付时间)
+  description: 退款金额(支付时间) 统计口径范围内，商家已发货，用户退款成功的退款商品金额总和；包含用户未收货仅退款、用户已收货仅退款、退货退款
+  modules:
+  - 商品数据
+  - 数据总览
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - product
+  - overview
+  measure_kind: amount_total
+  unit: cny
+  caliber: amount
+  time_anchor: payment_time
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: refund_pool
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: d25e9ea5b809fbbf6ae7d5e669eea9dccb9b0c99b50b165c5a68ee1ab19ca287
+- platform_metric_id: 1783
+  display_name: 已发货仅退款金额(支付时间)
+  description: 退款金额(支付时间) 统计口径范围内，商家已发货，用户申请仅退款且退款成功的退款商品金额总和；包含用户未收货仅退款、用户已收货仅退款
+  modules:
+  - 商品数据
+  - 数据总览
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - product
+  - overview
+  measure_kind: amount_total
+  unit: cny
+  caliber: amount
+  time_anchor: payment_time
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: refund_pool
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 19804f2102c821f7a085a087b02dea29ce09ddf128e5e350717548fa656ff631
+- platform_metric_id: 1784
+  display_name: 退货退款金额(支付时间)
+  description: 退款金额(支付时间) 统计口径范围内，商家已发货，用户退货退款成功的退款商品金额总和
+  modules:
+  - 商品数据
+  - 数据总览
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - product
+  - overview
+  measure_kind: amount_total
+  unit: cny
+  caliber: amount
+  time_anchor: payment_time
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: refund_pool
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 89b454703fb32bd4a0284e736811211478efdbae4d29eb245a46d4de91d594bc
+- platform_metric_id: 1785
+  display_name: 退款人数(支付时间)
+  description: 订单支付成功时间在所选统计时间范围内，且截止昨晚24:00前已退款成功的用户数；说明：（1）该指标每日更新到前一日24:00，最长追踪90天（期间会持续刷新）；（2）用户10/1支付，10/2申请退款，10/5退款成功，数据计入10/1；（3）只要订单支付成功，未发货、已发货的退款（已发货仅退款、退货退款）均包含在内；（4）仅统计商品实退金额部分，未包含运费、平台优惠的退款（5）仅包含走售后系统且退款成功的订单，不包含线下退款（如小额打款
+    等）
+  modules:
+  - 商品数据
+  - 数据总览
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - product
+  - overview
+  measure_kind: count
+  unit: count
+  caliber: user_count
+  time_anchor: payment_time
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: refund_pool
+  division_formula_explicit: false
+  classification_confidence: medium
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - refund_maturity_window_90_days
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 611ec4c827bbbea61e127e1dd90e1403fee88daa4416fe57d686f10d917909ca
+- platform_metric_id: 1786
+  display_name: 发货前退款订单数(支付时间)
+  description: 退款订单数(支付时间) 统计口径范围内，商家未发货，用户已经退款成功的订单数
+  modules:
+  - 商品数据
+  - 数据总览
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - product
+  - overview
+  measure_kind: event_count
+  unit: count
+  caliber: order_count
+  time_anchor: payment_time
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: refund_pool
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: ab5006ab8679528a019b0f718e36cfa17a77580474d8eb8f9318e98ba5059a52
+- platform_metric_id: 1787
+  display_name: 发货后退款订单数(支付时间)
+  description: 退款订单数(支付时间)  统计口径范围内，商家已发货，用户退款成功的订单数；包含用户未收货仅退款、用户已收货仅退款、退货退款
+  modules:
+  - 商品数据
+  - 数据总览
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - product
+  - overview
+  measure_kind: event_count
+  unit: count
+  caliber: order_count
+  time_anchor: payment_time
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: refund_pool
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: eea32232dda7d79845cf66c7aee0dc4818af2308f13482c8ca6946b666a8a48e
+- platform_metric_id: 1788
+  display_name: 用户支付金额
+  description: 统计时间（订单支付时间）内，买家商品实际支付 + 运费 金额，不含平台优惠。未剔除成功退款金额。预售阶段，在付清尾款当日，将定金和尾款一同计入
+  modules:
+  - 交易数据/成交分析
+  online: true
+  scope_status: current
+  review_status: new_contract
+  business_domains:
+  - transaction
+  measure_kind: amount_total
+  unit: cny
+  caliber: amount
+  time_anchor: payment_time
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: gross_includes_refunds
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: classified_unmapped
+  review_required: true
+  review_reasons:
+  - no_approved_binding
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: e7b6b083a07ab1dd506d4f1f76e3257469614439b3d89f9a837a38fabb78ccef
+- platform_metric_id: 1794
+  display_name: 成交新客数
+  description: 所选时间范围前，历史上从未在本店购买过，所选时间内首次购买本店商品的用户数。（买手分析页面下，所选周期内购买是指通过买手带货成交）
+  modules:
+  - 交易数据/买手分析
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - buyer
+  measure_kind: count
+  unit: count
+  caliber: unknown
+  time_anchor: unknown
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: medium
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons: []
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: ba133bf6f5ced53c9074eab54a993b3407e3ba835ae3c08b266214d837d1c826
+- platform_metric_id: 1795
+  display_name: 成交老客数
+  description: 所选时间范围前，历史上购买过本店商品，所选时间内再次购买本店商品的用户数。（买手分析页面下，所选周期内购买是指通过买手带货成交）
+  modules:
+  - 交易数据/买手分析
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - buyer
+  measure_kind: count
+  unit: count
+  caliber: unknown
+  time_anchor: unknown
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: medium
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons: []
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: b40ecc7fb57e642cc8858380db906b213f79abe339bbcf5331da5a0766426784
+- platform_metric_id: 1796
+  display_name: 新客支付金额
+  description: 新客在本店支付订单的总金额，包括买家实付金额和平台优惠，未剔除成功退款金额。（新客：所选时间范围前，历史上从未在本店购买过商品，所选时间内首次购买本店商品的用户）
+  modules:
+  - 交易数据/买手分析
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - buyer
+  measure_kind: amount_total
+  unit: cny
+  caliber: amount
+  time_anchor: unknown
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: gross_includes_refunds
+  division_formula_explicit: false
+  classification_confidence: high
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons: []
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 6425d33d6fc1499aa5c3175c8731246d05092d81f8bdfbbeb3bb995f04d3855c
+- platform_metric_id: 1799
+  display_name: 动销买手数
+  description: 所选时间范围内，有订单成交的合作买手数量；订单成交后即使全部退款，也会计入
+  modules:
+  - 交易数据/买手分析
+  online: true
+  scope_status: deferred
+  review_status: deferred
+  business_domains:
+  - buyer
+  measure_kind: count
+  unit: count
+  caliber: user_count
+  time_anchor: unknown
+  cross_period_additive: unknown
+  boundedness: unknown
+  refund_inclusion: unknown
+  division_formula_explicit: false
+  classification_confidence: medium
+  candidate_binding_status: deferred
+  review_required: false
+  review_reasons: []
+  classifier_version: xhs-semantic-v3
+  endpoint_path: /api/edith/business_data/metric_dictionary/batchsearch
+  definition_sha256: 25abc8e7f236489f739ae3d8d9acd5289cceb4bd4909b24da4674061e8e45425

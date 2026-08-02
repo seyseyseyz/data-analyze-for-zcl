@@ -6,27 +6,27 @@ Use this menu to describe tasks to the user. **Do not hand-pick by guesswork** �
 |---|---|---|---|---|
 | 先看导出的表能不能分析 | `data_quality_check` | any imported CSV | all tables | 表可用性、空表、缺失限制 |
 | 建账号经营基线 | `account_baseline` | `notes` | `orders`, `calendar_events` | 发布频率、阅读基础盘、弱/中/强证据 |
-| 看笔记曝光到互动漏斗 | `note_funnel` | `notes` | `content_features` | 阅读率、点赞率、收藏率、评论率 |
+| 看笔记曝光到互动漏斗 | `note_funnel` | `notes` | `content_features` | 曝光→阅读→商品点击→订单→GMV、互动率、退款后净成交；缺字段逐段降级 |
 | SKU 发文后销量有没有反应 / SKU 销量响应 | `sku_counterfactual_lift` | `notes`, `orders` or `daily_sku_sales`, `skus` | `note_sku_links`, `calendar_events` | 发布前后销量观察窗口、弱归因说明 |
 | 看内容发布后的销量响应曲线 | `content_response_curve` | `notes`, `orders` or `daily_sku_sales`, `skus` | `note_sku_links` | d0-1、d1-3、d4-7、d8-14 响应窗口 |
-| 哪类封面更值得拍 | `cover_style_effect` | `notes`, `content_features` | cover image folders | 封面构图分组表现和下一步测试 |
-| 哪类文案角度更有效 | `copy_angle_effect` | `notes`, `content_features` | comments | 文案角度分组表现 |
-| 商品和内容组合怎么搭 | `product_content_interaction` | `notes`, `content_features` | `skus`, `note_sku_links` | 封面/文案组合表现 |
-| 哪些商品/SKU 值得优先推 | `product_opportunity_matrix` | `skus`, `orders` or `daily_sku_sales` | `products`, `notes`, `note_sku_links` | SKU 机会矩阵和优先级 |
-| 评论里用户在问什么/要什么 | `comment_demand_mining` | `comments` | `notes`, `products` | 需求主题、异议、可转化内容点 |
+| 哪类封面更值得拍 | `cover_style_effect` | `notes`, `content_features` | cover image folders | 封面分组的曝光、阅读、商品点击、订单、GMV 与净成交效率 |
+| 哪类文案角度更有效 | `copy_angle_effect` | `notes`, `content_features` | comments | 文案分组的曝光、阅读、商品点击、订单、GMV 与净成交效率 |
+| 商品和内容组合怎么搭 | `product_content_interaction` | `notes`, `content_features` | `skus`, `note_sku_links` | 有显式关联时按 SKU×封面×文案；无关联时只输出内容组合假设 |
+| 哪些商品/SKU 值得优先推 | `product_opportunity_matrix` | `skus`, `orders` or `daily_sku_sales` | `products`, `notes`, `note_sku_links` | 销量/GMV速度、库存覆盖风险和 SKU 优先级 |
+| 评论里用户在问什么/要什么 | `comment_demand_mining` | `comments` | `notes`, `content_features` | 需求主题、异议，以及显式关联的笔记类型、场景、商品上下文 |
 | 内容组合怎么优化 | `content_portfolio_optimization` | `notes`, `content_features` | `orders`, `comments` | 内容组合保留、增加、减少建议 |
 | 下周发什么 / 周实验计划 | `weekly_experiment_matrix` | `notes` | `orders`, `comments`, `content_features` | 7 天实验矩阵、假设和观察指标 |
 | 哪些笔记适合重拍/重发 | `reshoot_repost_candidates` | `notes` | `content_features`, `orders` | 重拍候选、重发理由、改法 |
 | 沉淀有效假设和经验 | `hypothesis_knowledge_base` | any prior task outputs or imported tables | all tables | 假设库、证据等级、下一次验证 |
 | 周复盘 / 下周动作 / 完整经营结论 | `weekly_business_review` | `notes` | `orders`, `skus`, `comments`, `content_features`, `calendar_events` | 经营导读、关键变化、下周动作 |
 | 看投放数据能不能分析 | `ad_data_quality_check` | `ad_performance_daily` | `notes`, `skus`, `products`, `daily_sku_sales` | 字段可用性、粒度、关联覆盖、补数建议 |
-| 看投放消耗和投产效率 | `paid_traffic_efficiency` | `ad_performance_daily` | `notes`, `skus`, `products`, `daily_sku_sales`, `note_sku_links` | 投放消耗、点击效率、投产、预算动作建议 |
-| 生意大盘怎么样 / 核心经营结构 | `core_business_diagnosis` | `business_overview_daily` | `business_overview_monthly` | GMV/客单/转化结构、时间趋势、观察性诊断 |
-| 需求漏斗与心愿单蓄水 | `demand_funnel_diagnosis` | `business_overview_daily` | — | 账号级加购→成交漏斗及趋势、心愿单需求蓄水规模与走向 |
-| 搜索流量效率怎么样 | `search_efficiency_diagnosis` | `search_overview` | `search_terms` | 搜索曝光/点击/转化效率、词效结构 |
+| 看投放消耗和投产效率 | `paid_traffic_efficiency` | `ad_performance_daily` | `notes`, `skus`, `products`, `daily_sku_sales`, `note_sku_links` | 曝光→点击→转化→订单→GMV，计划/单元/创意/笔记/商品/SKU 下钻，复算/回传投产、CPM、弹性和预算动作 |
+| 生意大盘怎么样 / 核心经营结构 | `core_business_diagnosis` | `business_overview_daily` | `business_overview_monthly`；期间去重 UV/用户级 ID | GMV趋势、支付口径净收入、退款时间压力、流量深度与活动对比；仅在有期间去重人数时做 GMV 增长归因 |
+| 需求漏斗与心愿单蓄水 | `demand_funnel_diagnosis` | `business_overview_daily` | — | 商品访客→加购→支付的日级阶段事实、心愿单蓄水与趋势；不输出跨期唯一人数 |
+| 搜索流量效率怎么样 | `search_efficiency_diagnosis` | `search_overview` | `search_terms` | 载体和搜索词的曝光→点击→支付→GMV、真实/正推覆盖与趋势 |
 | 进店人群结构如何 | `audience_structure_diagnosis` | `shop_page_funnel` | `shop_page_source` | 进店漏斗、来源结构、人群画像口径说明 |
-| 退款结构与高退款点 | `refund_structure_diagnosis` | `refund_overview` | `notes`, `sku_performance` | 退款分层、载体两比例检验、时间趋势、笔记/商品级反映 |
+| 退款结构与高退款点 | `refund_structure_diagnosis` | `refund_overview` | `notes`, `sku_performance`, `refund_reasons` | 原始周期/账号/载体粒度、发货阶段/退款类型、载体对比、趋势、笔记/商品与手工退款原因 |
 | 笔记级商业效能（GMV 集中度/转化/退款） | `note_commercial_diagnosis` | `notes` | — | 笔记 GMV 帕累托、转化效率分布、笔记级退款异常 |
-| SKU 结构与退款诊断 | `sku_structure_diagnosis` | `sku_performance` | — | SKU GMV 帕累托与类目结构、高退款 SKU、加购转化与客单价 |
-| 渠道结构与健康诊断 | `channel_structure_diagnosis` | `business_overview_daily` | `traffic_source` | 载体/渠道规模结构、转化两比例检验、退款对比 |
-| 退款根因诊断（发货环节/品类/价格带） | `refund_root_cause_diagnosis` | `sku_performance` | `refund_overview` | 发货前后退款拆解、分品类与分价格带退款集中度 |
+| SKU 结构与退款诊断 | `sku_structure_diagnosis` | `sku_performance` | — | GMV/净收入排序、商品/品牌归并、心愿→加购→支付承接、高退款与价格带 |
+| 渠道结构与健康诊断 | `channel_structure_diagnosis` | `business_overview_daily` | `traffic_source` | 渠道日级事实、规模/转化/退款，以及账号×渠道×笔记类型效率矩阵 |
+| 退款根因诊断（发货环节/品类/价格带） | `refund_root_cause_diagnosis` | `business_overview_daily` | `sku_performance`, `refund_overview` | 发货阶段；SKU 支付时间/退款时间两套事实；分品类与分价格带独立降级 |

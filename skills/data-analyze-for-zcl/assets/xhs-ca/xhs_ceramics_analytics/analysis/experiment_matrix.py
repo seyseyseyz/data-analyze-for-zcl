@@ -21,9 +21,7 @@ def run(db_path: Path) -> AnalysisResult:
         con.close()
 
     rows = _build_plan(start_date, skus, angles)
-    uses_fallback = any(sku["sku_id"] == "unassigned" for sku in skus) or angles == [
-        "lifestyle"
-    ]
+    uses_fallback = any(sku["sku_id"] == "unassigned" for sku in skus) or angles == ["lifestyle"]
     evidence_inputs = 0 if uses_fallback else len(skus) + len(angles)
     limitations = [*sku_limitations, *angle_limitations, *planning_limitations]
     if uses_fallback:
@@ -36,8 +34,7 @@ def run(db_path: Path) -> AnalysisResult:
             Finding(
                 title="七天实验计划已生成",
                 conclusion=(
-                    f"已生成 {len(rows)} 个确定性测试档期，覆盖 "
-                    f"7 天、每天 {len(_SLOTS)} 个时段。"
+                    f"已生成 {len(rows)} 个待验证发布组合，覆盖 7 天、每天 {len(_SLOTS)} 个时段。"
                 ),
                 evidence_strength=score_evidence(
                     evidence_inputs, has_controls=False, confounder_count=2
@@ -50,9 +47,12 @@ def run(db_path: Path) -> AnalysisResult:
                     "unique_skus": len({row["sku_id"] for row in rows}),
                     "content_angles": len({row["copy_angle"] for row in rows}),
                 },
-                caveats=["这是确定性排期矩阵，不代表这些档期一定会胜出。"],
+                caveats=[
+                    "这是确定性排期矩阵，不代表这些档期一定会胜出。",
+                    "SKU 与文案角度可能同时变化，因此不构成受控因果实验。",
+                ],
                 recommended_action=(
-                    "按矩阵发布受控周档期，并用阅读、收藏和评论需求指标比较每个档期。"
+                    "按矩阵发布并记录结果；验证单个变量时，每轮固定 SKU 或文案角度作为对照。"
                 ),
             )
         ],
@@ -81,16 +81,8 @@ def _fetch_top_skus(con) -> tuple[list[dict[str, object]], list[str]]:
             if join_clause
             else "CAST(d.sku_id AS VARCHAR)"
         )
-        units_expr = (
-            "SUM(CAST(d.units AS DOUBLE))"
-            if "units" in sales_columns
-            else "NULL"
-        )
-        gmv_expr = (
-            "SUM(CAST(d.gmv AS DOUBLE))"
-            if "gmv" in sales_columns
-            else "NULL"
-        )
+        units_expr = "SUM(CAST(d.units AS DOUBLE))" if "units" in sales_columns else "NULL"
+        gmv_expr = "SUM(CAST(d.gmv AS DOUBLE))" if "gmv" in sales_columns else "NULL"
         result = con.sql(
             f"""
             SELECT
@@ -112,13 +104,9 @@ def _fetch_top_skus(con) -> tuple[list[dict[str, object]], list[str]]:
         if rows:
             limitations = []
             if "units" not in sales_columns:
-                limitations.append(
-                    "daily_sku_sales 表缺少 units，实验 SKU 指标留空。"
-                )
+                limitations.append("daily_sku_sales 表缺少 units，实验 SKU 指标留空。")
             if "gmv" not in sales_columns:
-                limitations.append(
-                    "daily_sku_sales 表缺少 gmv，实验 SKU 指标留空。"
-                )
+                limitations.append("daily_sku_sales 表缺少 gmv，实验 SKU 指标留空。")
             if has_skus and not join_clause:
                 limitations.append(
                     "skus 表缺少 sku_id 或 sku_name，使用 sku_id 作为实验 SKU 名称。"
@@ -138,9 +126,9 @@ def _fetch_top_skus(con) -> tuple[list[dict[str, object]], list[str]]:
               CAST(sku_id AS VARCHAR) AS sku_id,
               {("CAST(sku_name AS VARCHAR)" if "sku_name" in sku_columns else "CAST(sku_id AS VARCHAR)")} AS sku_name,
               NULL AS units,
-              {("CAST(price AS DOUBLE)" if "price" in sku_columns else "NULL")} AS gmv
+              NULL AS gmv
             FROM skus
-            ORDER BY gmv DESC NULLS LAST, sku_id
+            ORDER BY sku_id
             LIMIT 5
             """
         )
@@ -152,13 +140,10 @@ def _fetch_top_skus(con) -> tuple[list[dict[str, object]], list[str]]:
             limitations = []
             if "sku_name" not in sku_columns:
                 limitations.append("skus 表缺少 sku_name，使用 sku_id 作为实验 SKU 名称。")
-            if "price" not in sku_columns:
-                limitations.append("skus 表缺少 price，实验 SKU GMV 留空。")
+            limitations.append("缺少销售数据，实验 SKU GMV 留空，价格不能替代 GMV。")
             return rows, limitations
 
-    return [_sku_row("unassigned", "未分配 SKU", None, None)], [
-        "没有可用的 SKU 表，使用兜底 SKU。"
-    ]
+    return [_sku_row("unassigned", "未分配 SKU", None, None)], ["没有可用的 SKU 表，使用兜底 SKU。"]
 
 
 def _fetch_top_angles(con) -> tuple[list[str], list[str]]:
@@ -205,9 +190,7 @@ def _fetch_top_angles(con) -> tuple[list[str], list[str]]:
         )
         limitations = []
         if _table_exists(con, "notes"):
-            limitations.append(
-                "notes 表缺少 note_id 或 reads，文案角度排序仅使用内容计数。"
-            )
+            limitations.append("notes 表缺少 note_id 或 reads，文案角度排序仅使用内容计数。")
     angles = [row[0] for row in result.fetchall()]
     if angles:
         return angles, limitations

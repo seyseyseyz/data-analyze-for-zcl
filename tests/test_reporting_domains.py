@@ -23,6 +23,17 @@ def test_refund_modules_share_one_domain():
     assert "refund_root_cause_diagnosis" in refund
 
 
+def test_paid_traffic_has_its_own_domain():
+    titles = {title: tasks for title, _, tasks in DOMAINS}
+    assert "paid_traffic_efficiency" in titles["付费增长"]
+    assert "paid_traffic_efficiency" not in titles["流量与内容"]
+
+
+def test_paid_growth_follows_organic_traffic_before_product_analysis():
+    titles = [title for title, _, _ in DOMAINS]
+    assert titles.index("流量与内容") < titles.index("付费增长") < titles.index("商品结构")
+
+
 def _actionable(task_id: str, evidence: EvidenceStrength, reliability: DescriptiveReliability):
     return AnalysisResult(
         task_id=task_id,
@@ -65,6 +76,30 @@ def test_group_by_domain_sorts_results_by_priority_desc():
         "sku_structure_diagnosis",
         "sku_counterfactual_lift",
     ]
+
+
+def test_paid_growth_domain_activates_with_observed_rows():
+    result = _actionable(
+        "paid_traffic_efficiency", EvidenceStrength.WEAK, DescriptiveReliability.LOW
+    )
+    result.tables = {
+        "paid_traffic_efficiency": [{"spend": 100, "impressions": 1000}]
+    }
+
+    groups = group_by_domain([result])
+
+    assert [group.title for group in groups] == ["付费增长"]
+
+
+def test_paid_growth_domain_stays_hidden_without_observed_rows():
+    result = _actionable(
+        "paid_traffic_efficiency",
+        EvidenceStrength.NOT_JUDGABLE,
+        DescriptiveReliability.LOW,
+    )
+    result.tables = {"paid_traffic_efficiency": []}
+
+    assert group_by_domain([result]) == []
 
 
 def test_group_by_domain_never_drops_unknown_task():

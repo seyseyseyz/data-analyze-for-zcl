@@ -1,9 +1,12 @@
 # tests/test_facts_hash_golden.py
 """facts_hash is stable, excludes raw floats, and reacts to rendered/structure."""
+import json
+
 from xhs_ceramics_analytics.evidence import DescriptiveReliability, EvidenceStrength
 from xhs_ceramics_analytics.reporting.facts_export import (
     Fact,
     FactBook,
+    MetricMappingDiagnostics,
     canonical_payload,
     facts_hash,
     factbook_to_json,
@@ -73,6 +76,56 @@ def test_json_roundtrip_is_sorted_and_includes_value():
     assert '"value"' in js  # full JSON keeps raw value for computation
     # sorted keys → deterministic ordering
     assert factbook_to_json(_book(-29000.0, "-¥2.9万")) == js
+
+
+def _mapped_book(metric_id: str, registry_hash: str) -> FactBook:
+    fact = Fact(
+        fact_id="core_business_diagnosis.click_pay_rate",
+        value=0.12,
+        rendered="12.0%",
+        metric_key="click_pay_rate",
+        unit="percent",
+        metric_id=metric_id,
+    )
+    return FactBook(
+        facts={fact.fact_id: fact},
+        metric_mapping=MetricMappingDiagnostics(
+            status="observe",
+            mapped_count=1,
+            registry_hash=registry_hash,
+        ),
+    )
+
+
+def test_metric_identity_and_registry_hash_change_facts_hash():
+    baseline = _mapped_book("shop.click_pay_rate", "a" * 64)
+
+    assert facts_hash(baseline) != facts_hash(
+        _mapped_book("shop.visit_pay_rate", "a" * 64)
+    )
+    assert facts_hash(baseline) != facts_hash(
+        _mapped_book("shop.click_pay_rate", "b" * 64)
+    )
+
+
+def test_factbook_json_exposes_v3_metric_mapping_metadata():
+    payload = json.loads(
+        factbook_to_json(_mapped_book("shop.click_pay_rate", "a" * 64))
+    )
+
+    assert payload["canonical_version"] == 3
+    assert payload["registry_hash"] == "a" * 64
+    assert payload["metric_mapping"] == {
+        "status": "observe",
+        "mapped_count": 1,
+        "unmapped_count": 0,
+        "coverage_rate": 1.0,
+        "unmapped_fact_ids": [],
+        "error": None,
+    }
+    assert payload["facts"]["core_business_diagnosis.click_pay_rate"]["metric_id"] == (
+        "shop.click_pay_rate"
+    )
 
 
 def test_golden_hash_pinned():

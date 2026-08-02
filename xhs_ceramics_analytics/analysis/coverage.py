@@ -8,6 +8,7 @@ workflow can (a) include every producible task by default and (b) tell the
 operator exactly what data unlocks the rest. Never raises — a task that errors is
 reported as blocked with the exception text.
 """
+
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -42,12 +43,8 @@ def assess_coverage(db_path: Path) -> list[TaskCoverage]:
         )
         reasons: list[str] = []
         if not producible:
-            reasons = list(result.limitations) or [
-                f.conclusion for f in result.findings
-            ]
-        coverage.append(
-            TaskCoverage(task_id, producible, len(result.findings), strengths, reasons)
-        )
+            reasons = list(result.limitations) or [f.conclusion for f in result.findings]
+        coverage.append(TaskCoverage(task_id, producible, len(result.findings), strengths, reasons))
     return coverage
 
 

@@ -19,6 +19,36 @@ from xhs_ceramics_analytics.reporting.facts_export import build_factbook, factbo
 from xhs_ceramics_analytics.reporting.narrative_results import build_narrative_results
 
 
+def _complete_seed(run_dir):
+    task = nw.status_json(run_dir)["tasks"]["pending"][0]
+    nw.ingest_output(
+        run_dir,
+        stage="seed",
+        task_id=task["task_id"],
+        text='{"sections":[]}',
+    )
+
+
+def _complete_continuity(run_dir):
+    task = nw.status_json(run_dir)["tasks"]["pending"][0]
+    nw.ingest_output(
+        run_dir,
+        stage="continuity",
+        task_id=task["task_id"],
+        text='{"edits":[]}',
+    )
+
+
+def _complete_patch(run_dir):
+    task = nw.status_json(run_dir)["tasks"]["pending"][0]
+    nw.ingest_output(
+        run_dir,
+        stage="patch",
+        task_id=task["task_id"],
+        text='{"sections":[]}',
+    )
+
+
 # ---- (b) fan brief requests claims + exposes fact_ids ---------------------
 
 def _slice_with_fact():
@@ -100,6 +130,7 @@ def test_record_section_preserves_claims_and_callbacks(tmp_path):
     results = {"domain_slices": [_slice_with_fact()]}
     facts_json = {"facts_hash": "h", "facts": {}}
     nw.prepare_run(tmp_path, results=results, facts_json=facts_json, report_name="r")
+    _complete_seed(tmp_path)
     nw.advance_run(tmp_path)  # seed -> fan
     section = {
         "section_id": "生意大盘",
@@ -129,6 +160,7 @@ def test_synth_ingest_captures_first_screen_and_headline(tmp_path):
     results = {"domain_slices": [_slice_with_fact()]}
     facts_json = {"facts_hash": "h", "facts": {}}
     nw.prepare_run(tmp_path, results=results, facts_json=facts_json, report_name="r")
+    _complete_seed(tmp_path)
     nw.advance_run(tmp_path)  # seed -> fan
     nw.ingest_output(
         tmp_path,
@@ -164,11 +196,13 @@ def test_bundle_from_state_prose_only_is_unchanged_when_no_synth(tmp_path):
     results = {"domain_slices": [_slice_with_fact()]}
     facts_json = {"facts_hash": "h", "facts": {}}
     nw.prepare_run(tmp_path, results=results, facts_json=facts_json, report_name="r")
+    _complete_seed(tmp_path)
     nw.advance_run(tmp_path)
     nw.ingest_output(tmp_path, stage="fan",
                      text=json.dumps({"section_id": "生意大盘", "title": "生意大盘", "body": "b"}, ensure_ascii=False))
     bundle = nw._bundle_from_state(nw._load_state(tmp_path))
-    assert set(bundle) == {"sections"}
+    assert set(bundle) == {"facts_hash", "sections"}
+    assert bundle["facts_hash"] == "h"
 
 
 # ---- (c) synth brief written on fan->synth + surfaced by status -----------
@@ -177,6 +211,7 @@ def test_advance_fan_writes_synth_brief_and_status_lists_it(tmp_path):
     results = {"domain_slices": [_slice_with_fact()]}
     facts_json = {"facts_hash": "h", "facts": {}}
     nw.prepare_run(tmp_path, results=results, facts_json=facts_json, report_name="r")
+    _complete_seed(tmp_path)
     nw.advance_run(tmp_path)  # seed -> fan
     nw.ingest_output(tmp_path, stage="fan",
                      text=json.dumps({"section_id": "生意大盘", "title": "生意大盘",
@@ -222,8 +257,14 @@ def test_real_gate_passes_assembled_claims_bundle_and_renders_prose(tmp_path):
     proj = tmp_path / "proj"
     proj.mkdir()
     run_dir = tmp_path / "run"
-    nw.prepare_run(run_dir, results=results, facts_json=facts_json,
-                   report_name="叙事报告", project_root=proj)
+    nw.prepare_run(
+        run_dir,
+        results=results,
+        facts_json=facts_json,
+        report_name="叙事报告",
+        project_root=proj,
+        workflow_version=nw.LEGACY_WORKFLOW_VERSION,
+    )
 
     claim = {
         "claim_id": "c0",
@@ -237,6 +278,7 @@ def test_real_gate_passes_assembled_claims_bundle_and_renders_prose(tmp_path):
         "confidence": "强",
     }
 
+    _complete_seed(run_dir)
     nw.advance_run(run_dir, project_root=proj)  # seed -> fan
     nw.ingest_output(run_dir, stage="fan",
                      text=json.dumps({"section_id": "生意大盘", "title": "生意大盘", "claims": [claim]},
@@ -249,6 +291,7 @@ def test_real_gate_passes_assembled_claims_bundle_and_renders_prose(tmp_path):
                          "cannot_say": ["暂无法把订单归因到具体笔记"],
                      }, ensure_ascii=False))
     nw.advance_run(run_dir, project_root=proj)  # synth -> gate (REAL) -> continuity
+    _complete_continuity(run_dir)
     state = nw.advance_run(run_dir, project_root=proj)  # continuity -> finalized
 
     assert state["stage"] == "finalized", "the real gate must PASS the assembled claims bundle"
@@ -391,8 +434,14 @@ def test_gate_failed_view_drops_and_report_finalizes_not_skeleton(tmp_path):
     proj = tmp_path / "proj"
     proj.mkdir()
     run_dir = tmp_path / "run"
-    nw.prepare_run(run_dir, results=results, facts_json=facts_json,
-                   report_name="叙事报告", project_root=proj)
+    nw.prepare_run(
+        run_dir,
+        results=results,
+        facts_json=facts_json,
+        report_name="叙事报告",
+        project_root=proj,
+        workflow_version=nw.LEGACY_WORKFLOW_VERSION,
+    )
 
     claim = {
         "claim_id": "c0",
@@ -417,6 +466,7 @@ def test_gate_failed_view_drops_and_report_finalizes_not_skeleton(tmp_path):
         "why_it_matters": "无",
     }
 
+    _complete_seed(run_dir)
     nw.advance_run(run_dir, project_root=proj)  # seed -> fan
     nw.ingest_output(run_dir, stage="fan",
                      text=json.dumps({"section_id": "生意大盘", "title": "生意大盘",
@@ -434,6 +484,10 @@ def test_gate_failed_view_drops_and_report_finalizes_not_skeleton(tmp_path):
     # gate/patch/continuity transitions (the drop adds one patch round vs the clean path).
     state = nw._load_state(run_dir)
     for _ in range(8):
+        if state["stage"] == "patch":
+            _complete_patch(run_dir)
+        elif state["stage"] == "continuity":
+            _complete_continuity(run_dir)
         state = nw.advance_run(run_dir, project_root=proj)
         if state["stage"] in ("finalized", "blocked"):
             break

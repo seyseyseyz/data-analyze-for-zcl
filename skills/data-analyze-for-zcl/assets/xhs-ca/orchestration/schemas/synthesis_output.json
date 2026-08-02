@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "synthesis_output.json",
+  "title": "synthesis_output",
+  "description": "Runtime synth ingest payload; deterministic state supplies facts_hash and adjudicated sections.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["headline", "first_screen", "action_cards", "mechanism", "cannot_say", "spine_final"],
+  "properties": {
+    "headline": {
+      "type": "string",
+      "pattern": "^[^0-9０-９]*$",
+      "description": "Number-free headline. Numeric evidence lives in claim number_tokens."
+    },
+    "first_screen": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["spine", "panel", "actions"],
+      "properties": {
+        "spine": {"type": "array", "items": {"$ref": "claim.json"}},
+        "panel": {"type": "array", "items": {"$ref": "claim.json"}},
+        "actions": {
+          "type": "array",
+          "items": {"type": "string", "pattern": "^[^0-9０-９]*$"}
+        }
+      }
+    },
+    "action_cards": {
+      "type": "array",
+      "items": {"$ref": "action_card.json"}
+    },
+    "mechanism": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {"type": "string", "minLength": 1},
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["claim_id", "link"],
+            "properties": {
+              "claim_id": {"type": "string", "minLength": 1},
+              "link": {"type": "string", "pattern": "^[^0-9０-９]*$"}
+            }
+          }
+        ]
+      }
+    },
+    "cannot_say": {"type": "array", "items": {"type": "string"}},
+    "spine_final": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["backbone"],
+      "properties": {
+        "source_candidate_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string"}
+        },
+        "backbone": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["link_id", "from", "to", "anchor_fact_ids", "relation"],
+            "properties": {
+              "link_id": {"type": "string", "minLength": 1},
+              "from": {"type": "string", "minLength": 1},
+              "to": {"type": "string", "minLength": 1},
+              "anchor_fact_ids": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": {"type": "string"}
+              },
+              "relation": {"enum": ["accounting_identity", "weak_causal_overlay"]}
+            }
+          }
+        }
+      }
+    }
+  }
+}

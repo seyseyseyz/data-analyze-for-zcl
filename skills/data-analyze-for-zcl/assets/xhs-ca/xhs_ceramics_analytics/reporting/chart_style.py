@@ -19,6 +19,7 @@ narrative ``:root`` already defines (``--ink --ink-strong --muted --line --surfa
 semantic tier colours (green/red/neutral) belong to the confidence pill, which is
 a separate concern. Pure data (a module-level string); nothing here can raise.
 """
+
 from __future__ import annotations
 
 # Inlined into the narrative <style>. Every selector here is a class the narrative

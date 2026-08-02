@@ -1,0 +1,50 @@
+# Xiaohongshu platform semantic catalog
+
+This directory contains scrubbed semantic evidence derived from Xiaohongshu Qianfan
+field definitions. It is reference material for contract review, not a live API mirror.
+
+## Files
+
+- `xhs_metric_catalog.yaml` contains stable numeric platform metric IDs and deterministic
+  semantic classifications.
+- `xhs_metric_promotion_review.csv` contains review-gated candidate mappings and explicit
+  deferrals. A `proposed` row is not an approved binding.
+- `xhs_business_overview_binding_review.csv` records the first human-review evidence pass
+  for `business_overview_daily`. Its decisions are suggestions only and every row keeps
+  `runtime_action=none`.
+- `../source_bindings/xhs_platform_metrics.yaml` contains approved bindings only. It is
+  currently populated with 15 reviewer-confirmed `business_overview_daily` contexts;
+  `runtime_mode: observe` and `runtime_scopes: [agent_context]` expose their definitions
+  to the mapping audit and narrative agents. Importer use is validation-only: platform
+  fuzzy matches and semantic conflicts are quarantined before projection.
+
+## Safety boundary
+
+- Original HAR files, response values, cookies, tokens, account identifiers, hostnames,
+  query parameters, local paths, and HAR entry positions are not stored here.
+- UI tooltip candidates remain in the ignored local review ledger because their field-to-
+  explanation association was inferred by proximity.
+- Regeneration fails when tracked stable metric IDs disappear unless the maintainer passes
+  the explicit reviewed-removal override.
+- Definition hashes cover the classified unit, caliber, time anchor, aggregation behavior,
+  refund treatment, formula flag, and classifier version; semantic drift invalidates reviews
+  and accepted bindings.
+- Accepted bindings use constrained grain, time-basis, unit, value-encoding, and aggregation
+  values and must be compatible with the catalog definition.
+- The business overview review file is review evidence only. Neither `approve` nor
+  `blocked_contract_semantics` changes runtime behavior or counts as an accepted binding.
+- Runtime context includes accepted references plus exact-name, unapproved candidates.
+  Candidates remain `mapping_permission: none`; they can challenge an automatic mapping
+  but cannot approve one. The validation gate does not change raw values, calculations,
+  evidence, or task coverage.
+
+## Regeneration
+
+Run the maintainer tool from the repository root after generating the ignored HAR extracts:
+
+```bash
+.venv/bin/python scripts/build_xhs_semantic_catalog.py
+```
+
+The command also writes ignored review artifacts under
+`.xhs-ceramics-analytics/catalog/`.

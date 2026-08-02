@@ -24,8 +24,37 @@ def _make_refund_overview(con, rows):
         )
         """
     )
+    con.executemany("INSERT INTO refund_overview VALUES (?, ?, ?, ?, ?, ?, ?, ?)", rows)
+
+
+def _make_refund_overview_full_grain(con, rows):
+    con.execute(
+        """
+        CREATE TABLE refund_overview (
+          stat_period VARCHAR,
+          account_name VARCHAR,
+          carrier VARCHAR,
+          refund_amount_pay DOUBLE,
+          pre_ship_refund_amount DOUBLE,
+          post_ship_refund_amount DOUBLE,
+          shipped_refundonly_amount DOUBLE,
+          return_refund_amount DOUBLE,
+          refund_orders_pay DOUBLE,
+          post_ship_refund_orders DOUBLE,
+          shipped_refundonly_orders DOUBLE,
+          pre_ship_refund_orders DOUBLE,
+          return_refund_orders DOUBLE,
+          refund_rate_pay DOUBLE,
+          post_ship_refund_rate_pay DOUBLE,
+          pre_ship_refund_rate_pay DOUBLE,
+          return_refund_rate_pay DOUBLE,
+          refund_users DOUBLE
+        )
+        """
+    )
     con.executemany(
-        "INSERT INTO refund_overview VALUES (?, ?, ?, ?, ?, ?, ?, ?)", rows
+        "INSERT INTO refund_overview VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        rows,
     )
 
 
@@ -92,11 +121,233 @@ def test_carrier_finding_compares_two_carriers(tmp_path):
     assert finding.key_numbers["significant"] is True
 
 
-def test_carrier_finding_skipped_for_single_carrier(tmp_path):
+def test_refund_overview_preserves_grain_and_emits_available_stage_metrics(tmp_path):
+    con, db_path = _con(tmp_path)
+    _make_refund_overview_full_grain(
+        con,
+        [
+            (
+                "2026-Q2",
+                "账号A",
+                "笔记",
+                1000.0,
+                400.0,
+                600.0,
+                200.0,
+                400.0,
+                100.0,
+                60.0,
+                20.0,
+                40.0,
+                40.0,
+                0.10,
+                0.06,
+                0.04,
+                0.04,
+                90.0,
+            ),
+            (
+                "2026-Q2",
+                "账号A",
+                "商卡",
+                500.0,
+                300.0,
+                200.0,
+                80.0,
+                120.0,
+                50.0,
+                20.0,
+                8.0,
+                30.0,
+                12.0,
+                0.05,
+                0.02,
+                0.03,
+                0.012,
+                45.0,
+            ),
+        ],
+    )
+    con.close()
+
+    result = run_task("refund_structure_diagnosis", db_path)
+    grain_rows = result.tables["refund_overview_by_period_account_carrier"]
+    assert len(grain_rows) == 2
+    assert {
+        tuple(r[k] for k in ("stat_period", "account_name", "carrier")) for r in grain_rows
+    } == {
+        ("2026-Q2", "账号A", "笔记"),
+        ("2026-Q2", "账号A", "商卡"),
+    }
+    layers = {r["layer"]: r for r in result.tables["refund_layer_breakdown"]}
+    assert layers["pre_ship"]["refund_amount"] == 700.0
+    assert layers["pre_ship"]["refund_orders"] == 70.0
+    assert layers["pre_ship"]["refund_rate"] == 70.0 / 2000.0
+    assert layers["post_ship"]["refund_orders"] == 80.0
+    assert layers["shipped_refundonly"]["refund_amount"] == 280.0
+    assert layers["shipped_refundonly"]["refund_orders"] == 28.0
+    assert sum(r["refund_users"] for r in grain_rows) == 135.0
+
+
+def test_refund_overview_does_not_add_distinct_stat_periods(tmp_path):
+    con, db_path = _con(tmp_path)
+    _make_refund_overview_full_grain(
+        con,
+        [
+            (
+                "2026-H1",
+                "账号A",
+                "笔记",
+                1000.0,
+                400.0,
+                600.0,
+                200.0,
+                400.0,
+                100.0,
+                60.0,
+                20.0,
+                40.0,
+                40.0,
+                0.10,
+                0.06,
+                0.04,
+                0.04,
+                90.0,
+            ),
+            (
+                "2026-Q2",
+                "账号A",
+                "商卡",
+                500.0,
+                300.0,
+                200.0,
+                80.0,
+                120.0,
+                50.0,
+                20.0,
+                8.0,
+                30.0,
+                12.0,
+                0.05,
+                0.02,
+                0.03,
+                0.012,
+                45.0,
+            ),
+        ],
+    )
+    con.close()
+
+    result = run_task("refund_structure_diagnosis", db_path)
+
+    assert result.tables["refund_layer_breakdown"] == []
+    assert "carrier_refund_comparison" not in result.tables
+    assert result.findings[0].evidence_strength.value == "not_judgable"
+    assert any("多个统计周期" in limitation for limitation in result.limitations)
+
+
+def test_carrier_comparison_aggregates_duplicate_carrier_rows_within_one_period(tmp_path):
+    con, db_path = _con(tmp_path)
+    _make_refund_overview_full_grain(
+        con,
+        [
+            (
+                "2026-Q2",
+                "账号A",
+                "笔记",
+                600.0,
+                240.0,
+                360.0,
+                120.0,
+                240.0,
+                60.0,
+                36.0,
+                12.0,
+                24.0,
+                24.0,
+                0.12,
+                0.072,
+                0.048,
+                0.048,
+                54.0,
+            ),
+            (
+                "2026-Q2",
+                "账号B",
+                "笔记",
+                400.0,
+                160.0,
+                240.0,
+                80.0,
+                160.0,
+                40.0,
+                24.0,
+                8.0,
+                16.0,
+                16.0,
+                0.08,
+                0.048,
+                0.032,
+                0.032,
+                36.0,
+            ),
+            (
+                "2026-Q2",
+                "账号A",
+                "商卡",
+                500.0,
+                300.0,
+                200.0,
+                80.0,
+                120.0,
+                50.0,
+                20.0,
+                8.0,
+                30.0,
+                12.0,
+                0.05,
+                0.02,
+                0.03,
+                0.012,
+                45.0,
+            ),
+        ],
+    )
+    con.close()
+
+    result = run_task("refund_structure_diagnosis", db_path)
+    rows = result.tables["carrier_refund_comparison"]
+
+    assert len(rows) == 2
+    by_carrier = {r["carrier"]: r for r in rows}
+    assert by_carrier["笔记"]["refund_orders"] == 100.0
+    assert by_carrier["笔记"]["n"] == 1000.0
+    assert by_carrier["笔记"]["refund_rate"] == 0.1
+
+
+def test_carrier_refund_rate_uses_only_rows_with_rate_and_orders(tmp_path):
     con, db_path = _con(tmp_path)
     _make_refund_overview(
-        con, [("笔记", 10000.0, 2000.0, 3000.0, 5000.0, 100.0, 0.10, 90.0)]
+        con,
+        [
+            ("笔记", 1000.0, 400.0, 600.0, 300.0, 10.0, 0.10, 9.0),
+            ("笔记", 9000.0, 4000.0, 5000.0, 3000.0, 90.0, None, 80.0),
+            ("商卡", 1000.0, 500.0, 500.0, 200.0, 5.0, 0.05, 5.0),
+        ],
     )
+    con.close()
+
+    result = run_task("refund_structure_diagnosis", db_path)
+    rows = {row["carrier"]: row for row in result.tables["carrier_refund_comparison"]}
+    assert rows["笔记"]["refund_rate"] == 0.10
+    assert rows["笔记"]["refund_orders"] == 10
+    assert rows["笔记"]["rate_coverage_rows"] == 1
+    assert rows["笔记"]["missing_rate_rows"] == 1
+
+
+def test_carrier_finding_skipped_for_single_carrier(tmp_path):
+    con, db_path = _con(tmp_path)
+    _make_refund_overview(con, [("笔记", 10000.0, 2000.0, 3000.0, 5000.0, 100.0, 0.10, 90.0)])
     con.close()
     result = run_task("refund_structure_diagnosis", db_path)
     assert "载体退款率对比" not in [f.title for f in result.findings]
@@ -104,21 +355,20 @@ def test_carrier_finding_skipped_for_single_carrier(tmp_path):
 
 
 def _make_business_overview(con, rows):
-    con.execute(
-        "CREATE TABLE business_overview_daily (date DATE, refund_rate_pay DOUBLE)"
-    )
+    con.execute("CREATE TABLE business_overview_daily (date DATE, refund_rate_pay DOUBLE)")
     con.executemany("INSERT INTO business_overview_daily VALUES (?, ?)", rows)
 
 
 def test_trend_finding_reports_direction(tmp_path):
     con, db_path = _con(tmp_path)
     _make_refund_overview(
-        con, [("笔记", 10000.0, 2000.0, 3000.0, 5000.0, 100.0, 0.10, 90.0),
-              ("商卡", 8000.0, 1000.0, 2000.0, 5000.0, 80.0, 0.08, 70.0)]
+        con,
+        [
+            ("笔记", 10000.0, 2000.0, 3000.0, 5000.0, 100.0, 0.10, 90.0),
+            ("商卡", 8000.0, 1000.0, 2000.0, 5000.0, 80.0, 0.08, 70.0),
+        ],
     )
-    _make_business_overview(
-        con, [("2026-04-30", 0.05), ("2026-05-31", 0.08), ("2026-06-30", 0.12)]
-    )
+    _make_business_overview(con, [("2026-04-30", 0.05), ("2026-05-31", 0.08), ("2026-06-30", 0.12)])
     con.close()
     result = run_task("refund_structure_diagnosis", db_path)
     finding = next(f for f in result.findings if f.title == "退款率时间趋势")
@@ -129,8 +379,11 @@ def test_trend_finding_reports_direction(tmp_path):
 def test_trend_finding_skipped_without_business_overview(tmp_path):
     con, db_path = _con(tmp_path)
     _make_refund_overview(
-        con, [("笔记", 10000.0, 2000.0, 3000.0, 5000.0, 100.0, 0.10, 90.0),
-              ("商卡", 8000.0, 1000.0, 2000.0, 5000.0, 80.0, 0.08, 70.0)]
+        con,
+        [
+            ("笔记", 10000.0, 2000.0, 3000.0, 5000.0, 100.0, 0.10, 90.0),
+            ("商卡", 8000.0, 1000.0, 2000.0, 5000.0, 80.0, 0.08, 70.0),
+        ],
     )
     con.close()
     result = run_task("refund_structure_diagnosis", db_path)
@@ -164,8 +417,11 @@ def _make_content_features(con, rows):
 
 def _refund_overview_two(con):
     _make_refund_overview(
-        con, [("笔记", 10000.0, 2000.0, 3000.0, 5000.0, 100.0, 0.10, 90.0),
-              ("商卡", 8000.0, 1000.0, 2000.0, 5000.0, 80.0, 0.08, 70.0)]
+        con,
+        [
+            ("笔记", 10000.0, 2000.0, 3000.0, 5000.0, 100.0, 0.10, 90.0),
+            ("商卡", 8000.0, 1000.0, 2000.0, 5000.0, 80.0, 0.08, 70.0),
+        ],
     )
 
 
@@ -210,6 +466,27 @@ def test_note_finding_degrades_without_content_features(tmp_path):
     assert any("特征" in c for c in finding.caveats)
 
 
+def test_refund_reason_breakdown_uses_manual_reason_table(tmp_path):
+    con, db_path = _con(tmp_path)
+    _refund_overview_two(con)
+    con.execute(
+        "CREATE TABLE refund_reasons (refund_reason VARCHAR, refund_amount DOUBLE, refund_orders DOUBLE)"
+    )
+    con.executemany(
+        "INSERT INTO refund_reasons VALUES (?, ?, ?)",
+        [("尺寸不符", 1200, 8), ("破损", 800, 4), ("尺寸不符", 300, 2)],
+    )
+    con.close()
+
+    result = run_task("refund_structure_diagnosis", db_path)
+    rows = result.tables["refund_reason_breakdown"]
+    assert rows[0]["refund_reason"] == "尺寸不符"
+    assert rows[0]["refund_amount"] == 1500
+    assert rows[0]["refund_orders"] == 10
+    assert rows[0]["amount_share"] == 1500 / 2300
+    assert any(f.title == "退款原因结构" for f in result.findings)
+
+
 def _make_sku_performance(con, rows):
     con.execute(
         """
@@ -220,9 +497,7 @@ def _make_sku_performance(con, rows):
         )
         """
     )
-    con.executemany(
-        "INSERT INTO sku_performance VALUES (?, ?, ?, ?, ?, ?)", rows
-    )
+    con.executemany("INSERT INTO sku_performance VALUES (?, ?, ?, ?, ?, ?)", rows)
 
 
 def _make_products(con, rows):
@@ -269,8 +544,11 @@ def test_product_finding_degrades_without_products(tmp_path):
     con, db_path = _con(tmp_path)
     _refund_overview_two(con)
     _make_sku_performance(
-        con, [("p1", "青釉杯", 10000.0, 6000.0, 0.40, 100.0),
-              ("p2", "茶壶", 8000.0, 7800.0, 0.02, 100.0)]
+        con,
+        [
+            ("p1", "青釉杯", 10000.0, 6000.0, 0.40, 100.0),
+            ("p2", "茶壶", 8000.0, 7800.0, 0.02, 100.0),
+        ],
     )
     con.close()
     result = run_task("refund_structure_diagnosis", db_path)

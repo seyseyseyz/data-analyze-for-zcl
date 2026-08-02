@@ -5,6 +5,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 SYNC = ROOT / "skills" / "data-analyze-for-zcl" / "scripts" / "sync-runtime"
 SKILL = ROOT / "skills" / "data-analyze-for-zcl" / "SKILL.md"
+OPENAI_METADATA = ROOT / "skills" / "data-analyze-for-zcl" / "agents" / "openai.yaml"
 
 # The skill's own scripts/SKILL.md live outside the mirrored runtime; skip in the mirror copy.
 pytestmark = pytest.mark.skipif(
@@ -46,6 +47,32 @@ def test_skill_7b_authorization_is_mandatory_and_distinct_from_spawning():
     assert "asking is not spawning" in text
 
 
+def test_skill_requests_multi_agent_authorization_before_work_starts():
+    text = SKILL.read_text(encoding="utf-8")
+
+    authorization = text.index("Authorize multi-agent final report")
+    assert authorization < text.index("**Bootstrap**")
+    assert authorization < text.index("**Ask for exports**")
+    assert authorization < text.index("**Build**")
+
+
+def test_skill_delivers_one_final_html_and_keeps_facts_internal():
+    text = SKILL.read_text(encoding="utf-8")
+    lowered = text.lower()
+
+    assert "exactly one user-facing single-file html report" in lowered
+    assert "facts auto" in lowered
+    assert "do not present or link the internal fact layer" in lowered
+    assert "exactly two single-file html reports" not in lowered
+
+
+def test_skill_default_prompt_starts_with_authorization_and_promises_final_only():
+    text = OPENAI_METADATA.read_text(encoding="utf-8")
+
+    assert "首先询问并等待多智能体授权" in text
+    assert "只交付最终单文件 HTML" in text
+
+
 def test_skill_notes_curated_deterministic_visuals():
     text = SKILL.read_text(encoding="utf-8")
     lowered = text.lower()
@@ -59,3 +86,62 @@ def test_skill_notes_curated_deterministic_visuals():
     banned = ("claude", "codex", "gpt", "opus", "sonnet", "anthropic", "openai")
     for term in banned:
         assert term not in lowered, f"SKILL.md must stay host-neutral, found {term!r}"
+
+
+def test_skill_platform_catalog_requires_accepted_binding():
+    text = SKILL.read_text(encoding="utf-8")
+    assert "platform/xhs_metric_catalog.yaml" in text
+    assert "platform/xhs_metric_promotion_review.csv" in text
+    assert "source_bindings/xhs_platform_metrics.yaml" in text
+    assert "platform/xhs_business_overview_binding_review.csv" in text
+    assert "Only an accepted row" in text
+    assert "`proposed` means a candidate" in text
+    assert "only, never an approved mapping" in text
+    assert "payment/refund time basis, PV/UV grain, unit, and aggregation" in text
+    assert "review evidence only" in text
+    assert "`runtime_mode: observe`" in text
+    assert "`runtime_scopes: [agent_context]`" in text
+    assert "Candidates remain `mapping_permission: none`" in text
+    assert "must not change" in text
+
+
+def test_skill_distinguishes_metric_ontology_from_import_bindings():
+    text = SKILL.read_text(encoding="utf-8")
+
+    assert "references/metrics/registry.yaml" in text
+    assert "report-facing metric ontology" in text
+    assert "not an import mapping" in text
+    assert "observation-only" in text
+    assert "fact annotation" in text
+
+
+@pytest.mark.parametrize(
+    "relative_path",
+    [
+        Path("references/metrics/registry.yaml"),
+        Path("xhs_ceramics_analytics/contracts/metrics.py"),
+        Path("tests/test_metric_registry.py"),
+    ],
+)
+def test_metric_registry_contract_is_packaged_without_drift(relative_path: Path):
+    bundled_path = (
+        ROOT / "skills" / "data-analyze-for-zcl" / "assets" / "xhs-ca" / relative_path
+    )
+
+    assert bundled_path.read_bytes() == (ROOT / relative_path).read_bytes()
+
+
+def test_daily_distinct_task_templates_use_non_additive_contract():
+    core = (ROOT / "task_templates" / "core_business_diagnosis.md").read_text(
+        encoding="utf-8"
+    )
+    demand = (ROOT / "task_templates" / "demand_funnel_diagnosis.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "avg_daily_paid_buyers" in core
+    assert "跳过 GMV 桥" in core
+    assert "avg_daily_cart_to_pay" in demand
+    assert "不把日级去重人数相加" in demand
+    assert "total_add_to_cart_users" not in demand
+    assert "total_new_wishlist" not in demand

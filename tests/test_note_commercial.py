@@ -26,9 +26,7 @@ def _make_notes_full(con, rows):
         )
         """
     )
-    con.executemany(
-        "INSERT INTO notes VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", rows
-    )
+    con.executemany("INSERT INTO notes VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", rows)
 
 
 def _make_notes_partial(con, rows):
@@ -168,16 +166,14 @@ def _make_notes_with_referral(con, rows):
           reads DOUBLE,
           note_gmv DOUBLE,
           note_paid_orders DOUBLE,
-          引流店铺主页次数 DOUBLE,
-          引流店铺主页支付金额 DOUBLE,
-          引流直播间次数 DOUBLE,
-          引流直播间支付金额 DOUBLE
+          to_shop_home_count DOUBLE,
+          to_shop_home_gmv DOUBLE,
+          to_live_count DOUBLE,
+          to_live_gmv DOUBLE
         )
         """
     )
-    con.executemany(
-        "INSERT INTO notes VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", rows
-    )
+    con.executemany("INSERT INTO notes VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", rows)
 
 
 def test_referral_finding_surfaces_off_note_gmv(tmp_path):
@@ -218,6 +214,27 @@ def test_referral_finding_skipped_when_columns_absent(tmp_path):
     con.close()
     result = run(db_path)
     assert "笔记站外引流成交" not in {f.title for f in result.findings}
+    assert "note_referral_attribution" not in result.tables
+
+
+def test_referral_finding_ignores_unmapped_legacy_referral_columns(tmp_path):
+    con, db_path = _con(tmp_path)
+    con.execute(
+        """
+        CREATE TABLE notes (
+          note_id VARCHAR,
+          note_gmv DOUBLE,
+          引流店铺主页次数 DOUBLE,
+          引流店铺主页支付金额 DOUBLE
+        )
+        """
+    )
+    con.execute("INSERT INTO notes VALUES ('n1', 100, 10, 200)")
+    con.close()
+
+    result = run(db_path)
+
+    assert "笔记站外引流成交" not in {finding.title for finding in result.findings}
     assert "note_referral_attribution" not in result.tables
 
 

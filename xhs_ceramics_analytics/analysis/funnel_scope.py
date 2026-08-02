@@ -45,9 +45,7 @@ def normalize_funnel_rows(
       no numeric window exists (used only for the reader-facing caveat).
     """
     rollup_rows = [r for r in rows if has_audience and r.get("audience_type") == ROLLUP]
-    segment_rows = [
-        r for r in rows if not (has_audience and r.get("audience_type") == ROLLUP)
-    ]
+    segment_rows = [r for r in rows if not (has_audience and r.get("audience_type") == ROLLUP)]
     canonical: str | None = None
     if has_cycle:
         segments: dict[object, list[dict]] = {}
@@ -68,9 +66,7 @@ def normalize_funnel_rows(
                 # No numeric window for this segment — leave its rows untouched.
                 kept.extend(seg_rows)
             else:
-                kept.extend(
-                    r for r in seg_rows if r.get("first_purchase_cycle") == seg_canonical
-                )
+                kept.extend(r for r in seg_rows if r.get("first_purchase_cycle") == seg_canonical)
                 kept_cycles.append(seg_canonical)
         segment_rows = kept
         canonical = canonical_cycle(kept_cycles) if kept_cycles else None

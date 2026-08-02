@@ -2,13 +2,26 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "narrative_bundle.json",
   "title": "narrative_bundle",
-  "description": "Synthesizer output — what the gate validates and freezes.",
+  "description": "Final runtime bundle after deterministic state combines synthesis with adjudicated sections.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["facts_hash", "headline", "first_screen", "spine_final", "sections", "cannot_say"],
+  "required": [
+    "facts_hash",
+    "headline",
+    "first_screen",
+    "action_cards",
+    "mechanism",
+    "spine_final",
+    "sections",
+    "cannot_say"
+  ],
   "properties": {
-    "facts_hash": {"type": "string"},
-    "headline": {"type": "string", "description": "Opaque {tN} allowed; NO bare digits."},
+    "facts_hash": {"type": "string", "minLength": 1},
+    "headline": {
+      "type": "string",
+      "pattern": "^[^0-9０-９]*$",
+      "description": "Number-free headline. Numeric evidence lives in claims."
+    },
     "first_screen": {
       "type": "object",
       "additionalProperties": false,
@@ -16,7 +29,31 @@
       "properties": {
         "spine": {"type": "array", "items": {"$ref": "claim.json"}},
         "panel": {"type": "array", "items": {"$ref": "claim.json"}},
-        "actions": {"type": "array", "items": {"type": "string"}}
+        "actions": {
+          "type": "array",
+          "items": {"type": "string", "pattern": "^[^0-9０-９]*$"}
+        }
+      }
+    },
+    "action_cards": {
+      "type": "array",
+      "items": {"$ref": "action_card.json"}
+    },
+    "mechanism": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {"type": "string", "minLength": 1},
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["claim_id", "link"],
+            "properties": {
+              "claim_id": {"type": "string", "minLength": 1},
+              "link": {"type": "string", "pattern": "^[^0-9０-９]*$"}
+            }
+          }
+        ]
       }
     },
     "spine_final": {
@@ -24,18 +61,30 @@
       "additionalProperties": false,
       "required": ["backbone"],
       "properties": {
-        "backbone": {"type": "array", "items": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["link_id", "from", "to", "anchor_fact_ids", "relation"],
-          "properties": {
-            "link_id": {"type": "string"},
-            "from": {"type": "string"},
-            "to": {"type": "string"},
-            "anchor_fact_ids": {"type": "array", "items": {"type": "string"}},
-            "relation": {"enum": ["accounting_identity", "weak_causal_overlay"]}
+        "source_candidate_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string"}
+        },
+        "backbone": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["link_id", "from", "to", "anchor_fact_ids", "relation"],
+            "properties": {
+              "link_id": {"type": "string", "minLength": 1},
+              "from": {"type": "string", "minLength": 1},
+              "to": {"type": "string", "minLength": 1},
+              "anchor_fact_ids": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": {"type": "string"}
+              },
+              "relation": {"enum": ["accounting_identity", "weak_causal_overlay"]}
+            }
           }
-        }}
+        }
       }
     },
     "sections": {"type": "array", "items": {"$ref": "section_bundle.json"}},

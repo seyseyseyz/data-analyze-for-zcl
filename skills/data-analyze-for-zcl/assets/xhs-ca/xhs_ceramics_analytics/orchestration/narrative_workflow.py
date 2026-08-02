@@ -5,11 +5,24 @@ but never spawns sub-agents. The host agent drives it (see runbook.md).
 """
 from __future__ import annotations
 
+import copy
+import hashlib
 import json
+import os
 import re
+import tempfile
+from functools import lru_cache
 from pathlib import Path
 
-from xhs_ceramics_analytics.paths import run_output_dir, run_timestamp, state_dir
+from jsonschema import Draft202012Validator
+from referencing import Registry, Resource
+
+from xhs_ceramics_analytics.paths import (
+    project_root as resolve_project_root,
+    run_output_dir,
+    run_timestamp,
+    state_dir,
+)
 from xhs_ceramics_analytics.reporting.factcheck_gate import run_gate
 from xhs_ceramics_analytics.reporting.factcheck_gate import (
     _view_label as _gate_view_label,
@@ -28,16 +41,25 @@ from xhs_ceramics_analytics.reporting.report_telemetry import (
 from xhs_ceramics_analytics.reporting.view_spec import _template_of
 
 MAX_FAN_AGENTS = 6
-MAX_GATE_ROUNDS = 5
+MAX_GATE_ROUNDS = 2
 # Review-stage patch budget (spec §Multi-Reviewer Review): a view whose 3 reviewers
 # reach no keep/drop majority is re-authored at most this many times; a view still
 # unconverged after the budget is spent is dropped, never blocking the report.
-MAX_REVIEW_PATCH_ROUNDS = 5
+MAX_REVIEW_PATCH_ROUNDS = 2
+MAX_MERCHANT_REVISION_ROUNDS = 2
+QUALITY_WORKFLOW_VERSION = "quality-v2"
+DETERMINISTIC_WORKFLOW_VERSION = "deterministic-v2"
+LEGACY_WORKFLOW_VERSION = "legacy-v1"
+_SINGLE_HTML_WORKFLOWS = {
+    QUALITY_WORKFLOW_VERSION,
+    DETERMINISTIC_WORKFLOW_VERSION,
+}
 
 _STATE_FILE = "state.json"
 _RESULT_TABLES_FILE = "result_tables.json"
 _SLUG_STRIP = re.compile(r"[^\w一-鿿]+")
-_TERMINAL_STAGES = {"finalized", "blocked"}
+_TERMINAL_STAGES = {"finalized", "blocked", "delivery_failed"}
+_SCHEMA_DIR = Path(__file__).resolve().parents[2] / "orchestration" / "schemas"
 
 # The three adversarial reviewer lenses (spec §Multi-Reviewer Review). Each is a
 # distinct failure-mode lens — NOT three copies of "默认拒绝". The old uniform
@@ -77,6 +99,12 @@ _REVIEW_LENSES: tuple[tuple[str, str], ...] = (
     ),
 )
 
+_QUALITY_REVIEW_LENS_NAMES = {
+    "价值": "merchant_decision",
+    "可读性": "editorial_visual",
+    "支撑": "evidence_semantics",
+}
+
 # Verdict vocabulary a reviewer may return (spec: keep / revise / drop). Anything
 # outside this set counts toward neither keep nor drop, pushing the tally to patch.
 _KEEP_VERDICT = "keep"
@@ -84,17 +112,24 @@ _DROP_VERDICT = "drop"
 _KNOWN_VERDICTS: frozenset[str] = frozenset({"keep", "revise", "drop"})
 
 _NEXT_ACTION = {
-    "seed": "read briefs/seed.md, spawn one sub-agent, ingest --stage seed, then advance",
+    "seed": "run every pending independent spine-candidate brief, ingest each result, then advance",
+    "spine_adjudication": "run the spine adjudicator brief, ingest its decision, then advance",
     "fan": "read briefs/fan_*.md, spawn one sub-agent per brief, ingest --stage fan each, then advance",
+    "domain_challenge": "run one challenger per domain, ingest every challenge report, then advance",
+    "domain_adjudication": "run one adjudicator per domain, ingest every adjudicated section, then advance",
     "synth": "read briefs/synth.md, spawn one sub-agent to assemble the first screen, "
              "ingest --stage synth, then advance",
+    "visual_curation": "run the independent visual-curator brief, ingest view specs, then advance",
     "gate": "run advance to apply the deterministic fact-check gate",
     "patch": "read the patch brief, spawn one sub-agent, ingest --stage patch, then advance",
     "review": "read briefs/review_*.md, spawn 3 reviewers (价值/可读性/支撑) per domain, "
               "ingest --stage review each verdict, then advance",
     "continuity": "spawn one sub-agent to smooth transitions, ingest --stage continuity, then advance",
-    "finalized": "done — deliver <name>.md + <name>.html",
+    "merchant_review": "review candidate.html as the merchant; ingest pass or targeted issues, then advance",
+    "merchant_patch": "apply only the merchant review targets, ingest the revision, then advance",
+    "finalized": "done — deliver <name>.html",
     "blocked": "deterministic skeleton delivered — report degradation reason",
+    "delivery_failed": "HTML delivery failed — report delivery_error and retry rendering",
 }
 
 
@@ -195,9 +230,222 @@ def _load_state(run_dir: Path) -> dict | None:
 
 
 def _write_state(run_dir: Path, state: dict) -> None:
-    (run_dir / _STATE_FILE).write_text(
-        json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    """Atomically replace state.json so an interrupted write cannot corrupt a run."""
+    run_dir = Path(run_dir)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    destination = run_dir / _STATE_FILE
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=run_dir,
+            prefix=f".{_STATE_FILE}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temporary = Path(handle.name)
+            json.dump(state, handle, ensure_ascii=False, indent=2)
+            handle.flush()
+            os.fsync(handle.fileno())
+        temporary.replace(destination)
+    finally:
+        if temporary is not None and temporary.exists():
+            temporary.unlink()
+
+
+def _write_json_atomic(path: Path, payload: dict) -> None:
+    """Atomically publish a JSON artifact beside its final destination."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temporary = Path(handle.name)
+            json.dump(payload, handle, ensure_ascii=False, indent=2, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None and temporary.exists():
+            temporary.unlink()
+
+
+def _write_text_atomic(path: Path, text: str) -> None:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temporary = Path(handle.name)
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None and temporary.exists():
+            temporary.unlink()
+
+
+def _stable_hash(value) -> str:
+    blob = json.dumps(
+        value,
+        sort_keys=True,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        default=str,
+    ).encode("utf-8")
+    return hashlib.sha256(blob).hexdigest()
+
+
+def _brief_hash(path) -> str:
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def _task_id(stage: str, brief, *, section_id=None, lens=None) -> str:
+    parts = [stage]
+    if section_id not in (None, ""):
+        parts.append(str(section_id))
+    if lens not in (None, ""):
+        parts.append(str(lens))
+    if len(parts) == 1:
+        parts.append(Path(brief).stem)
+    return ":".join(parts)
+
+
+def _set_stage_tasks(state: dict, stage: str, tasks) -> None:
+    items: list[dict] = []
+    for task in tasks or []:
+        item = dict(task)
+        item["stage"] = stage
+        item["brief"] = str(item["brief"])
+        item.setdefault("role", stage)
+        item.setdefault(
+            "task_id",
+            _task_id(
+                stage,
+                item["brief"],
+                section_id=item.get("section_id"),
+                lens=item.get("lens"),
+            ),
+        )
+        if Path(item["brief"]).exists():
+            item.setdefault("brief_hash", _brief_hash(item["brief"]))
+        item.setdefault(
+            "snapshot",
+            {
+                "facts_hash": state.get("facts_hash"),
+                "registry_hash": state.get("registry_hash"),
+            },
+        )
+        item.setdefault("status", "pending")
+        items.append(item)
+    state["_tasks"] = {"stage": stage, "items": items}
+
+
+def _stage_tasks(state: dict, stage: str | None = None) -> list[dict]:
+    manifest = state.get("_tasks")
+    current_stage = stage or state.get("stage")
+    if not isinstance(manifest, dict) or manifest.get("stage") != current_stage:
+        return []
+    items = manifest.get("items")
+    return items if isinstance(items, list) else []
+
+
+def _pending_tasks(state: dict, stage: str | None = None) -> list[dict]:
+    return [task for task in _stage_tasks(state, stage) if task.get("status") != "completed"]
+
+
+def _complete_task(state: dict, task: dict | None) -> None:
+    if task is not None:
+        task["status"] = "completed"
+
+
+def _task_for_ingest(
+    state: dict,
+    stage: str,
+    *,
+    source=None,
+    section_id=None,
+    lens=None,
+    target_id=None,
+    task_id=None,
+) -> dict | None:
+    pending = _pending_tasks(state, stage)
+    if not _stage_tasks(state, stage):
+        return None
+
+    if task_id not in (None, ""):
+        matches = [task for task in pending if str(task.get("task_id")) == str(task_id)]
+        if len(matches) != 1:
+            return None
+        task = matches[0]
+        if section_id not in (None, "") and str(task.get("section_id")) != str(section_id):
+            return None
+        if lens not in (None, "") and str(task.get("lens")) != str(lens):
+            return None
+        if (
+            target_id not in (None, "")
+            and task.get("target_id") not in (None, "")
+            and str(task.get("target_id")) != str(target_id)
+        ):
+            return None
+        if source is not None:
+            source_path = Path(source)
+            brief_path = Path(task.get("brief", ""))
+            if brief_path != source_path and brief_path.name != source_path.name:
+                return None
+        return task
+
+    if source is not None:
+        source_path = Path(source)
+        matches = [
+            task
+            for task in pending
+            if Path(task.get("brief", "")) == source_path
+            or Path(task.get("brief", "")).name == source_path.name
+        ]
+        if len(matches) == 1:
+            return matches[0]
+
+    matches = pending
+    if section_id not in (None, ""):
+        matches = [task for task in matches if str(task.get("section_id")) == str(section_id)]
+    if lens not in (None, ""):
+        matches = [task for task in matches if str(task.get("lens")) == str(lens)]
+    if target_id not in (None, ""):
+        matches = [
+            task
+            for task in matches
+            if task.get("target_id") in (None, "")
+            or str(task.get("target_id")) == str(target_id)
+        ]
+    if len(matches) == 1:
+        return matches[0]
+    if len(pending) == 1 and (
+        (source is None and section_id in (None, "") and lens in (None, ""))
+        or (
+            pending[0].get("section_id") in (None, "")
+            and pending[0].get("lens") in (None, "")
+        )
+    ):
+        return pending[0]
+    return None
 
 
 def _write_seed_brief(run_dir: Path, capped_slices: list[dict], report_name: str) -> None:
@@ -212,6 +460,196 @@ def _write_seed_brief(run_dir: Path, capped_slices: list[dict], report_name: str
     for s in capped_slices:
         lines.append(f"- {_slug(s['title'])}: {s['title']}")
     (run_dir / "briefs" / "seed.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _write_spine_candidate_briefs(
+    run_dir: Path,
+    capped_slices: list[dict],
+    facts_json: dict,
+    report_name: str,
+) -> list[Path]:
+    """Create two isolated briefs so the second spine cannot anchor on the first."""
+    payload = {
+        "report_name": report_name,
+        "facts_hash": facts_json.get("facts_hash"),
+        "registry_hash": facts_json.get("registry_hash"),
+        "domain_slices": capped_slices,
+        "shared_spine_facts": facts_json.get("shared_spine_facts") or [],
+        "non_additive_ledger": facts_json.get("non_additive_ledger") or {},
+        "absent_link_registry": facts_json.get("absent_link_registry") or [],
+        "platform_semantics": facts_json.get("platform_semantics") or {},
+    }
+    paths: list[Path] = []
+    for candidate_id in ("candidate-a", "candidate-b"):
+        path = Path(run_dir) / "briefs" / f"spine_{candidate_id}.md"
+        lines = [
+            f"# Independent spine candidate — {candidate_id}",
+            "",
+            "你独立提出一套经营主线。不要寻找、引用或猜测另一位候选人的答案。",
+            "主线必须先解释经营结果和钱，再连接流量、内容、商品、退款等机制；",
+            "会计恒等式与弱因果必须分开。只绑定下方已有 fact_id，不重算、不发明数字。",
+            "metric 名称、单位、口径、周期、aggregation 均由注册表快照解释，不能自行改名。",
+            "platform_semantics 是只读平台口径参考；没有 accepted reference 时标记未知，不得猜测映射。",
+            "",
+            "返回 JSON only:",
+            '{"candidate_id":"' + candidate_id + '","spine_brief":{'
+            '"decomposition_backbone":[...],"headline_candidate":"...",'
+            '"section_callbacks":{...},"broadcast_facts":[...]}}',
+            "",
+            "```json",
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            "```",
+        ]
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        paths.append(path)
+    return paths
+
+
+def _write_spine_adjudication_brief(run_dir: Path, state: dict) -> Path:
+    path = Path(run_dir) / "briefs" / "spine_adjudication.md"
+    candidates = state.get("_spine_candidates") or {}
+    lines = [
+        "# Spine adjudication",
+        "",
+        "比较两套独立主线，选择证据覆盖更完整、经营解释更清晰的一套。",
+        "你可以做最小合并，但不能偷偷写第三套无来源主线；必须保留选择、拒绝理由和未决异议。",
+        "所有 anchor_fact_ids 必须来自候选和当前事实快照。",
+        "",
+        "返回 JSON only:",
+        '{"selected_candidate_id","spine_brief":{...},'
+        '"rejected_reasons":[{"candidate_id","reason"}],"unresolved_dissent":[]}',
+        "",
+        "```json",
+        json.dumps({"candidates": candidates}, ensure_ascii=False, indent=2),
+        "```",
+    ]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+def _quality_slice_payload(
+    slice_doc: dict,
+    spine: dict,
+    tables_catalog: dict,
+    platform_semantics: dict | None = None,
+) -> dict:
+    title = str(slice_doc.get("title") or "")
+    spine_brief = spine.get("spine_brief") if isinstance(spine, dict) else {}
+    spine_brief = spine_brief if isinstance(spine_brief, dict) else {}
+    callbacks = spine_brief.get("section_callbacks") or {}
+    callback = callbacks.get(title) or callbacks.get(_slug(title)) or {}
+    return {
+        "section_id": _slug(title),
+        "title": title,
+        "facts": slice_doc.get("facts") or [],
+        "reading": slice_doc.get("reading") or {},
+        "spine_callback": callback,
+        "broadcast_facts": spine_brief.get("broadcast_facts") or [],
+        "available_tables": tables_catalog,
+        "platform_semantics": platform_semantics or {},
+    }
+
+
+def _write_quality_fan_briefs(
+    run_dir: Path,
+    capped_slices: list[dict],
+    spine: dict,
+    tables_catalog: dict[str, list[str]],
+    platform_semantics: dict | None = None,
+) -> list[Path]:
+    """Write claim-only domain briefs after the spine has been adjudicated."""
+    paths: list[Path] = []
+    for index, slice_doc in enumerate(capped_slices):
+        payload = _quality_slice_payload(
+            slice_doc,
+            spine,
+            tables_catalog,
+            platform_semantics,
+        )
+        path = Path(run_dir) / "briefs" / f"fan_{index:02d}_{payload['section_id']}.md"
+        lines = [
+            f"# Domain writer — {payload['title']}",
+            "",
+            "先钱后机制，写出清楚、可判断的 section claims；本阶段不要设计图表。",
+            "每个数字只能写成 {tN} 并绑定 payload 中真实 fact_id；不得自行解释单位、口径、",
+            "周期或 aggregation，它们由注册表和确定性层负责。必须回应 spine_callback；",
+            "如事实与主线冲突，写入 spine_dissent，不要强行顺从。",
+            "platform_semantics 仅用于解释平台口径；不得据此改映射或补造缺失数据。",
+            "",
+            '返回 JSON only: {"section_id","title","claims":[...],'
+            '"spine_callbacks":[...],"spine_dissent":null|{...}}',
+            "",
+            "```json",
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            "```",
+        ]
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        paths.append(path)
+    return paths
+
+
+def _write_domain_challenge_briefs(run_dir: Path, state: dict) -> list[Path]:
+    paths: list[Path] = []
+    for index, section_id in enumerate(state.get("_section_order") or []):
+        section = (state.get("sections") or {}).get(section_id)
+        if not isinstance(section, dict):
+            continue
+        path = Path(run_dir) / "briefs" / f"challenge_{index:02d}_{section_id}.md"
+        lines = [
+            f"# Domain challenger — {section.get('title', section_id)}",
+            "",
+            "你是反方，不直接改稿。逐 claim 检查遗漏、反例、夸大、口径误读和行动跳跃；",
+            "每个问题必须指向 claim_id。没有实质问题就明确 accept，禁止为了显得有用而挑刺。",
+            "",
+            '返回 JSON only: {"section_id","issues":[{"claim_id","severity",'
+            '"reason","suggested_resolution"}],"recommendation":"accept|revise"}',
+            "",
+            "```json",
+            json.dumps(
+                {"section": section, "spine": state.get("_spine") or {}},
+                ensure_ascii=False,
+                indent=2,
+            ),
+            "```",
+        ]
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        paths.append(path)
+    return paths
+
+
+def _write_domain_adjudication_briefs(run_dir: Path, state: dict) -> list[Path]:
+    paths: list[Path] = []
+    challenges = state.get("_domain_challenges") or {}
+    for index, section_id in enumerate(state.get("_section_order") or []):
+        section = (state.get("sections") or {}).get(section_id)
+        if not isinstance(section, dict):
+            continue
+        path = Path(run_dir) / "briefs" / f"domain_adjudication_{index:02d}_{section_id}.md"
+        lines = [
+            f"# Domain adjudicator — {section.get('title', section_id)}",
+            "",
+            "裁决写手与反方：只接受有事实依据的问题，输出本域最终 section。",
+            "可删除或定向修改 claim，但不得改写任何 fact 值、单位、口径或 aggregation；",
+            "所有未被挑战的 claim 必须原样保留。",
+            "",
+            '返回 JSON only: {"section_id","title","claims":[...],'
+            '"spine_callbacks":[...],"adjudication_notes":[...]}',
+            "",
+            "```json",
+            json.dumps(
+                {
+                    "section": section,
+                    "challenge": challenges.get(section_id) or {},
+                    "spine": state.get("_spine") or {},
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            "```",
+        ]
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        paths.append(path)
+    return paths
 
 
 def _tables_catalog(result_tables: object) -> dict[str, list[str]]:
@@ -248,7 +686,10 @@ def _tables_catalog(result_tables: object) -> dict[str, list[str]]:
 
 
 def _write_fan_briefs(
-    run_dir: Path, capped_slices: list[dict], tables_catalog: dict[str, list[str]]
+    run_dir: Path,
+    capped_slices: list[dict],
+    tables_catalog: dict[str, list[str]],
+    platform_semantics: dict | None = None,
 ) -> list[Path]:
     paths: list[Path] = []
     briefs = run_dir / "briefs"
@@ -263,6 +704,7 @@ def _write_fan_briefs(
             # + columns from; the same catalog is shared by every section (the gate imposes
             # no per-section allowlist; relevance is governed by supports_claim discipline).
             "available_tables": tables_catalog,
+            "platform_semantics": platform_semantics or {},
         }
         body = [
             f"# Fan brief — {s['title']}",
@@ -278,6 +720,7 @@ def _write_fan_briefs(
             '   "entity_refs":[],"confidence":"强|中|弱"}',
             "每个 number_token 的 fact_id 必须精确等于下方某个 facts[].fact_id;",
             "没有 fact_id 的 fact 是标签(非数值),不能被 number_token 绑定。",
+            "platform_semantics 仅作平台定义参考；不得据此改映射、改数或猜测未审核绑定。",
             "",
             "curated_views(每域至少给 1 表 + 1 图,无上限:本域有几个值得展示的角度就给几个,"
             "把数据讲透;仅当本域 available_tables 里确无可画的表时,才可省略图并在对应 claim 里"
@@ -327,7 +770,12 @@ def _claim_summaries(state: dict) -> list[dict]:
                     "section_id": claim.get("section_id", section.get("section_id", sid)),
                     "claim_kind": claim.get("claim_kind", ""),
                     "sentence": claim.get("sentence", ""),
+                    "number_tokens": list(claim.get("number_tokens") or []),
+                    "entity_refs": list(claim.get("entity_refs") or []),
                     "confidence": claim.get("confidence", ""),
+                    "causal_link": claim.get("causal_link"),
+                    "next_test": claim.get("next_test"),
+                    "spine_ref": claim.get("spine_ref"),
                 }
             )
     return out
@@ -347,11 +795,13 @@ def _write_synth_brief(run_dir: Path, state: dict) -> None:
         "引擎回填,你绝不写裸数字),并给出 headline / mechanism / cannot_say / spine_final。",
         "",
         'Return JSON only: {"headline","first_screen":{"spine":[…],"panel":[…],"actions":[…]},'
-        '"mechanism":[…],"cannot_say":[…],"spine_final":{…}}.',
+        '"action_cards":[…],"mechanism":[…],"cannot_say":[…],"spine_final":{…}}.',
         "spine/panel 每条须是 claim-like dict(可直接复用下方某条 claim,或组合其 claim_id);",
         "复用/新写的 claim 都遵守同一数字纪律:sentence 仅含 {tN} 占位、绝不含任何裸数字,",
         "且句中出现的每个 {tN} 必须与 number_tokens 里声明的 token_id 精确一一对应(多一个或少一个都会被判 MAGNITUDE_UNBOUND 而拒绝);",
-        "actions 是纯文字行动建议,同样不得含裸数字/金额/百分比;cannot_say 是本次数据答不了的问题。",
+        "actions 是首屏纯文字摘要,不得含业务数字;action_cards 必须显式给出(允许空数组),",
+        "每张行动卡绑定 primary_fact_id、supporting_claim_ids、负责人、步骤、许可与停止规则;",
+        "行动卡中的业务数字也只能用 {tN}/number_tokens。cannot_say 是本次数据答不了的问题。",
         "",
         "mechanism 是「跨模块因果主线」:把不同版块的 claim 按因果顺序串成一条链,回答「为什么会这样」。",
         "每个元素形如 {\"claim_id\":\"<下方某条 claim_id>\",\"link\":\"<可选的纯文字连接词,如 因此/结果/根源在于>\"};",
@@ -367,6 +817,89 @@ def _write_synth_brief(run_dir: Path, state: dict) -> None:
     (run_dir / "briefs" / "synth.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def _write_visual_curation_brief(run_dir: Path, state: dict) -> Path:
+    """Ask a dedicated curator for view specs only, after claims are locked."""
+    path = Path(run_dir) / "briefs" / "visual_curation.md"
+    tables = _load_result_tables(run_dir)
+    lines = [
+        "# Independent visual curation",
+        "",
+        "你只负责把已经裁决的 claim 配成最合适的表或图，不改 claim、不写新结论。",
+        "每个视图必须绑定 supports_claim 和真实 source.table；columns 只能来自表目录。",
+        "仅选列、排序、TopN，不聚合、不重算。列名使用确定性字段标签；字段解释不直接铺在 HTML 中。",
+        "没有增量阅读价值的视图不要放，避免把原始数据整表倾倒给用户。",
+        "",
+        '返回 JSON only: {"sections":[{"section_id","curated_views":[...]}]}',
+        "",
+        "```json",
+        json.dumps(
+            {
+                "sections": list((state.get("sections") or {}).values()),
+                "available_tables": _tables_catalog(tables),
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        "```",
+    ]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+def _validate_sidecar_snapshot(results: dict, facts_json: dict) -> None:
+    results_versioned = "canonical_version" in results
+    facts_versioned = "canonical_version" in facts_json
+    if not results_versioned and not facts_versioned:
+        return
+    if results_versioned != facts_versioned:
+        raise ValueError("sidecar metric snapshot mismatch: canonical_version")
+    for field in (
+        "canonical_version",
+        "facts_hash",
+        "registry_hash",
+        "metric_mapping",
+        "platform_semantics",
+    ):
+        if results.get(field) != facts_json.get(field):
+            raise ValueError(f"sidecar metric snapshot mismatch: {field}")
+
+
+def _write_run_manifest(
+    run_dir: Path,
+    *,
+    results_hash: str,
+    facts_json: dict,
+    result_tables: dict,
+    report_name: str,
+) -> dict:
+    from xhs_ceramics_analytics.reporting.frozen_narrative import (
+        narrative_schema_version,
+        renderer_version,
+        result_tables_hash,
+    )
+
+    snapshot = {
+        "facts_hash": facts_json.get("facts_hash"),
+        "results_hash": results_hash,
+        "result_tables_hash": result_tables_hash(result_tables),
+        "registry_hash": facts_json.get("registry_hash"),
+        "contract_hash": narrative_schema_version(),
+        "renderer_version": renderer_version(),
+    }
+    manifest = {
+        "workflow_version": QUALITY_WORKFLOW_VERSION,
+        "run_id": hashlib.sha256(
+            f"{report_name}:{snapshot['facts_hash']}:{snapshot['results_hash']}".encode("utf-8")
+        ).hexdigest()[:20],
+        "report_name": report_name,
+        "authorization": {"decision": "authorized", "source": "user"},
+        "snapshot": snapshot,
+        "delivery": {"surface": "single_html"},
+    }
+    _write_json_atomic(Path(run_dir) / "run_manifest.json", manifest)
+    return manifest
+
+
 def prepare_run(
     run_dir,
     *,
@@ -375,11 +908,56 @@ def prepare_run(
     report_name: str,
     project_root=None,
     force: bool = False,
+    multi_agent_authorized: bool = False,
+    multi_agent_declined: bool = False,
+    multi_agent_unavailable: bool = False,
+    workflow_version: str | None = None,
 ) -> dict:
     """Initialize a run directory: state.json + seed/fan briefs + domain_slices.json.
 
     Raises FileExistsError if an unfinished run already exists and force is False.
     """
+    _validate_sidecar_snapshot(results, facts_json)
+    versioned_sidecars = "canonical_version" in results and "canonical_version" in facts_json
+    authorization_flags = sum(
+        bool(flag)
+        for flag in (
+            multi_agent_authorized,
+            multi_agent_declined,
+            multi_agent_unavailable,
+        )
+    )
+    if authorization_flags > 1:
+        raise ValueError("multi-agent authorization state must be unambiguous")
+    if workflow_version not in {
+        None,
+        QUALITY_WORKFLOW_VERSION,
+        DETERMINISTIC_WORKFLOW_VERSION,
+        LEGACY_WORKFLOW_VERSION,
+    }:
+        raise ValueError(f"unknown workflow_version {workflow_version!r}")
+    selected_workflow = workflow_version
+    if selected_workflow is None:
+        if versioned_sidecars and (multi_agent_declined or multi_agent_unavailable):
+            selected_workflow = DETERMINISTIC_WORKFLOW_VERSION
+        elif versioned_sidecars:
+            selected_workflow = QUALITY_WORKFLOW_VERSION
+        else:
+            selected_workflow = LEGACY_WORKFLOW_VERSION
+    quality_workflow = selected_workflow == QUALITY_WORKFLOW_VERSION
+    deterministic_workflow = selected_workflow == DETERMINISTIC_WORKFLOW_VERSION
+    if quality_workflow and not versioned_sidecars:
+        raise ValueError("quality-v2 requires versioned facts/results sidecars")
+    if quality_workflow and not multi_agent_authorized:
+        raise ValueError(
+            "explicit multi-agent authorization is required for a versioned quality run"
+        )
+    if deterministic_workflow and not versioned_sidecars:
+        raise ValueError("deterministic-v2 requires versioned facts/results sidecars")
+    if deterministic_workflow and not (multi_agent_declined or multi_agent_unavailable):
+        raise ValueError(
+            "an explicit decline or unavailable-host reason is required for deterministic-v2"
+        )
     run_dir = Path(run_dir)
     existing = _load_state(run_dir)
     if existing is not None and existing.get("stage") not in _TERMINAL_STAGES and not force:
@@ -390,7 +968,10 @@ def prepare_run(
     (run_dir / "briefs").mkdir(parents=True, exist_ok=True)
 
     slices = list(results.get("domain_slices", []))
-    capped, merged = _cap_slices(slices)
+    if selected_workflow == LEGACY_WORKFLOW_VERSION:
+        capped, merged = _cap_slices(slices)
+    else:
+        capped, merged = list(slices), []
 
     (run_dir / "domain_slices.json").write_text(
         json.dumps(
@@ -398,6 +979,7 @@ def prepare_run(
                 "capped": capped,
                 "merged_sections": merged,
                 "blocked_modules": list(results.get("blocked_modules", [])),
+                "platform_semantics": results.get("platform_semantics") or {},
             },
             ensure_ascii=False,
             indent=2,
@@ -412,14 +994,80 @@ def prepare_run(
     tables = results.get("result_tables")
     if not isinstance(tables, dict):
         tables = results.get("tables") if isinstance(results.get("tables"), dict) else {}
+    results_hash = _stable_hash(results)
 
-    _write_seed_brief(run_dir, capped, report_name)
-    _write_fan_briefs(run_dir, capped, _tables_catalog(tables))
+    frozen_cache = None
+    cache_status = "not_applicable"
+    if quality_workflow:
+        from xhs_ceramics_analytics.reporting.frozen_narrative import (
+            is_cache_hit,
+            load_frozen,
+        )
+
+        cache_path = state_dir(project_root) / "frozen_narrative.json"
+        cache_status = "miss"
+        try:
+            candidate = load_frozen(cache_path)
+        except ValueError:
+            cache_status = "invalid"
+        else:
+            if is_cache_hit(
+                candidate,
+                facts_json.get("facts_hash", ""),
+                results_hash=results_hash,
+                result_tables=tables,
+            ):
+                cache_report = _run_gate(
+                    candidate.get("narrative_bundle") or {},
+                    facts_json,
+                    tables,
+                )
+                if cache_report.status == "PASS":
+                    frozen_cache = candidate
+                    cache_status = "hit"
+                else:
+                    cache_status = "invalid"
+
+    if quality_workflow and frozen_cache is None:
+        seed_briefs = _write_spine_candidate_briefs(
+            run_dir, capped, facts_json, report_name
+        )
+        fan_briefs: list[Path] = []
+    elif quality_workflow:
+        seed_briefs = []
+        fan_briefs = []
+    else:
+        _write_seed_brief(run_dir, capped, report_name)
+        seed_briefs = [run_dir / "briefs" / "seed.md"]
+        fan_briefs = _write_fan_briefs(
+            run_dir,
+            capped,
+            _tables_catalog(tables),
+            results.get("platform_semantics") or {},
+        )
 
     state = {
-        "stage": "seed",
+        "stage": "cache_hit" if frozen_cache is not None else "seed",
+        "workflow_version": selected_workflow,
+        "authorization_decision": (
+            "authorized"
+            if quality_workflow
+            else (
+                "denied"
+                if multi_agent_declined
+                else "unsupported" if multi_agent_unavailable else None
+            )
+        ),
         "report_name": report_name,
+        "canonical_version": facts_json.get("canonical_version"),
         "facts_hash": facts_json.get("facts_hash", ""),
+        "results_hash": results_hash,
+        "registry_hash": facts_json.get("registry_hash"),
+        "metric_mapping_status": (
+            facts_json.get("metric_mapping", {}).get("status")
+            if isinstance(facts_json.get("metric_mapping"), dict)
+            else None
+        ),
         "merged_sections": merged,
         "_section_order": [_slug(s["title"]) for s in capped],
         "sections": {},
@@ -427,6 +1075,38 @@ def prepare_run(
         "degradation_reason": None,
         "project_root": str(project_root) if project_root else None,
     }
+    _set_stage_tasks(
+        state,
+        "seed",
+        [
+            {
+                "brief": path,
+                "role": "spine_candidate" if quality_workflow else "seed",
+                "candidate_id": path.stem.removeprefix("spine_") if quality_workflow else None,
+            }
+            for path in seed_briefs
+        ],
+    )
+    state["_fan_tasks"] = [
+        {
+            "brief": str(path),
+            "section_id": _slug(capped[idx]["title"]),
+        }
+        for idx, path in enumerate(fan_briefs)
+    ]
+    if quality_workflow:
+        manifest = _write_run_manifest(
+            run_dir,
+            results_hash=results_hash,
+            facts_json=facts_json,
+            result_tables=tables,
+            report_name=report_name,
+        )
+        state["run_id"] = manifest["run_id"]
+        state["cache_status"] = cache_status
+        if frozen_cache is not None:
+            state["_bundle"] = frozen_cache["narrative_bundle"]
+            _set_stage_tasks(state, "cache_hit", [])
     _write_state(run_dir, state)
     # persist facts.json alongside state for downstream gate/fallback
     (run_dir / "facts.json").write_text(
@@ -437,6 +1117,13 @@ def prepare_run(
     (run_dir / _RESULT_TABLES_FILE).write_text(
         json.dumps(tables, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+    if frozen_cache is not None:
+        return finalize_narrative(
+            run_dir,
+            project_root=project_root,
+            cache_hit=True,
+            write_cache=False,
+        )
     return state
 
 
@@ -469,12 +1156,91 @@ _FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL)
 
 _EXPECTED_STATUS = {
     "seed": {"seed"},
+    "spine_adjudication": {"spine_adjudication"},
     "fan": {"fan"},
+    "domain_challenge": {"domain_challenge"},
+    "domain_adjudication": {"domain_adjudication"},
     "synth": {"synth"},
+    "visual_curation": {"visual_curation"},
     "patch": {"patch"},
     "review": {"review"},
     "continuity": {"continuity"},
+    "merchant_review": {"merchant_review"},
+    "merchant_patch": {"merchant_patch"},
 }
+
+_QUALITY_STAGE_SCHEMAS = {
+    "seed": "spine_candidate.json",
+    "spine_adjudication": "spine_adjudication.json",
+    "fan": "section_bundle.json",
+    "domain_challenge": "challenge_report.json",
+    "domain_adjudication": "domain_adjudication.json",
+    "synth": "synthesis_output.json",
+    "visual_curation": "visual_curation.json",
+    "review": "review_verdict.json",
+    "continuity": "continuity_edit.json",
+    "merchant_review": "merchant_final_review.json",
+}
+_QUALITY_REVISION_STAGES = {"patch", "merchant_patch"}
+
+
+@lru_cache(maxsize=1)
+def _quality_schema_registry() -> Registry:
+    registry = Registry()
+    for schema_path in sorted(_SCHEMA_DIR.glob("*.json")):
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        schema["$id"] = schema_path.resolve().as_uri()
+        registry = registry.with_resource(
+            schema["$id"], Resource.from_contents(schema)
+        )
+    return registry
+
+
+@lru_cache(maxsize=None)
+def _quality_schema_validator(schema_name: str) -> Draft202012Validator:
+    schema_path = (_SCHEMA_DIR / schema_name).resolve()
+    if not schema_path.is_file():
+        raise FileNotFoundError(f"quality workflow schema is missing: {schema_path}")
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    schema["$id"] = schema_path.as_uri()
+    return Draft202012Validator(schema, registry=_quality_schema_registry())
+
+
+def _validate_against_quality_schema(payload, schema_name: str, *, location: str = "$") -> None:
+    errors = sorted(
+        _quality_schema_validator(schema_name).iter_errors(payload),
+        key=lambda error: (
+            tuple(str(part) for part in error.absolute_path),
+            tuple(str(part) for part in error.absolute_schema_path),
+        ),
+    )
+    if errors:
+        error = errors[0]
+        suffix = "".join(
+            f"[{part}]" if isinstance(part, int) else f".{part}"
+            for part in error.absolute_path
+        )
+        raise ValueError(
+            f"{schema_name} validation failed at {location}{suffix}: {error.message}"
+        )
+
+
+def _validate_quality_stage_payload(stage: str, payload) -> None:
+    if stage in _QUALITY_REVISION_STAGES:
+        if not isinstance(payload, list):
+            raise ValueError(
+                "targeted_revision.json validation failed at $: "
+                f"{stage} output must be a targeted revision array"
+            )
+        for index, revision in enumerate(payload):
+            _validate_against_quality_schema(
+                revision, "targeted_revision.json", location=f"$[{index}]"
+            )
+        return
+
+    schema_name = _QUALITY_STAGE_SCHEMAS.get(stage)
+    if schema_name is not None:
+        _validate_against_quality_schema(payload, schema_name)
 
 
 def _scan_balanced(text: str):
@@ -547,12 +1313,28 @@ def _record_section(state: dict, section: dict) -> None:
     callbacks = section.get("spine_callbacks")
     if isinstance(callbacks, (list, tuple)):
         recorded["spine_callbacks"] = list(callbacks)
+    for key in (
+        "spine_dissent",
+        "adjudication_notes",
+        "table_ref",
+        "chart_ref",
+        "action_cards",
+    ):
+        if key in section:
+            recorded[key] = section[key]
     state["sections"][section_id] = recorded
 
 
 # Bundle-level synthesis the SYNTH agent assembles once, across all sections (spec
 # §First screen). Captured into state['_synth'] and re-emitted by _bundle_from_state.
-_BUNDLE_LEVEL_KEYS = ("first_screen", "headline", "cannot_say", "spine_final", "mechanism")
+_BUNDLE_LEVEL_KEYS = (
+    "first_screen",
+    "headline",
+    "action_cards",
+    "cannot_say",
+    "spine_final",
+    "mechanism",
+)
 # What marks a synth dict as a section payload (vs a pure first-screen payload) — used
 # so a bare {first_screen, headline, ...} is NOT mis-recorded as a bogus section.
 _SECTION_MARKERS = ("section_id", "claims", "body", "curated_views")
@@ -590,6 +1372,11 @@ def _ingest_synth(state: dict, text: str) -> None:
             _record_section(state, section)
         return
     if isinstance(parsed, dict):
+        if (
+            state.get("workflow_version") == QUALITY_WORKFLOW_VERSION
+            and not isinstance(parsed.get("action_cards"), list)
+        ):
+            raise ValueError("quality synth output must include action_cards as a list")
         _capture_bundle_fields(state, parsed)
         sections = parsed.get("sections")
         if isinstance(sections, list):
@@ -601,7 +1388,156 @@ def _ingest_synth(state: dict, text: str) -> None:
     raise ValueError("ingested JSON is neither an object nor a list of sections")
 
 
-def ingest_output(run_dir, *, stage: str, source=None, text=None, section_id=None) -> dict:
+def _merge_section_fields(state: dict, section_patch: dict) -> None:
+    if not isinstance(section_patch, dict):
+        return
+    raw_id = section_patch.get("section_id") or section_patch.get("title")
+    section_id = _slug(str(raw_id or "section"))
+    existing = (state.get("sections") or {}).get(section_id)
+    if not isinstance(existing, dict):
+        _record_section(state, section_patch)
+        return
+    allowed = {
+        "title",
+        "body",
+        "claims",
+        "curated_views",
+        "spine_callbacks",
+        "spine_dissent",
+        "adjudication_notes",
+        "table_ref",
+        "chart_ref",
+        "action_cards",
+    }
+    state["sections"][section_id] = {
+        **existing,
+        **{key: value for key, value in section_patch.items() if key in allowed},
+        "section_id": section_id,
+    }
+
+
+def _ingest_quality_stage(
+    run_dir: Path,
+    state: dict,
+    *,
+    stage: str,
+    text: str,
+    source=None,
+    section_id=None,
+    lens=None,
+    task_id=None,
+) -> dict | None:
+    """Handle quality-v2 stages; return ``None`` for legacy/shared stages."""
+    if state.get("workflow_version") != QUALITY_WORKFLOW_VERSION:
+        return None
+    if stage not in {
+        "seed",
+        "spine_adjudication",
+        "domain_challenge",
+        "domain_adjudication",
+        "visual_curation",
+        "patch",
+        "merchant_review",
+        "merchant_patch",
+    }:
+        return None
+
+    parsed = extract_json(text)
+    parsed_target_id = None
+    if stage == "patch" and isinstance(parsed, list) and len(parsed) == 1:
+        item = parsed[0]
+        if isinstance(item, dict):
+            parsed_target_id = item.get("target_id")
+    task = _task_for_ingest(
+        state,
+        stage,
+        source=source,
+        section_id=section_id or (parsed.get("section_id") if isinstance(parsed, dict) else None),
+        lens=lens,
+        target_id=parsed_target_id,
+        task_id=task_id,
+    )
+    if task is None:
+        raise ValueError(f"quality stage {stage!r} output does not identify one pending task")
+
+    if stage == "seed":
+        if not isinstance(parsed, dict) or not isinstance(parsed.get("spine_brief"), dict):
+            raise ValueError("spine candidate output must include spine_brief")
+        candidate_id = str(parsed.get("candidate_id") or task.get("candidate_id") or task["task_id"])
+        state.setdefault("_spine_candidates", {})[candidate_id] = {
+            **parsed,
+            "candidate_id": candidate_id,
+        }
+    elif stage == "spine_adjudication":
+        if not isinstance(parsed, dict) or not isinstance(parsed.get("spine_brief"), dict):
+            raise ValueError("spine adjudication output must include spine_brief")
+        state["_spine"] = parsed
+    elif stage == "domain_challenge":
+        if not isinstance(parsed, dict) or not parsed.get("section_id"):
+            raise ValueError("domain challenge output must include section_id")
+        state.setdefault("_domain_challenges", {})[_slug(str(parsed["section_id"]))] = parsed
+    elif stage == "domain_adjudication":
+        if not isinstance(parsed, dict):
+            raise ValueError("domain adjudication output must be an object")
+        _record_section(state, parsed)
+    elif stage == "visual_curation":
+        if not isinstance(parsed, dict) or not isinstance(parsed.get("sections"), list):
+            raise ValueError("visual curation output must include sections")
+        for section_patch in parsed["sections"]:
+            if isinstance(section_patch, dict):
+                _merge_section_fields(
+                    state,
+                    {
+                        "section_id": section_patch.get("section_id"),
+                        "curated_views": list(section_patch.get("curated_views") or []),
+                    },
+                )
+    elif stage == "patch":
+        if not isinstance(parsed, list) or len(parsed) != 1:
+            raise ValueError(
+                "quality patch output must be a targeted revision array with exactly one item"
+            )
+        patch_review = state.get("_patch_review") or {}
+        state["_bundle"] = _apply_merchant_revisions(
+            state.get("_bundle") or _bundle_from_state(state),
+            parsed,
+            patch_review,
+            expected_round=int(state.get("_patch_round") or 0),
+        )
+    elif stage == "merchant_review":
+        if not isinstance(parsed, dict) or parsed.get("verdict") not in {"pass", "revise"}:
+            raise ValueError("merchant review verdict must be pass or revise")
+        _validate_merchant_review_payload(
+            state.get("_bundle") or _bundle_from_state(state),
+            parsed,
+        )
+        state["_merchant_review"] = parsed
+    elif stage == "merchant_patch":
+        if not isinstance(parsed, list):
+            raise ValueError("merchant patch output must be a targeted revision array")
+        state["_bundle"] = _apply_merchant_revisions(
+            state.get("_bundle") or _bundle_from_state(state),
+            parsed,
+            state.get("_merchant_review") or {},
+            expected_round=int(state.get("_merchant_revision_rounds") or 0),
+        )
+
+    _complete_task(state, task)
+    state.setdefault("history", []).append(f"ingest:{stage}")
+    _write_state(run_dir, state)
+    return state
+
+
+def ingest_output(
+    run_dir,
+    *,
+    stage: str,
+    source=None,
+    text=None,
+    section_id=None,
+    lens=None,
+    task_id=None,
+) -> dict:
     """Ingest a sub-agent result for the given stage, guarding stage order."""
     run_dir = Path(run_dir)
     state = _load_state(run_dir)
@@ -621,6 +1557,22 @@ def ingest_output(run_dir, *, stage: str, source=None, text=None, section_id=Non
             raise ValueError("provide either source or text")
         text = Path(source).read_text(encoding="utf-8")
 
+    if state.get("workflow_version") == QUALITY_WORKFLOW_VERSION:
+        _validate_quality_stage_payload(stage, extract_json(text))
+
+    quality_state = _ingest_quality_stage(
+        run_dir,
+        state,
+        stage=stage,
+        text=text,
+        source=source,
+        section_id=section_id,
+        lens=lens,
+        task_id=task_id,
+    )
+    if quality_state is not None:
+        return quality_state
+
     if stage == "review":
         # Reviewer verdicts, not sections. Parse tolerantly — garbled/unparseable
         # reviewer output records nothing (never raises); the advance step then
@@ -629,7 +1581,22 @@ def ingest_output(run_dir, *, stage: str, source=None, text=None, section_id=Non
             parsed = extract_json(text)
         except ValueError:
             parsed = None
-        _ingest_review_verdicts(state, parsed)
+        parsed_section = parsed.get("section_id") if isinstance(parsed, dict) else None
+        parsed_lens = parsed.get("lens") if isinstance(parsed, dict) else None
+        task = _task_for_ingest(
+            state,
+            stage,
+            source=source,
+            section_id=section_id or parsed_section,
+            lens=lens or parsed_lens,
+            task_id=task_id,
+        )
+        if task is None and (task_id not in (None, "") or source is not None):
+            raise ValueError("review output does not identify one pending task")
+        ingested_keys = _ingest_review_verdicts(state, parsed)
+        expected_keys = set(task.get("view_keys") or []) if task is not None else set()
+        if task is not None and expected_keys and expected_keys.issubset(ingested_keys):
+            _complete_task(state, task)
         state.setdefault("history", []).append("ingest:review")
         _write_state(run_dir, state)
         return state
@@ -637,12 +1604,73 @@ def ingest_output(run_dir, *, stage: str, source=None, text=None, section_id=Non
     if stage == "synth":
         # SYNTH assembles the bundle-level first screen (+ may re-emit sections). Handled
         # separately so a pure first-screen payload is captured, not recorded as a section.
+        task = _task_for_ingest(state, stage, source=source, task_id=task_id)
+        if _stage_tasks(state, stage) and task is None:
+            raise ValueError("synth output does not identify one pending task")
         _ingest_synth(state, text)
+        _complete_task(state, task)
         state.setdefault("history", []).append("ingest:synth")
         _write_state(run_dir, state)
         return state
 
     parsed = extract_json(text)
+
+    if stage == "continuity":
+        if not isinstance(parsed, dict) or not isinstance(parsed.get("edits"), list):
+            raise ValueError("continuity output must be an object with an edits list")
+        state["_continuity_edits"] = [
+            edit for edit in parsed["edits"] if isinstance(edit, dict)
+        ]
+        task = _task_for_ingest(state, stage, source=source, task_id=task_id)
+        if _stage_tasks(state, stage) and task is None:
+            raise ValueError("continuity output does not identify one pending task")
+        _complete_task(state, task)
+        state.setdefault("history", []).append("ingest:continuity")
+        _write_state(run_dir, state)
+        return state
+
+    parsed_section = None
+    if isinstance(parsed, dict):
+        parsed_section = parsed.get("section_id")
+        if parsed_section is None and isinstance(parsed.get("sections"), list):
+            section_ids = {
+                item.get("section_id")
+                for item in parsed["sections"]
+                if isinstance(item, dict) and item.get("section_id")
+            }
+            if len(section_ids) == 1:
+                parsed_section = next(iter(section_ids))
+    task = _task_for_ingest(
+        state,
+        stage,
+        source=source,
+        section_id=(section_id or parsed_section) if stage == "fan" else section_id,
+        task_id=task_id,
+    )
+    if _stage_tasks(state, stage) and task is None:
+        raise ValueError(f"{stage} output does not identify one pending task")
+
+    if stage == "patch":
+        patch_bundle = parsed.get("bundle") if isinstance(parsed, dict) else None
+        if isinstance(patch_bundle, dict):
+            _capture_bundle_fields(state, patch_bundle)
+            for section_patch in patch_bundle.get("sections") or []:
+                _merge_section_fields(state, section_patch)
+        elif isinstance(parsed, dict) and isinstance(parsed.get("sections"), list):
+            _capture_bundle_fields(state, parsed)
+            for section_patch in parsed["sections"]:
+                _merge_section_fields(state, section_patch)
+        elif isinstance(parsed, dict):
+            _merge_section_fields(state, parsed)
+        elif isinstance(parsed, list):
+            for section_patch in parsed:
+                _merge_section_fields(state, section_patch)
+        else:
+            raise ValueError("patch output must be a bundle, section object, or section list")
+        _complete_task(state, task)
+        state.setdefault("history", []).append("ingest:patch")
+        _write_state(run_dir, state)
+        return state
 
     if isinstance(parsed, dict) and "sections" in parsed:
         for section in parsed["sections"]:
@@ -657,6 +1685,7 @@ def ingest_output(run_dir, *, stage: str, source=None, text=None, section_id=Non
     else:
         raise ValueError("ingested JSON is neither an object nor a list of sections")
 
+    _complete_task(state, task)
     state.setdefault("history", []).append(f"ingest:{stage}")
     _write_state(run_dir, state)
     return state
@@ -675,7 +1704,10 @@ def _bundle_from_state(state: dict) -> dict:
     ordered = [sections[sid] for sid in order if sid in sections]
     ordered_ids = set(order)
     extras = [section for sid, section in sections.items() if sid not in ordered_ids]
-    bundle: dict = {"sections": ordered + extras}
+    bundle: dict = {
+        "facts_hash": state.get("facts_hash", ""),
+        "sections": ordered + extras,
+    }
     # Fold in the synth agent's bundle-level synthesis (first_screen / headline /
     # cannot_say / spine_final). Only keys actually captured are added, so a prose-only
     # or pre-synth run yields exactly {"sections": [...]} as before (backward compatible).
@@ -683,6 +1715,13 @@ def _bundle_from_state(state: dict) -> dict:
     for key in _BUNDLE_LEVEL_KEYS:
         if key in synth:
             bundle[key] = synth[key]
+    if "spine_final" not in bundle:
+        spine = state.get("_spine") or {}
+        spine_brief = spine.get("spine_brief") if isinstance(spine, dict) else {}
+        if isinstance(spine_brief, dict) and spine_brief.get("decomposition_backbone") is not None:
+            bundle["spine_final"] = {
+                "backbone": list(spine_brief.get("decomposition_backbone") or [])
+            }
     return bundle
 
 
@@ -690,13 +1729,13 @@ def _bundle_from_state(state: dict) -> dict:
 
 
 def _view_key(section_id, view, idx: int) -> str:
-    """Stable identity for one curated view: its ``view_id`` when present, else a
-    positional ``{section_id}#{idx}`` fallback. Used to key reviewer verdicts."""
+    """Stable section-scoped identity for one curated view."""
+    section = str(section_id or "section")
     if isinstance(view, dict):
         vid = view.get("view_id")
         if isinstance(vid, str) and vid.strip():
-            return vid.strip()
-    return f"{section_id}#{idx}"
+            return f"{section}::{vid.strip()}"
+    return f"{section}::#{idx}"
 
 
 def _iter_curated_views(bundle):
@@ -743,26 +1782,78 @@ def _iter_verdict_items(parsed):
                 yield item
 
 
-def _ingest_review_verdicts(state: dict, parsed) -> None:
-    """Accumulate one reviewer's verdicts into ``state['_reviews']`` (view_key →
-    list[str]) and their reasons into ``state['_review_reasons']``. Never raises —
-    entries lacking a view id or verdict string are skipped."""
+def _ingest_review_verdicts(state: dict, parsed) -> set[str]:
+    """Upsert verdicts by section + view + lens, making retries idempotent."""
     reviews = state.setdefault("_reviews", {})
     reasons = state.setdefault("_review_reasons", {})
+    ingested: set[str] = set()
+    default_section = parsed.get("section_id") if isinstance(parsed, dict) else None
+    default_lens = parsed.get("lens") if isinstance(parsed, dict) else None
     for item in _iter_verdict_items(parsed):
-        key = item.get("view_id") or item.get("view_key")
+        raw_key = item.get("view_id") or item.get("view_key")
+        section_id = item.get("section_id") or default_section
+        lens = item.get("lens") or default_lens
         verdict = item.get("verdict")
-        if not (isinstance(key, str) and key):
+        if not (isinstance(raw_key, str) and raw_key and section_id and lens):
             continue
-        if not isinstance(verdict, str) or not verdict.strip():
+        normalized_verdict = verdict.strip().lower() if isinstance(verdict, str) else ""
+        if normalized_verdict not in _KNOWN_VERDICTS:
             continue
-        reviews.setdefault(key, []).append(verdict)
+        prefix = f"{section_id}::"
+        key = raw_key if raw_key.startswith(prefix) else f"{prefix}{raw_key}"
+        record = {"verdict": normalized_verdict}
         reason = item.get("reason")
         if isinstance(reason, str) and reason.strip():
-            reasons.setdefault(key, []).append(reason.strip())
+            record["reason"] = reason.strip()
+            reasons.setdefault(key, {})[str(lens)] = reason.strip()
+        reviews.setdefault(key, {})[str(lens)] = record
+        ingested.add(key)
+    return ingested
 
 
-def _resolve_section_views(section_id, views, reviews: dict, patch_rounds: int):
+def _review_verdict_values(value) -> list[str]:
+    if isinstance(value, dict):
+        return [
+            record.get("verdict")
+            for record in value.values()
+            if isinstance(record, dict) and isinstance(record.get("verdict"), str)
+        ]
+    if isinstance(value, (list, tuple)):
+        return [verdict for verdict in value if isinstance(verdict, str)]
+    return []
+
+
+def _quality_review_action(value, *, patch_rounds: int) -> str:
+    """Resolve quality-v2 lenses by blocker semantics instead of majority vote."""
+    if not isinstance(value, dict):
+        return "drop"
+    verdicts = {
+        str(lens): str(record.get("verdict") or "").strip().lower()
+        for lens, record in value.items()
+        if isinstance(record, dict)
+    }
+    if set(verdicts) != set(_QUALITY_REVIEW_LENS_NAMES.values()):
+        return "drop"
+    evidence = verdicts["evidence_semantics"]
+    merchant = verdicts["merchant_decision"]
+    editorial = verdicts["editorial_visual"]
+    if evidence == "drop" or editorial == "drop":
+        return "drop"
+    if merchant == "drop":
+        return "drop"
+    if "revise" in {evidence, merchant, editorial}:
+        return "drop" if patch_rounds >= MAX_REVIEW_PATCH_ROUNDS else "patch"
+    return "keep"
+
+
+def _resolve_section_views(
+    section_id,
+    views,
+    reviews: dict,
+    patch_rounds: int,
+    *,
+    quality_workflow: bool = False,
+):
     """Decide each view's fate for one section. Returns ``(kept_views, patched_keys)``.
 
     ``kept_views`` retains keep AND patch views (a patch view is re-authored in
@@ -774,7 +1865,14 @@ def _resolve_section_views(section_id, views, reviews: dict, patch_rounds: int):
         return kept, patched
     for idx, view in enumerate(views):
         key = _view_key(section_id, view, idx)
-        action = _view_action(reviews.get(key, []), patch_rounds=patch_rounds)
+        review_value = reviews.get(key, {})
+        action = (
+            _quality_review_action(review_value, patch_rounds=patch_rounds)
+            if quality_workflow
+            else _view_action(
+                _review_verdict_values(review_value), patch_rounds=patch_rounds
+            )
+        )
         if action == "drop":
             continue
         kept.append(view)
@@ -783,7 +1881,13 @@ def _resolve_section_views(section_id, views, reviews: dict, patch_rounds: int):
     return kept, patched
 
 
-def _sync_recorded_curated_views(state: dict, reviews: dict, patch_rounds: int) -> None:
+def _sync_recorded_curated_views(
+    state: dict,
+    reviews: dict,
+    patch_rounds: int,
+    *,
+    quality_workflow: bool = False,
+) -> None:
     """Apply the same drop decisions to ``state['sections']`` so a later patch
     rebuild (via :func:`_bundle_from_state`) does not resurrect a dropped view.
     Rebuilds each ``curated_views`` list; never raises."""
@@ -794,18 +1898,28 @@ def _sync_recorded_curated_views(state: dict, reviews: dict, patch_rounds: int) 
         if not isinstance(views, (list, tuple)) or not views:
             continue
         kept, _patched = _resolve_section_views(
-            section.get("section_id", sid), views, reviews, patch_rounds
+            section.get("section_id", sid),
+            views,
+            reviews,
+            patch_rounds,
+            quality_workflow=quality_workflow,
         )
         section["curated_views"] = kept
 
 
-def _write_review_briefs(run_dir: Path, bundle: dict) -> None:
+def _write_review_briefs(run_dir: Path, bundle: dict, *, state: dict | None = None) -> list[Path]:
     """Write one reviewer brief per (domain, lens) — 3 lenses per domain, each
     judging that domain's curated views through its single failure-mode lens. Prose
     + column names only (no numbers — the gate already locked those). Never raises."""
     briefs_dir = run_dir / "briefs"
     briefs_dir.mkdir(parents=True, exist_ok=True)
+    paths: list[Path] = []
+    tasks: list[dict] = []
     by_section: dict = {}
+    quality_workflow = (
+        state is not None
+        and state.get("workflow_version") == QUALITY_WORKFLOW_VERSION
+    )
     for section_id, idx, view in _iter_curated_views(bundle):
         by_section.setdefault(section_id, []).append((idx, view))
     for section_id, views in by_section.items():
@@ -814,7 +1928,7 @@ def _write_review_briefs(run_dir: Path, bundle: dict) -> None:
             v = view if isinstance(view, dict) else {}
             payload_views.append(
                 {
-                    "view_id": _view_key(section_id, view, idx),
+                    "view_id": v.get("view_id") or f"#{idx}",
                     "template": _template_of(v) or "",  # normalize aliases so kind is legible
                     "title": v.get("title", ""),
                     "columns": list(v.get("columns") or []),
@@ -823,7 +1937,28 @@ def _write_review_briefs(run_dir: Path, bundle: dict) -> None:
                     "supports_claim": v.get("supports_claim", ""),
                 }
             )
-        for lens, question in _REVIEW_LENSES:
+        for legacy_lens, question in _REVIEW_LENSES:
+            lens = (
+                _QUALITY_REVIEW_LENS_NAMES[legacy_lens]
+                if quality_workflow
+                else legacy_lens
+            )
+            if quality_workflow:
+                output_contract = (
+                    '{"section_id","lens","verdicts":[{"view_id",'
+                    '"verdict":"keep|revise|drop","reason","blocker_codes":[]}]}'
+                )
+                blocker_guidance = [
+                    "keep 时 blocker_codes 返回 []; revise/drop 时至少返回一个适用 code。",
+                    "可用 code: UNSUPPORTED / SEMANTIC_MISMATCH / NO_DECISION_VALUE / "
+                    "UNREADABLE / WRONG_VISUAL_FORM / RAW_DUMP / DUPLICATE。",
+                ]
+            else:
+                output_contract = (
+                    '{"section_id","lens","verdicts":[{"view_id",'
+                    '"verdict":"keep|revise|drop","reason"}]}'
+                )
+                blocker_guidance = []
             lines = [
                 f"# Review brief — 域『{section_id}』· 视角『{lens}』",
                 "",
@@ -831,7 +1966,8 @@ def _write_review_briefs(run_dir: Path, bundle: dict) -> None:
                 "对下面每个策展视图给出 keep / revise / drop 之一 + 一句理由。",
                 "你只评判价值/可读性/支撑,不能改数字(确定性 gate 已锁定数值)。",
                 "宁可少放视图,也不要堆砌。返回 JSON:",
-                '{"section_id","lens","verdicts":[{"view_id","verdict":"keep|revise|drop","reason"}]}',
+                output_contract,
+                *blocker_guidance,
                 "",
                 "```json",
                 json.dumps(
@@ -843,6 +1979,21 @@ def _write_review_briefs(run_dir: Path, bundle: dict) -> None:
             ]
             path = briefs_dir / f"review_{_slug(str(section_id))}_{_slug(lens)}.md"
             path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            paths.append(path)
+            tasks.append(
+                {
+                    "brief": path,
+                    "section_id": section_id,
+                    "lens": lens,
+                    "role": f"reviewer_{lens}",
+                    "view_keys": [
+                        _view_key(section_id, view, idx) for idx, view in views
+                    ],
+                }
+            )
+    if state is not None:
+        _set_stage_tasks(state, "review", tasks)
+    return paths
 
 
 def _write_review_patch_brief(
@@ -862,13 +2013,18 @@ def _write_review_patch_brief(
         v = view if isinstance(view, dict) else {}
         payload.append(
             {
-                "view_id": key,
+                "view_id": v.get("view_id") or f"#{idx}",
+                "view_key": key,
                 "section_id": section_id,
                 "template": _template_of(v) or "",  # normalize aliases so kind is legible
                 "title": v.get("title", ""),
                 "columns": list(v.get("columns") or []),
                 "supports_claim": v.get("supports_claim", ""),
-                "merged_reasons": list(reasons.get(key, [])),
+                "merged_reasons": (
+                    list(reasons.get(key, {}).values())
+                    if isinstance(reasons.get(key), dict)
+                    else list(reasons.get(key, []))
+                ),
             }
         )
     lines = [
@@ -885,6 +2041,190 @@ def _write_review_patch_brief(
     (briefs_dir / "review_patch.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def _target_object(bundle: dict, target_type: str, target_id: str) -> dict | None:
+    id_field = {"claim": "claim_id", "view": "view_id", "action": "action_id"}.get(
+        target_type
+    )
+    if id_field is None:
+        return None
+    candidates = []
+    for section in bundle.get("sections") or []:
+        if not isinstance(section, dict):
+            continue
+        candidates.extend(section.get("claims") or [])
+        candidates.extend(section.get("curated_views") or [])
+        candidates.extend(section.get("action_cards") or [])
+    first_screen = bundle.get("first_screen") or {}
+    candidates.extend(first_screen.get("spine") or [])
+    candidates.extend(first_screen.get("panel") or [])
+    candidates.extend(bundle.get("action_cards") or [])
+    for item in candidates:
+        if isinstance(item, dict) and str(item.get(id_field) or "") == target_id:
+            return item
+    return None
+
+
+def _write_targeted_patch_brief(
+    run_dir: Path,
+    *,
+    filename: str,
+    title: str,
+    bundle: dict,
+    issues: list[dict],
+) -> Path:
+    path = Path(run_dir) / "briefs" / filename
+    targets = []
+    for issue in issues:
+        target_type = str(issue.get("target_type") or "")
+        target_id = str(issue.get("target_id") or "")
+        target = _target_object(bundle, target_type, target_id)
+        if target is not None:
+            targets.append(
+                {
+                    "target_type": target_type,
+                    "target_id": target_id,
+                    "current": target,
+                }
+            )
+    lines = [
+        f"# {title}",
+        "",
+        "只修改 issues 指向的单个 claim/view/action；不得覆盖 section 或 bundle。",
+        "不得改变 fact_id、number_tokens、source、supports_claim、单位、口径、聚合或方向。",
+        "返回 JSON 数组，每项严格符合 targeted_revision；replace 必须保留 target_id，",
+        "source_blocker_ids 必须引用对应 issue_id。无需修改的目标使用 drop，不得返回整包。",
+        "",
+        "```json",
+        json.dumps({"issues": issues, "targets": targets}, ensure_ascii=False, indent=2),
+        "```",
+    ]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+def _write_targeted_patch_briefs(
+    run_dir: Path,
+    *,
+    prefix: str,
+    title: str,
+    bundle: dict,
+    issues: list[dict],
+) -> list[tuple[Path, dict]]:
+    outputs = []
+    for issue in issues:
+        issue_id = _slug(str(issue.get("issue_id") or "issue"))
+        path = _write_targeted_patch_brief(
+            run_dir,
+            filename=f"{prefix}_{issue_id}.md",
+            title=title,
+            bundle=bundle,
+            issues=[issue],
+        )
+        outputs.append((path, issue))
+    return outputs
+
+
+def _review_patch_issues(bundle: dict, patched_keys, reasons: dict, round_number: int) -> list[dict]:
+    targets = set(patched_keys)
+    issues = []
+    for section_id, idx, view in _iter_curated_views(bundle):
+        key = _view_key(section_id, view, idx)
+        if key not in targets or not isinstance(view, dict) or not view.get("view_id"):
+            continue
+        reason_values = reasons.get(key, {})
+        if isinstance(reason_values, dict):
+            reason_text = "；".join(str(value) for value in reason_values.values() if value)
+        else:
+            reason_text = "；".join(str(value) for value in reason_values or [] if value)
+        issues.append(
+            {
+                "issue_id": f"review-{round_number}-{hashlib.sha256(key.encode('utf-8')).hexdigest()[:10]}",
+                "target_type": "view",
+                "target_id": str(view["view_id"]),
+                "reason": reason_text or "独立评审要求定向修订",
+            }
+        )
+    return issues
+
+
+def _gate_patch_issues(bundle: dict, failures, round_number: int) -> list[dict]:
+    targets = _bundle_target_ids(bundle)
+    issues = []
+    seen: set[tuple[str, str]] = set()
+    for index, failure in enumerate(failures or []):
+        if not isinstance(failure, dict):
+            continue
+        target_id = str(failure.get("claim_id") or "")
+        target_type = next(
+            (
+                candidate
+                for candidate in ("claim", "view", "action")
+                if target_id and target_id in targets[candidate]
+            ),
+            None,
+        )
+        if target_type is None or (target_type, target_id) in seen:
+            continue
+        seen.add((target_type, target_id))
+        issues.append(
+            {
+                "issue_id": f"gate-{round_number}-{index}-{_slug(str(failure.get('code') or 'failure'))}",
+                "target_type": target_type,
+                "target_id": target_id,
+                "reason": str(failure.get("detail") or failure.get("message") or failure),
+            }
+        )
+    return issues
+
+
+def _write_gate_patch_brief(run_dir: Path, state: dict, failures) -> Path:
+    """Write and register the ordinary deterministic-gate repair task."""
+    briefs_dir = Path(run_dir) / "briefs"
+    briefs_dir.mkdir(parents=True, exist_ok=True)
+    path = briefs_dir / "patch.md"
+    lines = [
+        "# Patch brief — 确定性 gate 未通过",
+        "",
+        "只修复 failures 指出的 claim 或 view 结构。不得自行改写数字；所有数字仍必须由",
+        "number_tokens 或确定性视图引擎回填。返回 JSON sections/bundle，保持未被指出的内容不变。",
+        "",
+        "```json",
+        json.dumps(
+            {
+                "failures": list(failures or []),
+                "bundle": state.get("_bundle") or _bundle_from_state(state),
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        "```",
+    ]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    _set_stage_tasks(state, "patch", [{"brief": path}])
+    return path
+
+
+def _write_continuity_brief(run_dir: Path, state: dict, bundle: dict) -> Path:
+    """Write the prose-only continuity task and register it as the current task."""
+    briefs_dir = Path(run_dir) / "briefs"
+    briefs_dir.mkdir(parents=True, exist_ok=True)
+    path = briefs_dir / "continuity.md"
+    lines = [
+        "# Continuity brief — 全文连贯性复核",
+        "",
+        "只修正文之间的衔接、重复和措辞，不得改变任何数字、token、claim_id 或事实含义。",
+        "返回 JSON only: {\"edits\":[{\"claim_id\",\"old\",\"new\"}]}。",
+        "无需修改时返回 {\"edits\":[]}。",
+        "",
+        "```json",
+        json.dumps(bundle or {}, ensure_ascii=False, indent=2),
+        "```",
+    ]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    _set_stage_tasks(state, "continuity", [{"brief": path}])
+    return path
+
+
 def _enter_review_or_continuity(run_dir: Path, state: dict) -> dict:
     """Post-gate router: a bundle carrying curated views goes to the ``review``
     stage (fresh verdict slate + reviewer briefs); a prose-only bundle skips
@@ -895,10 +2235,11 @@ def _enter_review_or_continuity(run_dir: Path, state: dict) -> dict:
         state["_review_reasons"] = {}
         state.setdefault("_review_patch_rounds", 0)
         state.pop("_review_patch_pending", None)
-        _write_review_briefs(run_dir, bundle)
         state["stage"] = "review"
+        _write_review_briefs(run_dir, bundle, state=state)
     else:
         state["stage"] = "continuity"
+        _write_continuity_brief(run_dir, state, bundle)
     _write_state(run_dir, state)
     return state
 
@@ -915,6 +2256,7 @@ def _resolve_review_stage(run_dir: Path, state: dict) -> dict:
     reasons = state.get("_review_reasons") or {}
     patch_rounds = state.get("_review_patch_rounds", 0)
     bundle = state.get("_bundle") or _bundle_from_state(state)
+    quality_workflow = state.get("workflow_version") == QUALITY_WORKFLOW_VERSION
 
     patched_keys: list[str] = []
     new_sections: list = []
@@ -927,7 +2269,11 @@ def _resolve_review_stage(run_dir: Path, state: dict) -> dict:
             new_sections.append(section)
             continue
         kept, patched = _resolve_section_views(
-            section.get("section_id"), views, reviews, patch_rounds
+            section.get("section_id"),
+            views,
+            reviews,
+            patch_rounds,
+            quality_workflow=quality_workflow,
         )
         patched_keys.extend(patched)
         new_sections.append({**section, "curated_views": kept})
@@ -935,15 +2281,59 @@ def _resolve_review_stage(run_dir: Path, state: dict) -> dict:
     new_bundle = {**bundle, "sections": new_sections}
     state["_bundle"] = new_bundle
     # keep the recorded sections in sync so a patch rebuild preserves the drops
-    _sync_recorded_curated_views(state, reviews, patch_rounds)
+    _sync_recorded_curated_views(
+        state,
+        reviews,
+        patch_rounds,
+        quality_workflow=quality_workflow,
+    )
 
     if patched_keys:
         state["_review_patch_rounds"] = patch_rounds + 1
         state["_reviews"] = {}
         state["_review_reasons"] = {}
         state["_review_patch_pending"] = list(patched_keys)
-        _write_review_patch_brief(run_dir, new_bundle, patched_keys, reasons)
+        if quality_workflow:
+            issues = _review_patch_issues(
+                new_bundle,
+                patched_keys,
+                reasons,
+                patch_rounds + 1,
+            )
+            if not issues:
+                return _route_deterministic(
+                    run_dir,
+                    state,
+                    state.get("project_root"),
+                    "untargetable_review_blocker",
+                )
+            state["_patch_review"] = {"issues": issues}
+            state["_patch_round"] = patch_rounds + 1
+            patch_outputs = _write_targeted_patch_briefs(
+                run_dir,
+                prefix="review_patch",
+                title="Targeted review revision",
+                bundle=new_bundle,
+                issues=issues,
+            )
+        else:
+            _write_review_patch_brief(run_dir, new_bundle, patched_keys, reasons)
+            patch_outputs = [
+                (run_dir / "briefs" / "review_patch.md", {"target_id": None})
+            ]
         state["stage"] = "patch"
+        _set_stage_tasks(
+            state,
+            "patch",
+            [
+                {
+                    "brief": path,
+                    "role": "targeted_reviser",
+                    "target_id": issue.get("target_id"),
+                }
+                for path, issue in patch_outputs
+            ],
+        )
         _write_state(run_dir, state)
         return state
 
@@ -951,6 +2341,7 @@ def _resolve_review_stage(run_dir: Path, state: dict) -> dict:
     state["_review_reasons"] = {}
     state.pop("_review_patch_pending", None)
     state["stage"] = "continuity"
+    _write_continuity_brief(run_dir, state, new_bundle)
     _write_state(run_dir, state)
     return state
 
@@ -963,7 +2354,10 @@ def status_json(run_dir) -> dict:
         raise FileNotFoundError(f"no run at {run_dir}")
     stage = state["stage"]
     briefs_dir = run_dir / "briefs"
-    if stage == "seed":
+    tasks = _stage_tasks(state, stage)
+    if tasks:
+        briefs = [str(task["brief"]) for task in tasks if task.get("status") != "completed"]
+    elif stage == "seed":
         briefs = [str(briefs_dir / "seed.md")]
     elif stage == "fan":
         briefs = [str(p) for p in sorted(briefs_dir.glob("fan_*.md"))]
@@ -975,10 +2369,19 @@ def status_json(run_dir) -> dict:
         briefs = [str(briefs_dir / "review_patch.md")]
     else:
         briefs = []
+    pending = [dict(task) for task in tasks if task.get("status") != "completed"]
+    completed = [dict(task) for task in tasks if task.get("status") == "completed"]
     return {
         "stage": stage,
+        "workflow_version": state.get("workflow_version"),
+        "run_id": state.get("run_id"),
         "next_action": _NEXT_ACTION.get(stage, ""),
         "briefs": briefs,
+        "tasks": {"pending": pending, "completed": completed},
+        "cache_status": state.get("cache_status"),
+        "delivery_status": state.get("delivery_status"),
+        "artifacts": state.get("artifacts") or {},
+        "error": state.get("error"),
         "degradation_reason": state.get("degradation_reason"),
         "merged_sections": state.get("merged_sections", []),
     }
@@ -1056,13 +2459,55 @@ def _run_gate_stage(run_dir: Path, state: dict, facts_json: dict, project_root) 
     # Never-block: drop the curated views this round's gate hard-failed so the next
     # patch rebuild omits them, rather than re-rendering the identical failing bundle
     # until exhaustion. Claim-level failures drop nothing and still route to skeleton.
-    _drop_gate_failed_views(state, report.hard_failures)
+    dropped_views = _drop_gate_failed_views(state, report.hard_failures)
+    quality_workflow = state.get("workflow_version") == QUALITY_WORKFLOW_VERSION
+    if quality_workflow and dropped_views:
+        state["_bundle"] = render_draft(_bundle_from_state(state), facts_json)
+        report = _run_gate(state["_bundle"], facts_json, result_tables)
+        if report.status == "PASS":
+            return _enter_review_or_continuity(run_dir, state)
     rounds = state.get("_gate_rounds", 0) + 1
     state["_gate_rounds"] = rounds
     if rounds > MAX_GATE_ROUNDS:
         return _route_deterministic(run_dir, state, project_root, "gate_exhausted")
     state["_gate_failures"] = list(report.hard_failures)
     state["stage"] = "patch"
+    if quality_workflow:
+        issues = _gate_patch_issues(
+            state.get("_bundle") or _bundle_from_state(state),
+            report.hard_failures,
+            rounds,
+        )
+        if not issues:
+            return _route_deterministic(
+                run_dir,
+                state,
+                project_root,
+                "untargetable_gate_blocker",
+            )
+        state["_patch_review"] = {"issues": issues}
+        state["_patch_round"] = rounds
+        patch_outputs = _write_targeted_patch_briefs(
+            run_dir,
+            prefix="patch",
+            title="Targeted gate revision",
+            bundle=state.get("_bundle") or _bundle_from_state(state),
+            issues=issues,
+        )
+        _set_stage_tasks(
+            state,
+            "patch",
+            [
+                {
+                    "brief": path,
+                    "role": "targeted_reviser",
+                    "target_id": issue.get("target_id"),
+                }
+                for path, issue in patch_outputs
+            ],
+        )
+    else:
+        _write_gate_patch_brief(run_dir, state, report.hard_failures)
     _write_state(run_dir, state)
     return state
 
@@ -1081,6 +2526,534 @@ def _route_deterministic(run_dir: Path, state: dict, project_root, reason: str) 
     return result
 
 
+def _load_capped_slices(run_dir: Path) -> list[dict]:
+    payload = json.loads((Path(run_dir) / "domain_slices.json").read_text(encoding="utf-8"))
+    slices = payload.get("capped") if isinstance(payload, dict) else None
+    return [item for item in (slices or []) if isinstance(item, dict)]
+
+
+def _load_platform_semantics(run_dir: Path) -> dict:
+    payload = json.loads((Path(run_dir) / "domain_slices.json").read_text(encoding="utf-8"))
+    context = payload.get("platform_semantics") if isinstance(payload, dict) else None
+    return context if isinstance(context, dict) else {}
+
+
+def _bundle_target_ids(bundle: dict) -> dict[str, set[str]]:
+    targets = {"claim": set(), "view": set(), "action": set()}
+    for section in bundle.get("sections") or []:
+        if not isinstance(section, dict):
+            continue
+        for claim in section.get("claims") or []:
+            if isinstance(claim, dict) and claim.get("claim_id"):
+                targets["claim"].add(str(claim["claim_id"]))
+        for view in section.get("curated_views") or []:
+            if isinstance(view, dict) and view.get("view_id"):
+                targets["view"].add(str(view["view_id"]))
+        for action in section.get("action_cards") or []:
+            if isinstance(action, dict) and action.get("action_id"):
+                targets["action"].add(str(action["action_id"]))
+    for key in ("spine", "panel"):
+        for claim in (bundle.get("first_screen") or {}).get(key) or []:
+            if isinstance(claim, dict) and claim.get("claim_id"):
+                targets["claim"].add(str(claim["claim_id"]))
+    for action in bundle.get("action_cards") or []:
+        if isinstance(action, dict) and action.get("action_id"):
+            targets["action"].add(str(action["action_id"]))
+    return targets
+
+
+def _validate_merchant_review_payload(bundle: dict, review: dict) -> None:
+    issues = review.get("issues")
+    if not isinstance(issues, list):
+        raise ValueError("merchant review issues must be a list")
+    if review.get("verdict") == "pass" and issues:
+        raise ValueError("merchant pass cannot carry revision issues")
+    if review.get("verdict") == "revise" and not issues:
+        raise ValueError("merchant revise must name at least one issue")
+    targets = _bundle_target_ids(bundle)
+    issue_ids: set[str] = set()
+    required = {
+        "issue_id",
+        "target_type",
+        "target_id",
+        "severity",
+        "reason",
+        "requested_change",
+    }
+    for issue in issues:
+        if not isinstance(issue, dict) or set(issue) != required:
+            raise ValueError("merchant review issue does not match the strict envelope")
+        issue_id = issue.get("issue_id")
+        target_type = issue.get("target_type")
+        target_id = issue.get("target_id")
+        if not isinstance(issue_id, str) or not issue_id or issue_id in issue_ids:
+            raise ValueError("merchant review issue_id must be unique and non-empty")
+        issue_ids.add(issue_id)
+        if target_type not in targets or str(target_id) not in targets[target_type]:
+            raise ValueError(
+                f"unknown merchant review target: {target_type}:{target_id}"
+            )
+        if issue.get("severity") not in {"blocker", "major"}:
+            raise ValueError("merchant review severity must be blocker or major")
+        if not str(issue.get("reason") or "").strip() or not str(
+            issue.get("requested_change") or ""
+        ).strip():
+            raise ValueError("merchant review issue text must be non-empty")
+
+
+def _replace_target(items, *, id_field: str, target_id: str, replacement) -> tuple[list, bool]:
+    changed = False
+    output = []
+    for item in items or []:
+        if isinstance(item, dict) and str(item.get(id_field) or "") == target_id:
+            changed = True
+            if replacement is not None:
+                output.append(copy.deepcopy(replacement))
+        else:
+            output.append(item)
+    return output, changed
+
+
+def _apply_one_merchant_revision(bundle: dict, revision: dict) -> bool:
+    target_type = revision["target_type"]
+    target_id = str(revision["target_id"])
+    replacement = revision["replacement"] if revision["operation"] == "replace" else None
+    id_field = {"claim": "claim_id", "view": "view_id", "action": "action_id"}[target_type]
+    if replacement is not None and str(replacement.get(id_field) or "") != target_id:
+        raise ValueError("targeted replacement must preserve the target ID")
+
+    immutable_fields = {
+        "claim": (
+            "claim_id",
+            "section_id",
+            "claim_kind",
+            "number_tokens",
+            "entity_refs",
+            "causal_link",
+        ),
+        "view": ("view_id", "section_id", "supports_claim", "source"),
+        "action": (
+            "action_id",
+            "action_family",
+            "primary_fact_id",
+            "guardrail_fact_id",
+            "supporting_claim_ids",
+            "number_tokens",
+        ),
+    }[target_type]
+    if replacement is not None:
+        current_targets = []
+        if target_type == "claim":
+            for section in bundle.get("sections") or []:
+                if isinstance(section, dict):
+                    current_targets.extend(section.get("claims") or [])
+            first_screen = bundle.get("first_screen") or {}
+            current_targets.extend(first_screen.get("spine") or [])
+            current_targets.extend(first_screen.get("panel") or [])
+        elif target_type == "view":
+            for section in bundle.get("sections") or []:
+                if isinstance(section, dict):
+                    current_targets.extend(section.get("curated_views") or [])
+        else:
+            current_targets.extend(bundle.get("action_cards") or [])
+            for section in bundle.get("sections") or []:
+                if isinstance(section, dict):
+                    current_targets.extend(section.get("action_cards") or [])
+        matched = [
+            item
+            for item in current_targets
+            if isinstance(item, dict) and str(item.get(id_field) or "") == target_id
+        ]
+        for current in matched:
+            if any(current.get(field) != replacement.get(field) for field in immutable_fields):
+                raise ValueError("targeted replacement changes an immutable evidence binding")
+
+    changed = False
+    if target_type == "claim":
+        for section in bundle.get("sections") or []:
+            if not isinstance(section, dict):
+                continue
+            section["claims"], section_changed = _replace_target(
+                section.get("claims"),
+                id_field=id_field,
+                target_id=target_id,
+                replacement=replacement,
+            )
+            changed = changed or section_changed
+        first_screen = bundle.get("first_screen") or {}
+        for key in ("spine", "panel"):
+            first_screen[key], section_changed = _replace_target(
+                first_screen.get(key),
+                id_field=id_field,
+                target_id=target_id,
+                replacement=replacement,
+            )
+            changed = changed or section_changed
+        if replacement is None:
+            bundle["mechanism"] = [
+                item
+                for item in bundle.get("mechanism") or []
+                if not (isinstance(item, dict) and str(item.get("claim_id") or "") == target_id)
+            ]
+            for section in bundle.get("sections") or []:
+                if not isinstance(section, dict):
+                    continue
+                section["curated_views"] = [
+                    view
+                    for view in section.get("curated_views") or []
+                    if not (
+                        isinstance(view, dict)
+                        and str(view.get("supports_claim") or "") == target_id
+                    )
+                ]
+            for owner in [bundle, *(bundle.get("sections") or [])]:
+                if not isinstance(owner, dict):
+                    continue
+                kept_actions = []
+                for action in owner.get("action_cards") or []:
+                    if not isinstance(action, dict):
+                        kept_actions.append(action)
+                        continue
+                    supporting = [
+                        claim_id
+                        for claim_id in action.get("supporting_claim_ids") or []
+                        if str(claim_id) != target_id
+                    ]
+                    if supporting:
+                        kept_actions.append({**action, "supporting_claim_ids": supporting})
+                owner["action_cards"] = kept_actions
+    elif target_type == "view":
+        for section in bundle.get("sections") or []:
+            if not isinstance(section, dict):
+                continue
+            section["curated_views"], section_changed = _replace_target(
+                section.get("curated_views"),
+                id_field=id_field,
+                target_id=target_id,
+                replacement=replacement,
+            )
+            changed = changed or section_changed
+    else:
+        for owner in [bundle, *(bundle.get("sections") or [])]:
+            if not isinstance(owner, dict) or not isinstance(owner.get("action_cards"), list):
+                continue
+            owner["action_cards"], section_changed = _replace_target(
+                owner.get("action_cards"),
+                id_field=id_field,
+                target_id=target_id,
+                replacement=replacement,
+            )
+            changed = changed or section_changed
+    return changed
+
+
+def _apply_merchant_revisions(
+    bundle: dict,
+    revisions: list,
+    review: dict,
+    *,
+    expected_round: int,
+) -> dict:
+    if not revisions:
+        raise ValueError("merchant patch requires at least one targeted revision")
+    issues = {
+        str(issue.get("issue_id")): issue
+        for issue in review.get("issues") or []
+        if isinstance(issue, dict) and issue.get("issue_id")
+    }
+    required = {
+        "revision_id",
+        "round",
+        "target_type",
+        "target_id",
+        "operation",
+        "source_blocker_ids",
+        "replacement",
+        "reason",
+    }
+    output = copy.deepcopy(bundle)
+    revised_targets: set[tuple[str, str]] = set()
+    revision_ids: set[str] = set()
+    for revision in revisions:
+        if not isinstance(revision, dict) or set(revision) != required:
+            raise ValueError("merchant targeted revision does not match the strict envelope")
+        revision_id = revision.get("revision_id")
+        if not isinstance(revision_id, str) or not revision_id or revision_id in revision_ids:
+            raise ValueError("revision_id must be unique and non-empty")
+        revision_ids.add(revision_id)
+        if revision.get("round") != expected_round or expected_round not in {1, 2}:
+            raise ValueError("targeted revision round does not match controller state")
+        target_type = revision.get("target_type")
+        target_id = str(revision.get("target_id") or "")
+        target = (str(target_type), target_id)
+        if target_type not in {"claim", "view", "action"} or not target_id:
+            raise ValueError("targeted revision has an invalid target")
+        if target in revised_targets:
+            raise ValueError("a merchant patch may revise each target only once")
+        revised_targets.add(target)
+        blocker_ids = revision.get("source_blocker_ids")
+        if not isinstance(blocker_ids, list) or not blocker_ids:
+            raise ValueError("targeted revision must cite source_blocker_ids")
+        for blocker_id in blocker_ids:
+            issue = issues.get(str(blocker_id))
+            if issue is None or (
+                issue.get("target_type"), str(issue.get("target_id") or "")
+            ) != target:
+                raise ValueError("targeted revision cites an unrelated blocker")
+        operation = revision.get("operation")
+        replacement = revision.get("replacement")
+        if operation not in {"replace", "drop"}:
+            raise ValueError("targeted revision operation must be replace or drop")
+        if operation == "replace" and not isinstance(replacement, dict):
+            raise ValueError("replace revision requires a replacement object")
+        if operation == "drop" and replacement is not None:
+            raise ValueError("drop revision replacement must be null")
+        if not str(revision.get("reason") or "").strip():
+            raise ValueError("targeted revision reason must be non-empty")
+        if not _apply_one_merchant_revision(output, revision):
+            raise ValueError(f"targeted revision did not match {target_type}:{target_id}")
+    return output
+
+
+def _write_merchant_review_brief(
+    run_dir: Path,
+    state: dict,
+    bundle: dict,
+    candidate_path: Path,
+) -> Path:
+    path = Path(run_dir) / "briefs" / "merchant_review.md"
+    lines = [
+        "# Merchant final review",
+        "",
+        "从店铺经营者视角审阅 candidate.html。检查首屏是否直接回答盘面、优先级是否清楚、",
+        "行动是否有负责人/观察指标/停止规则、图表是否帮决策、术语是否自然。",
+        "你不能改数字、单位、口径、公式或事实；问题必须指向 claim_id/view_id/action_id。",
+        "只有会误导经营判断、让关键动作不可执行或让报告明显难读的问题才判 revise。",
+        "",
+        '返回 JSON only: {"verdict":"pass|revise","issues":[{'
+        '"issue_id","target_type":"claim|view|action","target_id","severity":"blocker|major",'
+        '"reason","requested_change"}]}',
+        "",
+        f"Candidate HTML: {candidate_path}",
+        "",
+        "```json",
+        json.dumps(
+            {
+                "headline": bundle.get("headline"),
+                "first_screen": bundle.get("first_screen") or {},
+                "action_cards": bundle.get("action_cards") or [],
+                "sections": bundle.get("sections") or [],
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        "```",
+    ]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+def _write_merchant_patch_brief(run_dir: Path, state: dict) -> Path:
+    path = Path(run_dir) / "briefs" / "merchant_patch.md"
+    lines = [
+        "# Merchant targeted revision",
+        "",
+        "只修改 issues 指向的 claim/view/action；其他内容必须保持不变。",
+        "不得改数字、fact_id、metric_id、单位、口径、aggregation 或方向。",
+        "返回 JSON 数组，每项严格符合 targeted_revision：replace/drop 单个目标，",
+        "source_blocker_ids 必须引用下方 issue_id，replacement 必须保留原 target_id。",
+        "",
+        "```json",
+        json.dumps(
+            {
+                "issues": (state.get("_merchant_review") or {}).get("issues") or [],
+                "bundle": state.get("_bundle") or _bundle_from_state(state),
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        "```",
+    ]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+def _enter_merchant_review(
+    run_dir: Path,
+    state: dict,
+    facts_json: dict,
+) -> dict:
+    bundle = state.get("_bundle") or _bundle_from_state(state)
+    tables = _load_result_tables(run_dir)
+    markdown = bundle_to_markdown(
+        bundle,
+        facts_json,
+        title=state.get("report_name"),
+        result_tables=tables,
+    )
+    html = render_markdown_document_html(markdown, title=state.get("report_name"))
+    candidate_path = Path(run_dir) / "candidate.html"
+    _write_text_atomic(candidate_path, html)
+    review_brief = _write_merchant_review_brief(run_dir, state, bundle, candidate_path)
+    state["stage"] = "merchant_review"
+    state["candidate_html"] = str(candidate_path)
+    state.pop("_merchant_review", None)
+    _set_stage_tasks(
+        state,
+        "merchant_review",
+        [{"brief": review_brief, "role": "merchant_final_reviewer"}],
+    )
+    _write_state(run_dir, state)
+    return state
+
+
+def _advance_quality_stage(
+    run_dir: Path,
+    state: dict,
+    facts_json: dict,
+    project_root,
+) -> dict | None:
+    stage = state.get("stage")
+    if stage == "seed":
+        path = _write_spine_adjudication_brief(run_dir, state)
+        state["stage"] = "spine_adjudication"
+        _set_stage_tasks(
+            state,
+            "spine_adjudication",
+            [{"brief": path, "role": "spine_adjudicator"}],
+        )
+    elif stage == "spine_adjudication":
+        slices = _load_capped_slices(run_dir)
+        paths = _write_quality_fan_briefs(
+            run_dir,
+            slices,
+            state.get("_spine") or {},
+            _tables_catalog(_load_result_tables(run_dir)),
+            _load_platform_semantics(run_dir),
+        )
+        state["stage"] = "fan"
+        _set_stage_tasks(
+            state,
+            "fan",
+            [
+                {
+                    "brief": path,
+                    "section_id": _slug(slices[index].get("title", "")),
+                    "role": "domain_writer",
+                }
+                for index, path in enumerate(paths)
+            ],
+        )
+    elif stage == "fan":
+        paths = _write_domain_challenge_briefs(run_dir, state)
+        state["stage"] = "domain_challenge"
+        _set_stage_tasks(
+            state,
+            "domain_challenge",
+            [
+                {
+                    "brief": path,
+                    "section_id": path.stem.split("_", 2)[-1],
+                    "role": "domain_challenger",
+                }
+                for path in paths
+            ],
+        )
+    elif stage == "domain_challenge":
+        paths = _write_domain_adjudication_briefs(run_dir, state)
+        state["stage"] = "domain_adjudication"
+        _set_stage_tasks(
+            state,
+            "domain_adjudication",
+            [
+                {
+                    "brief": path,
+                    "section_id": path.stem.split("_", 3)[-1],
+                    "role": "domain_adjudicator",
+                }
+                for path in paths
+            ],
+        )
+    elif stage == "domain_adjudication":
+        _write_synth_brief(run_dir, state)
+        state["stage"] = "synth"
+        _set_stage_tasks(
+            state,
+            "synth",
+            [
+                {
+                    "brief": Path(run_dir) / "briefs" / "synth.md",
+                    "role": "cross_domain_synthesizer",
+                }
+            ],
+        )
+    elif stage == "synth":
+        path = _write_visual_curation_brief(run_dir, state)
+        state["stage"] = "visual_curation"
+        _set_stage_tasks(
+            state,
+            "visual_curation",
+            [{"brief": path, "role": "visual_curator"}],
+        )
+    elif stage == "visual_curation":
+        bundle = render_draft(_bundle_from_state(state), facts_json)
+        state["_bundle"] = bundle
+        state["_gate_rounds"] = 0
+        state["_review_patch_rounds"] = 0
+        state["stage"] = "gate"
+        _set_stage_tasks(state, "gate", [])
+        return _run_gate_stage(run_dir, state, facts_json, project_root)
+    elif stage == "patch":
+        bundle = render_draft(
+            state.get("_bundle") or _bundle_from_state(state),
+            facts_json,
+        )
+        state["_bundle"] = bundle
+        state["stage"] = "gate"
+        _set_stage_tasks(state, "gate", [])
+        return _run_gate_stage(run_dir, state, facts_json, project_root)
+    elif stage == "continuity":
+        edits = state.get("_continuity_edits", [])
+        bundle = apply_continuity_edits(
+            state.get("_bundle", _bundle_from_state(state)), edits
+        )
+        report = _run_gate(bundle, facts_json, _load_result_tables(run_dir))
+        if report.status != "PASS":
+            state["_bundle"] = bundle
+            return _route_deterministic(
+                run_dir, state, project_root, "continuity_gate_failed"
+            )
+        state["_bundle"] = report.bundle
+        return _enter_merchant_review(run_dir, state, facts_json)
+    elif stage == "merchant_review":
+        review = state.get("_merchant_review") or {}
+        if review.get("verdict") == "pass":
+            return finalize_narrative(run_dir, project_root=project_root)
+        rounds = int(state.get("_merchant_revision_rounds") or 0)
+        if rounds >= MAX_MERCHANT_REVISION_ROUNDS:
+            return _route_deterministic(
+                run_dir, state, project_root, "merchant_review_exhausted"
+            )
+        path = _write_merchant_patch_brief(run_dir, state)
+        state["_merchant_revision_rounds"] = rounds + 1
+        state["stage"] = "merchant_patch"
+        _set_stage_tasks(
+            state,
+            "merchant_patch",
+            [{"brief": path, "role": "merchant_targeted_reviser"}],
+        )
+    elif stage == "merchant_patch":
+        bundle = state.get("_bundle") or _bundle_from_state(state)
+        state["_bundle"] = render_draft(bundle, facts_json)
+        state["stage"] = "continuity"
+        state["_continuity_edits"] = []
+        _write_continuity_brief(run_dir, state, state["_bundle"])
+    else:
+        return None
+    _write_state(run_dir, state)
+    return state
+
+
 def advance_run(run_dir, *, project_root=None) -> dict:
     """Move the run forward one step: seed→fan→synth→gate→(patch→gate)*→continuity→gate→finalized.
 
@@ -1092,22 +3065,43 @@ def advance_run(run_dir, *, project_root=None) -> dict:
     if state is None:
         raise FileNotFoundError(f"no run at {run_dir}")
     stage = state["stage"]
+    pending = _pending_tasks(state, stage)
+    if pending:
+        task_ids = ", ".join(str(task.get("task_id")) for task in pending)
+        raise ValueError(f"cannot advance {stage!r}: pending briefs: {task_ids}")
     facts_json = json.loads((run_dir / "facts.json").read_text(encoding="utf-8"))
     project_root = project_root or state.get("project_root")
 
+    if state.get("workflow_version") == QUALITY_WORKFLOW_VERSION:
+        quality_state = _advance_quality_stage(
+            run_dir,
+            state,
+            facts_json,
+            project_root,
+        )
+        if quality_state is not None:
+            return quality_state
+
     if stage == "seed":
         state["stage"] = "fan"
+        _set_stage_tasks(state, "fan", state.pop("_fan_tasks", []))
     elif stage == "fan":
         state["stage"] = "synth"
         # Surface the recorded fan claims so the synth agent can assemble the first
         # screen from real claim_ids (Option A). Falls through to _write_state below.
         _write_synth_brief(run_dir, state)
+        _set_stage_tasks(
+            state,
+            "synth",
+            [{"brief": run_dir / "briefs" / "synth.md"}],
+        )
     elif stage == "synth":
         bundle = render_draft(_bundle_from_state(state), facts_json)
         state["_bundle"] = bundle
         state["_gate_rounds"] = 0
         state["_review_patch_rounds"] = 0
         state["stage"] = "gate"
+        _set_stage_tasks(state, "gate", [])
         return _run_gate_stage(run_dir, state, facts_json, project_root)
     elif stage == "gate":
         return _run_gate_stage(run_dir, state, facts_json, project_root)
@@ -1115,6 +3109,7 @@ def advance_run(run_dir, *, project_root=None) -> dict:
         bundle = render_draft(_bundle_from_state(state), facts_json)
         state["_bundle"] = bundle
         state["stage"] = "gate"
+        _set_stage_tasks(state, "gate", [])
         return _run_gate_stage(run_dir, state, facts_json, project_root)
     elif stage == "review":
         # Passive multi-reviewer resolution: tally per view, route keep/drop/patch.
@@ -1217,27 +3212,74 @@ def _visual_coverage_reason(markdown: str, result_tables: object) -> str | None:
         return None
 
 
-def finalize_narrative(run_dir, *, project_root=None, timestamp=None) -> dict:
-    """Success delivery boundary — render the gate-passed narrative bundle to the two
-    artifacts (<report_name>.md + <report_name>.html) under a timestamped production
+def _validate_delivery_html(html: str, report_name: str) -> None:
+    normalized = str(html or "").lower()
+    if not normalized.strip():
+        raise ValueError("HTML renderer returned an empty document")
+    for marker in ("<html", "<body", "</body>", "</html>"):
+        if marker not in normalized:
+            raise ValueError(f"HTML document is missing {marker}")
+    if report_name and report_name not in html:
+        raise ValueError("HTML document is missing the report title")
+    if re.search(r"<(?:script|link)\b[^>]+(?:src|href)=[\"']https?://", html, re.IGNORECASE):
+        raise ValueError("HTML document contains an external script or stylesheet dependency")
+
+
+def finalize_narrative(
+    run_dir,
+    *,
+    project_root=None,
+    timestamp=None,
+    cache_hit: bool = False,
+    write_cache: bool = True,
+) -> dict:
+    """Success delivery boundary — render the gate-passed narrative bundle to internal
+    Markdown plus the user-facing HTML under a timestamped production
     folder ``outputs/<timestamp>-<report_name>/`` so successive runs never overwrite.
 
     The .md is written unconditionally from ``state["_bundle"]`` via bundle_to_markdown
     (the narrative renderer, NOT the skeleton one — no 确定性骨架版 banner). HTML render/write
-    and gate-mode telemetry are each best-effort, mirroring finalize_deterministic's
-    never-raise discipline: a failure there can never prevent the .md artifact from landing
-    or prevent this function from returning the finalized state. Marks the run finalized and
-    returns the updated state. Never raises on missing/partial bundle or fact data.
+    and gate-mode telemetry are independent. HTML failure is fail-closed: state becomes
+    ``delivery_failed`` and the precise renderer error is raised. The run is finalized only
+    after the HTML artifact exists.
     """
     run_dir = Path(run_dir)
     state = _load_state(run_dir)
     if state is None:
         raise FileNotFoundError(f"no run at {run_dir}")
-    project_root = Path(project_root or state.get("project_root") or ".")
+    project_root = Path(
+        project_root or state.get("project_root") or resolve_project_root()
+    )
     facts_json = json.loads((run_dir / "facts.json").read_text(encoding="utf-8"))
     report_name = state["report_name"]
     bundle = state.get("_bundle") or _bundle_from_state(state)
     result_tables = _load_result_tables(run_dir)
+
+    try:
+        final_gate = _run_gate(bundle, facts_json, result_tables)
+        if final_gate.status != "PASS":
+            raise ValueError(f"final narrative gate failed: {final_gate.hard_failures}")
+        if cache_hit:
+            bundle = final_gate.bundle
+        else:
+            bundle = render_draft(final_gate.bundle, facts_json)
+            edits = state.get("_continuity_edits") or []
+            if edits:
+                bundle = apply_continuity_edits(bundle, edits)
+    except Exception as exc:
+        failed_state = {
+            **state,
+            "stage": "delivery_failed",
+            "delivery_status": "failed",
+            "delivery_error": str(exc),
+            "error": {"code": "FINAL_VALIDATION_FAILED", "message": str(exc)},
+            "history": [
+                *state.get("history", []),
+                "delivery_failed:final_validation",
+            ],
+        }
+        _write_state(run_dir, failed_state)
+        raise
 
     # Pass result_tables so each retained curated view's numbers are filled by the
     # deterministic engine from the source table (the numeric-trust boundary). With
@@ -1246,7 +3288,13 @@ def finalize_narrative(run_dir, *, project_root=None, timestamp=None) -> dict:
         bundle, facts_json, title=report_name, result_tables=result_tables
     )
     out_dir = run_output_dir(report_name, timestamp or run_timestamp(), project_root)
-    (out_dir / f"{report_name}.md").write_text(markdown, encoding="utf-8")
+    quality_workflow = state.get("workflow_version") == QUALITY_WORKFLOW_VERSION
+    single_html_workflow = state.get("workflow_version") in _SINGLE_HTML_WORKFLOWS
+    if single_html_workflow:
+        internal_markdown = run_dir / "internal" / "final.md"
+    else:
+        internal_markdown = out_dir / f"{report_name}.md"
+    _write_text_atomic(internal_markdown, markdown)
 
     # Non-blocking visual audit of the delivered markdown: if the fact layer had
     # chartable data but not one chart survived (fallback included), record the gap so
@@ -1254,19 +3302,69 @@ def finalize_narrative(run_dir, *, project_root=None, timestamp=None) -> dict:
     # the report still finalizes with whatever visuals it does carry.
     reason = _visual_coverage_reason(markdown, result_tables)
 
+    html_path = out_dir / f"{report_name}.html"
+    error_path = run_dir / "internal" / "render_errors.txt"
     try:
+        html_path.unlink(missing_ok=True)
         html = render_markdown_document_html(markdown, title=report_name)
-        (out_dir / f"{report_name}.html").write_text(html, encoding="utf-8")
-    except Exception:
-        pass  # HTML rendering is best-effort; the markdown artifact must still land
+        _validate_delivery_html(html, report_name)
+        _write_text_atomic(html_path, html)
+        error_path.unlink(missing_ok=True)
+    except Exception as exc:
+        _write_text_atomic(error_path, f"HTML rendering failed: {exc}\n")
+        failed_state = {
+            **state,
+            "stage": "delivery_failed",
+            "delivery_status": "failed",
+            "delivery_error": str(exc),
+            "error": {"code": "HTML_RENDER_FAILED", "message": str(exc)},
+            "artifacts": {
+                key: value
+                for key, value in (state.get("artifacts") or {}).items()
+                if key != "html"
+            },
+            "internal_artifacts": {
+                "markdown": str(internal_markdown),
+                "error": str(error_path),
+            },
+            "history": [*state.get("history", []), "delivery_failed:html"],
+        }
+        _write_state(run_dir, failed_state)
+        raise RuntimeError(f"HTML rendering failed: {exc}") from exc
+
+    cache_status = "hit" if cache_hit else state.get("cache_status")
+    cache_error = None
+    cache_path = state_dir(project_root) / "frozen_narrative.json"
+    if quality_workflow and write_cache and not cache_hit:
+        try:
+            from xhs_ceramics_analytics.reporting.frozen_narrative import write_frozen
+
+            write_frozen(
+                cache_path,
+                facts_json.get("facts_hash", ""),
+                bundle,
+                results_hash=state.get("results_hash", ""),
+                result_tables=result_tables,
+            )
+            cache_status = "written"
+        except Exception as exc:
+            cache_status = "write_failed"
+            cache_error = str(exc)
 
     try:
         record = build_run_record(
-            mode="gate",
+            mode="frozen" if cache_hit else "gate",
             facts_hash=facts_json.get("facts_hash", ""),
-            cache_hit=False,
+            cache_hit=cache_hit,
+            cache_status=cache_status,
+            delivery_status="ready",
             hard_fail_counts={},
             degradation_reason=reason,
+            task_counts={
+                "completed": len(_stage_tasks(state, state.get("stage"))),
+                "pending": 0,
+            },
+            quality_gates={"factcheck": "pass", "merchant_review": "pass"},
         )
         append_run_record(state_dir(project_root) / "report_runs.jsonl", record)
     except Exception:
@@ -1274,8 +3372,20 @@ def finalize_narrative(run_dir, *, project_root=None, timestamp=None) -> dict:
 
     state = {
         **state,
+        "_bundle": bundle,
         "stage": "finalized",
         "degradation_reason": reason,
+        "delivery_status": "ready",
+        "delivery_error": None,
+        "error": None,
+        "cache_status": cache_status,
+        "cache_error": cache_error,
+        "artifacts": {**(state.get("artifacts") or {}), "html": str(html_path)},
+        "internal_artifacts": {
+            **(state.get("internal_artifacts") or {}),
+            "markdown": str(internal_markdown),
+            **({"cache": str(cache_path)} if quality_workflow and cache_path.exists() else {}),
+        },
         "history": [*state.get("history", []), "finalize_narrative"],
     }
     _write_state(run_dir, state)
@@ -1283,41 +3393,74 @@ def finalize_narrative(run_dir, *, project_root=None, timestamp=None) -> dict:
 
 
 def finalize_deterministic(run_dir, *, project_root=None, reason, timestamp=None) -> dict:
-    """Deterministic skeleton fallback — the delivery boundary that never fails open.
+    """Deterministic skeleton fallback with the same fail-closed HTML boundary.
 
     Writes <report_name>.md unconditionally under a timestamped production folder
     ``outputs/<timestamp>-<report_name>/`` (matching finalize_narrative), then
-    best-effort renders <report_name>.html and appends skeleton-mode telemetry to
+    renders <report_name>.html and appends skeleton-mode telemetry to
     state_dir(project_root)/"report_runs.jsonl" (the canonical telemetry file cli.py
-    also writes to, read by summarize_runs). HTML render/write and telemetry are
-    each wrapped so a failure there can never prevent the .md artifact from landing
-    or prevent this function from returning the blocked state. Marks the run
-    blocked with the given degradation reason and returns the updated state. Never
-    raises on missing/partial slice or fact data.
+    also writes to, read by summarize_runs). Telemetry remains best-effort, but an
+    HTML failure persists ``delivery_failed`` and raises the exact renderer error.
+    Marks the run blocked only after the user-facing HTML exists.
     """
     run_dir = Path(run_dir)
     state = _load_state(run_dir)
     if state is None:
         raise FileNotFoundError(f"no run at {run_dir}")
-    project_root = Path(project_root or state.get("project_root") or ".")
+    project_root = Path(
+        project_root or state.get("project_root") or resolve_project_root()
+    )
     facts_json = json.loads((run_dir / "facts.json").read_text(encoding="utf-8"))
     report_name = state["report_name"]
 
     markdown = _deterministic_markdown(run_dir, facts_json, report_name)
     out_dir = run_output_dir(report_name, timestamp or run_timestamp(), project_root)
-    (out_dir / f"{report_name}.md").write_text(markdown, encoding="utf-8")
+    single_html_workflow = state.get("workflow_version") in _SINGLE_HTML_WORKFLOWS
+    internal_markdown = (
+        run_dir / "internal" / "fallback.md"
+        if single_html_workflow
+        else out_dir / f"{report_name}.md"
+    )
+    _write_text_atomic(internal_markdown, markdown)
 
+    html_path = out_dir / f"{report_name}.html"
+    error_path = run_dir / "internal" / "render_errors.txt"
     try:
+        html_path.unlink(missing_ok=True)
         html = render_markdown_document_html(markdown, title=f"{report_name}（确定性骨架版）")
-        (out_dir / f"{report_name}.html").write_text(html, encoding="utf-8")
-    except Exception:
-        pass  # HTML rendering is best-effort; the markdown artifact must still land
+        _validate_delivery_html(html, report_name)
+        _write_text_atomic(html_path, html)
+        error_path.unlink(missing_ok=True)
+    except Exception as exc:
+        _write_text_atomic(error_path, f"HTML rendering failed: {exc}\n")
+        failed_state = {
+            **state,
+            "stage": "delivery_failed",
+            "delivery_status": "failed",
+            "delivery_error": str(exc),
+            "error": {"code": "HTML_RENDER_FAILED", "message": str(exc)},
+            "artifacts": {
+                key: value
+                for key, value in (state.get("artifacts") or {}).items()
+                if key != "html"
+            },
+            "internal_artifacts": {
+                "markdown": str(internal_markdown),
+                "error": str(error_path),
+            },
+            "degradation_reason": reason,
+            "history": [*state.get("history", []), "delivery_failed:html"],
+        }
+        _write_state(run_dir, failed_state)
+        raise RuntimeError(f"HTML rendering failed: {exc}") from exc
 
     try:
         record = build_run_record(
             mode="skeleton",
             facts_hash=facts_json.get("facts_hash", ""),
             cache_hit=False,
+            cache_status=state.get("cache_status"),
+            delivery_status="ready",
             degradation_reason=reason,
         )
         append_run_record(state_dir(project_root) / "report_runs.jsonl", record)
@@ -1328,6 +3471,14 @@ def finalize_deterministic(run_dir, *, project_root=None, reason, timestamp=None
         **state,
         "stage": "blocked",
         "degradation_reason": reason,
+        "delivery_status": "ready",
+        "delivery_error": None,
+        "error": None,
+        "artifacts": {**(state.get("artifacts") or {}), "html": str(html_path)},
+        "internal_artifacts": {
+            **(state.get("internal_artifacts") or {}),
+            "markdown": str(internal_markdown),
+        },
         "history": [*state.get("history", []), f"finalize_deterministic:{reason}"],
     }
     _write_state(run_dir, state)

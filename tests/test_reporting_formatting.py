@@ -278,6 +278,12 @@ def test_field_label_covers_previously_unlabeled_fields():
     assert field_label("weakest_stage") == "最弱环节"
     assert field_label("wilson_low") == "保守估计下界"
     assert field_label("overall_refund_rate") == "整体退款率"
+
+
+def test_field_label_covers_event_context_fields():
+    assert field_label("event_types") == "活动类型"
+    assert field_label("event_names") == "活动名称"
+    assert field_label("event_severities") == "活动影响等级"
     # the generic追溯 fallback must no longer fire for these
     assert "追溯" not in field_help("total_gmv")
 

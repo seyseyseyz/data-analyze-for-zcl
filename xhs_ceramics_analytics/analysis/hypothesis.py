@@ -31,9 +31,7 @@ def run(db_path: Path) -> AnalysisResult:
         findings=[
             Finding(
                 title="持久化假设种子已生成",
-                conclusion=(
-                    f"已基于当前证据生成 {len(rows)} 条可持续跟踪的假设种子。"
-                ),
+                conclusion=(f"已基于当前证据生成 {len(rows)} 条可持续跟踪的假设种子。"),
                 evidence_strength=score_evidence(
                     evidence_count, has_controls=False, confounder_count=1
                 ),
@@ -43,9 +41,7 @@ def run(db_path: Path) -> AnalysisResult:
                     "evidence_items": evidence_count,
                 },
                 caveats=["这些假设只是有证据支撑的起点，不是已验证的因果结论。"],
-                recommended_action=(
-                    "将这些稳定假设带入每周实验，并在每次测量后更新状态。"
-                ),
+                recommended_action=("将这些稳定假设带入每周实验，并在每次测量后更新状态。"),
             )
         ],
         tables={"hypotheses": rows},
@@ -81,9 +77,8 @@ def _angle_seed(con) -> dict[str, object]:
         }
 
     note_columns = _table_columns(con, "notes") if _table_exists(con, "notes") else set()
-    can_join_notes = (
-        "note_id" in content_columns
-        and {"note_id", "reads", "collects"}.issubset(note_columns)
+    can_join_notes = "note_id" in content_columns and {"note_id", "reads", "collects"}.issubset(
+        note_columns
     )
     if can_join_notes:
         result = con.sql(
@@ -294,7 +289,7 @@ def _hypothesis_text(theme: str, label: str, evidence_count: int) -> str:
     if theme == "comment_demand" and evidence_count == 0:
         return "在收集并标注更多评论前，评论需求仍不可判断。"
     if theme == "copy_angle":
-        return f"{label} 文案与头部 SKU 搭配时，可能形成可复用的收藏意图。"
+        return f"{label} 文案作为独立内容变量，可能形成可复用的收藏意图。"
     if theme == "comment_demand":
         return f"{label} 类评论需求可通过在内容中显性回答来转化。"
     return f"{label} 相比当前基线内容组合，值得分配更多受控内容档期。"

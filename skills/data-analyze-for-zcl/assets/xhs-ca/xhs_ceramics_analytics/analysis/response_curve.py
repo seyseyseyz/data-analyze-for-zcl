@@ -9,14 +9,8 @@ from xhs_ceramics_analytics.evidence import score_reliability
 _SALES_REQUIRED_COLUMNS = {"date", "sku_id", "units"}
 _NOTES_REQUIRED_COLUMNS = {"note_id", "publish_time"}
 _LINK_REQUIRED_COLUMNS = {"note_id", "sku_id"}
-_SKUS_REQUIRED_COLUMNS = {"sku_id"}
 
-_REAL_LINK_CAVEAT = (
-    "响应窗口是笔记关联销售窗口的描述性结果，不能隔离因果影响。"
-)
-_CANDIDATE_LINK_CAVEAT = (
-    "缺少显式 note_sku_links 表，响应窗口使用首个 SKU 候选兜底，归因很弱。"
-)
+_REAL_LINK_CAVEAT = "响应窗口是笔记关联销售窗口的描述性结果，不能隔离因果影响。"
 
 
 def run(db_path: Path) -> AnalysisResult:
@@ -47,9 +41,7 @@ def run(db_path: Path) -> AnalysisResult:
 
     if not rows:
         return _missing_result(
-            reason=(
-                "没有可用于响应窗口的 note-SKU 关联、publish_time 和匹配销售数据。"
-            ),
+            reason=("没有可用于响应窗口的 note-SKU 关联、publish_time 和匹配销售数据。"),
             caveats=list(link_context["caveats"]),
             recommended_action=str(link_context["recommended_action"]),
         )
@@ -74,7 +66,7 @@ def run(db_path: Path) -> AnalysisResult:
                 evidence_strength=score_evidence(
                     len(rows),
                     has_controls=False,
-                    confounder_count=1 if link_context["source"] == "note_sku_links" else 3,
+                    confounder_count=1,
                 ),
                 descriptive_reliability=score_reliability(len(rows)),
                 evidence_reason=_evidence_reason(str(link_context["source"])),
@@ -101,10 +93,7 @@ def _response_rows(con, link_query: str, has_title: bool) -> list[dict[str, obje
     # notes export carries no title column (graceful degradation).
     if has_title:
         note_select = "COALESCE(n_meta.title, lc.note_id) AS note_title"
-        note_join = (
-            "LEFT JOIN notes AS n_meta "
-            "ON CAST(n_meta.note_id AS VARCHAR) = lc.note_id"
-        )
+        note_join = "LEFT JOIN notes AS n_meta ON CAST(n_meta.note_id AS VARCHAR) = lc.note_id"
         group_extra = ", n_meta.title"
     else:
         note_select = "lc.note_id AS note_title"
@@ -188,8 +177,7 @@ def _has_matching_sales_dates(rows: list[dict[str, object]]) -> bool:
 
 def _strip_internal_columns(rows: list[dict[str, object]]) -> list[dict[str, object]]:
     return [
-        {key: value for key, value in row.items() if key != "matched_sales_days"}
-        for row in rows
+        {key: value for key, value in row.items() if key != "matched_sales_days"} for row in rows
     ]
 
 
@@ -231,50 +219,14 @@ def _link_context(con) -> dict[str, object]:
             ),
         }
 
-    if _table_exists(con, "notes") and _table_exists(con, "skus"):
-        notes_columns = _table_columns(con, "notes")
-        skus_columns = _table_columns(con, "skus")
-        if _NOTES_REQUIRED_COLUMNS.issubset(notes_columns) and _SKUS_REQUIRED_COLUMNS.issubset(
-            skus_columns
-        ):
-            return {
-                "query": """
-                    SELECT
-                      CAST(n.note_id AS VARCHAR) AS note_id,
-                      CAST(s.sku_id AS VARCHAR) AS sku_id,
-                      CAST(n.publish_time AS TIMESTAMP) AS publish_time
-                    FROM (
-                      SELECT note_id, publish_time
-                      FROM notes
-                      WHERE note_id IS NOT NULL AND publish_time IS NOT NULL
-                      ORDER BY publish_time, note_id
-                      LIMIT 25
-                    ) AS n
-                    CROSS JOIN (
-                      SELECT sku_id
-                      FROM skus
-                      WHERE sku_id IS NOT NULL
-                      ORDER BY sku_id
-                      LIMIT 1
-                    ) AS s
-                """,
-                "source": "candidate_first_sku",
-                "caveats": [_REAL_LINK_CAVEAT, _CANDIDATE_LINK_CAVEAT],
-                "reason": None,
-                "recommended_action": None,
-            }
-
     return {
         "query": None,
         "source": None,
         "caveats": [_REAL_LINK_CAVEAT],
-        "reason": (
-            "无法推导带 publish_time 的 note-SKU 关联；note_sku_links 不可用，notes/skus "
-            "也不足以支持保守候选兜底。"
-        ),
+        "reason": ("缺少显式 note-SKU 关联；不能把笔记硬绑到首个 SKU。"),
         "recommended_action": (
-            "导入 note_sku_links，或至少提供 notes(note_id, publish_time) 与 skus(sku_id)，"
-            "以启用弱候选关联。"
+            "导入 note_sku_links，并补齐 note_id、sku_id 和 notes.publish_time，"
+            "再生成带 SKU 身份的响应窗口。"
         ),
     }
 
@@ -300,13 +252,10 @@ def _missing_result(
         findings=[
             Finding(
                 title="响应曲线不可判断",
-                conclusion=(
-                    "无法从当前数据组装笔记锚定的响应窗口。"
-                ),
+                conclusion=("无法从当前数据组装笔记锚定的响应窗口。"),
                 evidence_strength=EvidenceStrength.NOT_JUDGABLE,
                 evidence_reason=(
-                    "缺少销量、发布时间或 note-SKU 关联数据，"
-                    "当前结果只适合指导先补哪类数据。"
+                    "缺少销量、发布时间或 note-SKU 关联数据，当前结果只适合指导先补哪类数据。"
                 ),
                 key_numbers={"note_sku_rows": 0},
                 caveats=caveats,
@@ -323,14 +272,8 @@ def _table_exists(con, table_name: str) -> bool:
 
 
 def _evidence_reason(link_source: str) -> str:
-    if link_source == "note_sku_links":
-        return (
-            "有显式 note-SKU 关联和笔记发布时间窗口，"
-            "但仍是观测性响应曲线，适合辅助判断后续实验节奏。"
-        )
     return (
-        "有笔记发布时间和 SKU 数据，但 note-SKU 关联由候选 SKU 兜底，"
-        "适合先作为时间窗口线索，再用受控实验验证。"
+        "有显式 note-SKU 关联和笔记发布时间窗口，但仍是观测性响应曲线，适合辅助判断后续实验节奏。"
     )
 
 

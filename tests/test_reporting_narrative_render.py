@@ -2,6 +2,7 @@
 import pytest
 
 from xhs_ceramics_analytics.reporting import narrative_render as nr
+from xhs_ceramics_analytics.reporting.frozen_narrative import payload_hash
 
 
 def _facts():
@@ -52,12 +53,64 @@ def test_render_draft_adds_rendered_sentence():
     assert claim["rendered_sentence"] == "人均产出从 ¥10.0 回落到 ¥8.7。"
 
 
+def test_render_draft_overwrites_untrusted_rendered_sentence():
+    bundle = _bundle()
+    bundle["sections"][0]["claims"][0]["rendered_sentence"] = "伪造结果 999 亿。"
+
+    drafted = nr.render_draft(bundle, _facts())
+
+    assert drafted["sections"][0]["claims"][0]["rendered_sentence"] == (
+        "人均产出从 ¥10.0 回落到 ¥8.7。"
+    )
+
+
 def test_bundle_to_markdown_includes_all_sections():
     md = nr.bundle_to_markdown(nr.render_draft(_bundle(), _facts()), _facts(), title="测试报告")
     assert "人均产出从 ¥10.0 回落到 ¥8.7。" in md
     assert "生意大盘·月对月" in md
     assert "暂时答不了的问题" in md
     assert "笔记→订单归因：平台无链路。" in md
+
+
+def test_grounded_action_cards_render_compactly_without_internal_ids():
+    bundle = _bundle()
+    bundle["action_cards"] = [
+        {
+            "action_id": "action.core",
+            "action_family": "经营复盘",
+            "title": "先守住人均产出",
+            "owner_role": "店铺负责人",
+            "steps": ["核对下滑来源", "小范围验证调整"],
+            "primary_fact_id": "m.jun",
+            "guardrail_fact_id": "m.may",
+            "observe_window_label": "下一观察周期",
+            "stop_rule": "人均产出仍低于 {t0} 时停止扩量",
+            "license": "pilot",
+            "supporting_claim_ids": ["c0"],
+            "number_tokens": [
+                {
+                    "token_id": "t0",
+                    "fact_id": "m.jun",
+                    "expected_metric_key": "pvg_jun",
+                    "direction": "down",
+                }
+            ],
+        }
+    ]
+
+    drafted = nr.render_draft(bundle, _facts())
+    assert drafted["action_cards"][0]["stop_rule"] == "人均产出仍低于 {t0} 时停止扩量"
+    assert drafted["action_cards"][0]["rendered_stop_rule"] == (
+        "人均产出仍低于 ¥8.7 时停止扩量"
+    )
+    markdown = nr.bundle_to_markdown(drafted, _facts(), title="测试报告")
+
+    assert "## 下一步行动" in markdown
+    assert "先守住人均产出" in markdown
+    assert "店铺负责人" in markdown
+    assert "人均产出仍低于 ¥8.7 时停止扩量" in markdown
+    assert "action.core" not in markdown
+    assert "m.jun" not in markdown
 
 
 def test_apply_continuity_edit_prose_only():
@@ -85,7 +138,7 @@ def test_apply_continuity_edit_rejects_absent_old():
 def test_render_frozen_roundtrip():
     drafted = nr.render_draft(_bundle(), _facts())
     frozen = {"schema_version": "v", "facts_hash": "h", "renderer_version": "r",
-              "narrative_bundle": drafted}
+              "narrative_bundle_hash": payload_hash(drafted), "narrative_bundle": drafted}
     md, html = nr.render_frozen(frozen, _facts())
     assert "人均产出从 ¥10.0 回落到 ¥8.7。" in md
     assert "<html" in html.lower()
@@ -99,16 +152,48 @@ def test_render_frozen_preserves_continuity_edits():
         {"claim_id": "c0", "old": "人均产出从 ¥10.0 回落到 ¥8.7。",
          "new": "人均产出由 ¥10.0 一路滑到 ¥8.7。"}])
     frozen = {"schema_version": "v", "facts_hash": "h", "renderer_version": "r",
-              "narrative_bundle": edited}
+              "narrative_bundle_hash": payload_hash(edited), "narrative_bundle": edited}
     md, _ = nr.render_frozen(frozen, _facts())
     assert "一路滑到" in md          # the frozen polished prose survives
     assert "回落到" not in md        # the raw-token wording did not come back
 
 
+def test_render_frozen_uses_current_title_and_frozen_result_tables(monkeypatch):
+    drafted = nr.render_draft(_bundle(), _facts())
+    tables = {"trend": [{"month": "2026-07", "gmv": 12.0}]}
+    frozen = {
+        "schema_version": "v",
+        "facts_hash": "h",
+        "renderer_version": "r",
+        "narrative_bundle_hash": payload_hash(drafted),
+        "narrative_bundle": drafted,
+        "result_tables": tables,
+    }
+    captured = {}
+
+    def fake_markdown(bundle, facts_json, *, title=None, result_tables=None):
+        captured["title"] = title
+        captured["tables"] = result_tables
+        return f"# {title}\n"
+
+    monkeypatch.setattr(nr, "bundle_to_markdown", fake_markdown)
+    monkeypatch.setattr(
+        nr,
+        "render_markdown_document_html",
+        lambda markdown_text, title=None: f"<html><title>{title}</title>{markdown_text}</html>",
+    )
+
+    md, html = nr.render_frozen(frozen, _facts(), title="当前店铺经营报告")
+
+    assert captured == {"title": "当前店铺经营报告", "tables": tables}
+    assert md.startswith("# 当前店铺经营报告")
+    assert "<title>当前店铺经营报告</title>" in html
+
+
 def test_render_frozen_rejects_hash_mismatch():
     drafted = nr.render_draft(_bundle(), _facts())
     frozen = {"schema_version": "v", "facts_hash": "STALE", "renderer_version": "r",
-              "narrative_bundle": drafted}
+              "narrative_bundle_hash": payload_hash(drafted), "narrative_bundle": drafted}
     with pytest.raises(ValueError):
         nr.render_frozen(frozen, _facts())
 

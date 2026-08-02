@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "review_verdict.json",
+  "title": "review_verdict",
+  "description": "One independent review lens over candidate views. The reviewer cannot rewrite data or prose.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["section_id", "lens", "verdicts"],
+  "properties": {
+    "section_id": {"type": "string", "minLength": 1},
+    "lens": {"enum": ["evidence_semantics", "merchant_decision", "editorial_visual"]},
+    "verdicts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["view_id", "verdict", "reason", "blocker_codes"],
+        "properties": {
+          "view_id": {"type": "string", "minLength": 1},
+          "verdict": {"enum": ["keep", "revise", "drop"]},
+          "reason": {"type": "string", "minLength": 1},
+          "blocker_codes": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "enum": [
+                "UNSUPPORTED",
+                "SEMANTIC_MISMATCH",
+                "NO_DECISION_VALUE",
+                "UNREADABLE",
+                "WRONG_VISUAL_FORM",
+                "RAW_DUMP",
+                "DUPLICATE"
+              ]
+            }
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {"verdict": {"const": "keep"}},
+              "required": ["verdict"]
+            },
+            "then": {"properties": {"blocker_codes": {"maxItems": 0}}}
+          },
+          {
+            "if": {
+              "properties": {"verdict": {"enum": ["revise", "drop"]}},
+              "required": ["verdict"]
+            },
+            "then": {"properties": {"blocker_codes": {"minItems": 1}}}
+          }
+        ]
+      }
+    }
+  }
+}

@@ -35,6 +35,13 @@
 <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 6.2A1.7 1.7 0 0 1 6.2 4.5h11.6A1.7 1.7 0 0 1 19.5 6.2v6.6A1.7 1.7 0 0 1 17.8 14.5H10l-4 3.2v-3.2H6.2A1.7 1.7 0 0 1 4.5 12.8z"/><circle cx="9" cy="9.5" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="9.5" r="1" fill="currentColor" stroke="none"/><circle cx="15" cy="9.5" r="1" fill="currentColor" stroke="none"/></svg>
 {%- endif -%}
 {%- endmacro %}
+{% macro field_tooltip(field) -%}
+<button type="button" class="field-tooltip" tabindex="0" aria-describedby="{{ field.tooltip_id }}">
+  <strong class="field-tooltip-label">{{ field.label }}</strong>
+  <span class="field-tooltip-trigger" aria-hidden="true">?</span>
+  <span id="{{ field.tooltip_id }}" class="field-tooltip-content" role="tooltip">{{ field.help }}</span>
+</button>
+{%- endmacro %}
 {% macro finding_card(finding) %}
 <article class="finding-card">
   <div class="finding-tags">
@@ -47,10 +54,7 @@
   <div class="numbers">
     {% for item in finding.key_numbers %}
     <div class="number-row">
-      <span class="field-name">
-        <strong>{{ item.label }}</strong>
-        <span class="field-help">{{ item.help }}</span>
-      </span>
+      {{ field_tooltip(item) }}
       <strong>{{ item.value }}</strong>
     </div>
     {% endfor %}
@@ -162,10 +166,7 @@
           <tr>
             {% for column in table.user_columns %}
             <th>
-              <span class="field-name">
-                <strong>{{ column.label }}</strong>
-                <span class="field-help">{{ column.help }}</span>
-              </span>
+              {{ field_tooltip(column) }}
             </th>
             {% endfor %}
           </tr>
@@ -729,6 +730,8 @@
     }
     @media print {
       .ambient { display: none; }
+      .field-tooltip-content,
+      .field-tooltip-trigger { display: none !important; }
       .chart, .chart-svg {
         print-color-adjust: exact;
         -webkit-print-color-adjust: exact;
@@ -814,39 +817,104 @@
       font-variant-numeric: tabular-nums;
     }
 
-    .field-name {
-      display: grid;
-      gap: 4px;
+    .field-tooltip {
+      position: relative;
+      display: inline-flex;
+      align-items: baseline;
+      gap: 5px;
+      margin: 0;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: inherit;
       font-family: var(--font-sans);
+      text-align: left;
+      cursor: help;
+      outline: none;
     }
 
-    .field-name strong {
+    .field-tooltip-label {
       color: var(--ink-strong);
       font-size: 13px;
+      border-bottom: 1px dotted #A8A8A3;
     }
 
-    .field-name code,
+    .field-tooltip-trigger {
+      display: inline-grid;
+      place-items: center;
+      width: 15px;
+      height: 15px;
+      border: 1px solid #C8C8C3;
+      border-radius: 50%;
+      color: var(--muted);
+      font-family: var(--font-sans);
+      font-size: 10px;
+      font-weight: 700;
+      line-height: 1;
+    }
+
     .field-code {
       width: fit-content;
-      font-family: var(--font-mono);
-      color: var(--muted);
-      background: var(--canvas);
+      padding: 2px 5px;
       border: 1px solid var(--line);
       border-radius: 4px;
-      padding: 2px 5px;
+      background: var(--canvas);
+      color: var(--muted);
+      font-family: var(--font-mono);
       font-size: 11px;
       font-weight: 500;
     }
 
-    .field-help {
-      color: var(--muted);
+    .field-tooltip-content {
+      position: absolute;
+      z-index: 80;
+      left: 0;
+      bottom: calc(100% + 9px);
+      width: max-content;
+      max-width: min(300px, calc(100vw - 32px));
+      padding: 9px 11px;
+      border: 1px solid #D9D9D4;
+      border-radius: 8px;
+      background: #242424;
+      color: #FFFFFF;
       font-size: 12px;
-      line-height: 1.45;
+      line-height: 1.5;
       font-weight: 400;
-      max-width: 220px;
-      /* Wrap long help text instead of forcing a wide table cell that can't
-         scroll back (#13). */
       white-space: normal;
+      text-align: left;
+      box-shadow: 0 8px 24px rgba(17, 17, 17, 0.16);
+      visibility: hidden;
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(5px);
+      transition: opacity 120ms ease, transform 120ms ease, visibility 120ms ease;
+    }
+
+    .field-tooltip:hover .field-tooltip-content,
+    .field-tooltip:focus-within .field-tooltip-content {
+      visibility: visible;
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .field-tooltip:focus-visible {
+      border-radius: 3px;
+      box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px #7A7A75;
+    }
+
+    /* Table cells live in a horizontal scroll container. A viewport-fixed bubble
+       escapes that clipping boundary while the field label itself still scrolls. */
+    .table-wrap .field-tooltip-content {
+      position: fixed;
+      left: 50%;
+      bottom: 24px;
+      width: min(360px, calc(100vw - 32px));
+      transform: translate(-50%, 5px);
+    }
+
+    .table-wrap .field-tooltip:hover .field-tooltip-content,
+    .table-wrap .field-tooltip:focus-within .field-tooltip-content {
+      transform: translate(-50%, 0);
     }
 
     .note-list {
@@ -1065,7 +1133,7 @@
         <span class="eyebrow">Operating Report</span>
         <h1>{{ report_title }}</h1>
         <p class="hero-copy">
-          这份报告按业务主题分组：生意大盘、流量与内容、商品结构、用户与需求、退款与售后、实验与下周行动，每组先给最该动的一条，其余折叠备查。先看结论和下周动作，数据质量与口径说明放在末尾附录。
+          这份报告以六个核心经营领域组织完整分析，并在有相应数据时增加付费增长等专项领域。每个领域默认展示核心结论，其余模块和明细仍保留在同一份报告中，可展开备查。先看结论和行动，再按领域下钻，数据质量与口径说明放在末尾附录。
         </p>
       </div>
       <aside class="metric-stack" aria-label="报告概览">

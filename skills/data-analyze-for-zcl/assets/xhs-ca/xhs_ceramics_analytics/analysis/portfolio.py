@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from xhs_ceramics_analytics.analysis.content_group_metrics import fetch_group_effects
 from xhs_ceramics_analytics.analysis.prose import qty
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding
 from xhs_ceramics_analytics.db.duck import connect
@@ -29,9 +30,7 @@ def run(db_path: Path) -> AnalysisResult:
         findings=[
             Finding(
                 title="文案角度组合已统计",
-                conclusion=(
-                    f"已统计 {qty(sample_size)} 篇笔记，覆盖 {len(rows)} 类文案角度。"
-                ),
+                conclusion=(f"已统计 {qty(sample_size)} 篇笔记，覆盖 {len(rows)} 类文案角度。"),
                 evidence_strength=score_evidence(
                     sample_size, has_controls=False, confounder_count=1
                 ),
@@ -42,9 +41,7 @@ def run(db_path: Path) -> AnalysisResult:
                     "top_role": top_role,
                 },
                 caveats=["角度占比描述的是已发布内容供给，不是受控需求。"],
-                recommended_action=(
-                    "将占比不足且阅读率或收藏率更强的角度，作为下周内容档期候选。"
-                )
+                recommended_action=("将占比不足且阅读率或收藏率更强的角度，作为下周内容档期候选。")
                 if rows
                 else "先补充带 copy_angle 的 content_features 数据，再优化内容组合。",
             )
@@ -59,52 +56,18 @@ def _fetch_portfolio_mix(con) -> tuple[list[dict[str, object]], list[str]]:
     if "copy_angle" not in content_columns:
         return [], ["content_features 表缺少 copy_angle，无法生成组合分析。"]
 
-    note_columns = _table_columns(con, "notes") if _table_exists(con, "notes") else set()
-    can_join_notes = (
-        "note_id" in content_columns
-        and {"note_id", "reads", "collects"}.issubset(note_columns)
+    rows, limitations = fetch_group_effects(con, "copy_angle")
+    total_notes = sum(int(row.get("notes") or 0) for row in rows)
+    for row in rows:
+        row["mix_share"] = round(row["notes"] / total_notes, 4) if total_notes else None
+        row["avg_collect_rate"] = row.get("collect_rate")
+    rows.sort(
+        key=lambda row: (
+            row.get("notes") or 0,
+            row.get("gmv_per_1k_impressions") or 0,
+        ),
+        reverse=True,
     )
-    if can_join_notes:
-        result = con.sql(
-            """
-            SELECT
-              COALESCE(NULLIF(TRIM(CAST(cf.copy_angle AS VARCHAR)), ''), 'unknown')
-                AS copy_angle,
-              COUNT(*) AS notes,
-              COUNT(*) * 1.0 / SUM(COUNT(*)) OVER () AS mix_share,
-              AVG(CAST(n.reads AS DOUBLE)) AS avg_reads,
-              AVG(CASE WHEN n.reads > 0 THEN n.collects * 1.0 / n.reads END)
-                AS avg_collect_rate
-            FROM content_features AS cf
-            LEFT JOIN notes AS n ON CAST(cf.note_id AS VARCHAR) = CAST(n.note_id AS VARCHAR)
-            GROUP BY 1
-            ORDER BY notes DESC, avg_reads DESC NULLS LAST, copy_angle
-            """
-        )
-        limitations: list[str] = []
-    else:
-        result = con.sql(
-            """
-            SELECT
-              COALESCE(NULLIF(TRIM(CAST(copy_angle AS VARCHAR)), ''), 'unknown')
-                AS copy_angle,
-              COUNT(*) AS notes,
-              COUNT(*) * 1.0 / SUM(COUNT(*)) OVER () AS mix_share,
-              NULL AS avg_reads,
-              NULL AS avg_collect_rate
-            FROM content_features
-            GROUP BY 1
-            ORDER BY notes DESC, copy_angle
-            """
-        )
-        limitations = []
-        if _table_exists(con, "notes"):
-            limitations.append(
-                "notes 表缺少 note_id、reads 或 collects，组合指标留空。"
-            )
-
-    columns = result.columns
-    rows = [_clean_row(dict(zip(columns, row, strict=True))) for row in result.fetchall()]
     return rows, limitations
 
 

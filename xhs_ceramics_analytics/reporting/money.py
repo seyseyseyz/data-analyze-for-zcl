@@ -6,6 +6,7 @@ discipline: efficiency ratios use ``product_visitors`` only; the efficiency
 reversed), never a forecast; the pre-ship refund pool is reported as a marginal
 sum with NO recovery-rate estimate (the data has no basis for one).
 """
+
 from xhs_ceramics_analytics.analytics.numeric import to_finite_float
 
 _FACTOR_ZH = {"conversion": "转化", "aov": "客单价"}

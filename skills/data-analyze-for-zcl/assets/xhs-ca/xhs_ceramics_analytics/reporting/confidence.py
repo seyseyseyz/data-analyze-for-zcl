@@ -8,6 +8,7 @@ WEAK;把它当主标签会让每条结论都显示"低",并把大样本方向图
 
 md / html / charts / priority 都从这里取置信度,保证同一条结论在各处措辞一致。
 """
+
 from typing import NamedTuple
 
 from xhs_ceramics_analytics.analysis.result import Finding

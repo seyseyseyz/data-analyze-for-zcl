@@ -27,16 +27,13 @@ def run(db_path: Path) -> AnalysisResult:
             Finding(
                 title="导入表可用",
                 conclusion=(
-                    f"已检测到 {len(rows)} 张表。空表："
-                    f"{', '.join(missing) if missing else '无'}。"
+                    f"已检测到 {len(rows)} 张表。空表：{', '.join(missing) if missing else '无'}。"
                 ),
                 evidence_strength=(
                     EvidenceStrength.STRONG if rows else EvidenceStrength.NOT_JUDGABLE
                 ),
                 key_numbers={"table_count": len(rows)},
-                caveats=[]
-                if not missing
-                else ["部分表为空，相关分析会降级为弱判断或不可判断。"],
+                caveats=[] if not missing else ["部分表为空，相关分析会降级为弱判断或不可判断。"],
             )
         ],
         tables={"table_row_counts": rows},

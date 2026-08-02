@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "merchant_final_review.json",
+  "title": "merchant_final_review",
+  "description": "Runtime final-review envelope. The reviewer reports issues and never edits candidate HTML.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["verdict", "issues"],
+  "properties": {
+    "verdict": {"enum": ["pass", "revise"]},
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["issue_id", "target_type", "target_id", "severity", "reason", "requested_change"],
+        "properties": {
+          "issue_id": {"type": "string", "minLength": 1},
+          "target_type": {"enum": ["claim", "view", "action"]},
+          "target_id": {"type": "string", "minLength": 1},
+          "severity": {"enum": ["blocker", "major"]},
+          "reason": {"type": "string", "minLength": 1},
+          "requested_change": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}

@@ -6,6 +6,7 @@ badge). The public entry points wrap the result in markupsafe.Markup so the
 autoescaped template renders it verbatim; therefore every interpolated text node
 MUST be escaped with markupsafe.escape (_esc) inside the builders.
 """
+
 from __future__ import annotations
 
 import logging
@@ -23,13 +24,13 @@ logger = logging.getLogger(__name__)
 _VIEW_W = 640
 
 _HATCH = (
-    '<defs>'
+    "<defs>"
     '<pattern id="ca-hatch" width="6" height="6" patternUnits="userSpaceOnUse" '
     'patternTransform="rotate(45)">'
     '<rect width="6" height="6" fill="var(--surface)"/>'
     '<line x1="0" y1="0" x2="0" y2="6" stroke="var(--muted)" stroke-width="1.4"/>'
-    '</pattern>'
-    '</defs>'
+    "</pattern>"
+    "</defs>"
 )
 
 
@@ -60,9 +61,9 @@ def _frame(body: str, width: int, height: int, label: str = "数据图表，详�
 # produces an unreadable "wall" and a giant SVG. These mirror the already-correct
 # _timeseries_line (ticks=min(6,n)) / _rank_bars (top_n) thinning, applied to the
 # curated-template path (_line / _vbar / _waterfall) that previously had neither.
-_MAX_AXIS_LABELS = 12   # most category / x-axis labels drawn; the rest are thinned
+_MAX_AXIS_LABELS = 12  # most category / x-axis labels drawn; the rest are thinned
 _MAX_LINE_MARKERS = 24  # above this a line drops per-point circles (keeps the path)
-_MAX_BARS = 12          # curated bar templates cap to this many categories
+_MAX_BARS = 12  # curated bar templates cap to this many categories
 
 
 def _axis_label_indices(n: int, max_labels: int = _MAX_AXIS_LABELS) -> set[int]:
@@ -138,7 +139,7 @@ def _empty_state(width: int, height: int) -> str:
     )
 
 
-def _chart_badge(confidence: ReaderConfidence, n: int) -> str:
+def _chart_badge(confidence: ReaderConfidence, n: int | str) -> str:
     """置信度徽章 —— 复用报告里同一个面向商家的「置信度」。
 
     与结论正文取同一个 :func:`reader_confidence`（折叠后的**描述可靠性**为主、因果强度
@@ -229,20 +230,18 @@ def _hbar(
             opacity = "1" if i == 0 else _num(max(0.5, 0.92 - 0.1 * i))
         parts.append(
             f'<text x="{pad_l - 10}" y="{y + 15}" text-anchor="end" class="ca-cat">'
-            f'{_esc(_truncate(str(label), label_gutter))}<title>{_esc(label)}</title></text>'
+            f"{_esc(_truncate(str(label), label_gutter))}<title>{_esc(label)}</title></text>"
         )
         parts.append(
             f'<rect x="{pad_l}" y="{y}" width="{_num(bar_w)}" height="20" rx="10" '
             f'fill="{fill}" fill-opacity="{opacity}">'
-            f'<title>{_esc(label)}：{_esc(value_text)}</title></rect>'
+            f"<title>{_esc(label)}：{_esc(value_text)}</title></rect>"
         )
         parts.append(
             f'<text x="{_num(pad_l + bar_w + gap)}" y="{y + 15}" class="ca-num">'
-            f'{_esc(value_text)}</text>'
+            f"{_esc(value_text)}</text>"
         )
-    parts.append(
-        f'<line x1="{pad_l}" y1="12" x2="{pad_l}" y2="{height - 6}" class="ca-axis"/>'
-    )
+    parts.append(f'<line x1="{pad_l}" y1="12" x2="{pad_l}" y2="{height - 6}" class="ca-axis"/>')
     return _frame("".join(parts), width, height)
 
 
@@ -313,13 +312,9 @@ def evidence_distribution(evidence_counts: Sequence[dict]) -> Markup:
     for item in present:
         count = int(item["count"])
         tone = _EVIDENCE_TONE.get(str(item["value"]), "var(--surface-soft)")
-        caption = f'{item["label"]} {count}'
-        parts.append(
-            f'<rect x="{_num(lx)}" y="79" width="14" height="14" rx="3" fill="{tone}"/>'
-        )
-        parts.append(
-            f'<text x="{_num(lx + 20)}" y="91" class="ca-num">{_esc(caption)}</text>'
-        )
+        caption = f"{item['label']} {count}"
+        parts.append(f'<rect x="{_num(lx)}" y="79" width="14" height="14" rx="3" fill="{tone}"/>')
+        parts.append(f'<text x="{_num(lx + 20)}" y="91" class="ca-num">{_esc(caption)}</text>')
         lx += 14 + 6 + _legend_text_w(caption) + 24
     return Markup(_frame("".join(parts), width, height, label="结论置信度分布图"))
 
@@ -339,9 +334,7 @@ def _vbar(
     pad_t, pad_b, pad_x = 56, 64, 20
     plot_h = height - pad_t - pad_b
     baseline_y = pad_t + plot_h
-    plotted = [
-        (c, v, t) for c, v, t in zip(cats, values, value_texts) if v is not None
-    ]
+    plotted = [(c, v, t) for c, v, t in zip(cats, values, value_texts) if v is not None]
     body = [_title(title)]
     if not plotted:
         return _frame(_title(title) + _empty_state(width, height), width, height)
@@ -407,9 +400,7 @@ def _waterfall(
     pad_t, pad_b, pad_x = 56, 64, 20
     plot_h = height - pad_t - pad_b
     top_y = pad_t
-    plotted = [
-        (c, v, t) for c, v, t in zip(cats, values, value_texts) if v is not None
-    ]
+    plotted = [(c, v, t) for c, v, t in zip(cats, values, value_texts) if v is not None]
     if not plotted:
         return _frame(_title(title) + _empty_state(width, height), width, height)
     # Cumulative running totals: the plot band spans [min(0, …), max(0, …)] of the
@@ -459,9 +450,7 @@ def _waterfall(
 
 def _measure_panel(cats, rows, key, de_emphasize) -> str:
     values = [row.get(key) for row in rows]
-    texts = [
-        labels.format_number(float(v)) if v is not None else "暂无数据" for v in values
-    ]
+    texts = [labels.format_number(float(v)) if v is not None else "暂无数据" for v in values]
     return _vbar(cats, values, texts, title=_MEASURE_TITLE[key], de_emphasize=de_emphasize)
 
 
@@ -470,8 +459,7 @@ def _build_effect_pair(rows, category_key, confidence, de_emphasize) -> str:
         return ""
     cats = [labels.value_label(str(row.get(category_key))) for row in rows]
     has_any = any(
-        row.get("avg_reads") is not None or row.get("avg_collects") is not None
-        for row in rows
+        row.get("avg_reads") is not None or row.get("avg_collects") is not None for row in rows
     )
     if not has_any:
         return ""
@@ -483,15 +471,19 @@ def _build_effect_pair(rows, category_key, confidence, de_emphasize) -> str:
 
 def _build_cover(result: AnalysisResult, confidence: ReaderConfidence) -> str:
     return _build_effect_pair(
-        result.tables.get("cover_effects", []), "composition_type",
-        confidence, _de_emphasize(result),
+        result.tables.get("cover_effects", []),
+        "composition_type",
+        confidence,
+        _de_emphasize(result),
     )
 
 
 def _build_copy(result: AnalysisResult, confidence: ReaderConfidence) -> str:
     return _build_effect_pair(
-        result.tables.get("copy_effects", []), "copy_angle",
-        confidence, _de_emphasize(result),
+        result.tables.get("copy_effects", []),
+        "copy_angle",
+        confidence,
+        _de_emphasize(result),
     )
 
 
@@ -515,7 +507,7 @@ def _build_comment_demand(result: AnalysisResult, confidence: ReaderConfidence) 
     ]
     de = _de_emphasize(result)
     body = _hbar(bar_rows, value_max=max(v for _, v, _, _ in bar_rows), de_emphasize=de)
-    return f'{_chart_badge(confidence, total)}{body}'
+    return f"{_chart_badge(confidence, total)}{body}"
 
 
 _BUILDERS["comment_demand_mining"] = _build_comment_demand
@@ -560,9 +552,12 @@ def _line(
     for i, label in enumerate(x_labels):
         if i not in label_idx:
             continue
+        # Trim ISO dates to MM-DD (mirrors _timeseries_line): a full 'YYYY-MM-DD'
+        # tick is ~70px and collides at the ~50px spacing of a dense axis, while
+        # MM-DD does not. Non-date labels pass through _short_date untouched.
         body.append(
             f'<text x="{_num(xs[i])}" y="{_num(baseline_y + 20)}" text-anchor="middle" '
-            f'class="ca-cat">{_esc(label)}</text>'
+            f'class="ca-cat">{_esc(_short_date(label))}</text>'
         )
     # A long series is a shape, not a scatter of dots: keep the connecting path but
     # drop the per-point circles (600 dots is noise + a huge SVG). A short series
@@ -616,14 +611,14 @@ def _build_response_curve(result: AnalysisResult, confidence: ReaderConfidence) 
     x_labels = [labels.value_label(key) for _, key in _RESPONSE_WINDOWS]
     series = [
         (
-            f'{row.get("note_title") or row.get("note_id")}·{row.get("sku_id")}',
+            f"{row.get('note_title') or row.get('note_id')}·{row.get('sku_id')}",
             [row.get(col) for col, _ in _RESPONSE_WINDOWS],
         )
         for row in rows
     ]
     de = _de_emphasize(result)
     body = _line(series, x_labels, de_emphasize=de)
-    return f'{_chart_badge(confidence, len(rows))}{body}'
+    return f"{_chart_badge(confidence, len(rows))}{body}"
 
 
 _BUILDERS["content_response_curve"] = _build_response_curve
@@ -691,7 +686,7 @@ def _scatter(
         body.append(
             f'<circle cx="{_num(cx)}" cy="{_num(cy)}" r="6" fill="{fill}" '
             f'stroke="{stroke}" stroke-width="2" fill-opacity="{opacity}">'
-            f'<title>{_esc(p["label"])}</title></circle>'
+            f"<title>{_esc(p['label'])}</title></circle>"
         )
         if cx > width / 2:
             tx, anchor = cx - 9, "end"
@@ -699,14 +694,15 @@ def _scatter(
             tx, anchor = cx + 9, "start"
         body.append(
             f'<text x="{_num(tx)}" y="{_num(cy + 4)}" text-anchor="{anchor}" class="ca-cat">'
-            f'{_esc(p["label"])}</text>'
+            f"{_esc(p['label'])}</text>"
         )
     return _frame("".join(body), width, height)
 
 
 def _build_opportunity(result: AnalysisResult, confidence: ReaderConfidence) -> str:
     rows = [
-        r for r in result.tables.get("product_opportunities", [])
+        r
+        for r in result.tables.get("product_opportunities", [])
         if r.get("units") is not None and r.get("gmv") is not None
     ]
     if not rows:
@@ -717,14 +713,16 @@ def _build_opportunity(result: AnalysisResult, confidence: ReaderConfidence) -> 
             "x": float(r["units"]),
             "y": float(r["gmv"]),
             "label": str(r.get("sku_name") or r.get("sku_id")),
-            "shape": "filled" if r.get("opportunity_type") == "sales_response_present" else "hollow",
+            "shape": "filled"
+            if r.get("opportunity_type") == "sales_response_present"
+            else "hollow",
             "tone": "var(--ink-strong)",
             "de_emphasize": de,
         }
         for r in rows
     ]
     body = _scatter(points, x_label="销量", y_label="成交金额", median_lines=True)
-    return f'{_chart_badge(confidence, len(points))}{body}'
+    return f"{_chart_badge(confidence, len(points))}{body}"
 
 
 _BUDGET_TONE = {
@@ -738,15 +736,17 @@ _BUDGET_TONE = {
 def _build_paid(result: AnalysisResult, confidence: ReaderConfidence) -> str:
     rows = result.tables.get("paid_traffic_efficiency", [])
     total_spend = sum(float(r.get("spend") or 0) for r in rows)
-    plotted = [
-        r for r in rows
-        if (r.get("spend") or 0) > 0 and r.get("roas_calc") is not None
-    ]
+    plotted = [r for r in rows if (r.get("spend") or 0) > 0 and r.get("roas_calc") is not None]
     if total_spend <= 0 or not plotted:
         return ""  # honest: no spend / no return -> no efficiency chart
     de = _de_emphasize(result)
-    dims = ("campaign_name_optional", "creative_name_optional",
-            "note_id_optional", "sku_id_optional", "platform_source")
+    dims = (
+        "campaign_name_optional",
+        "creative_name_optional",
+        "note_id_optional",
+        "sku_id_optional",
+        "platform_source",
+    )
 
     def name_of(row: dict) -> str:
         for key in dims:
@@ -761,14 +761,14 @@ def _build_paid(result: AnalysisResult, confidence: ReaderConfidence) -> str:
             {
                 "x": float(r["spend"]),
                 "y": float(r["roas_calc"]),
-                "label": f'{name_of(r)}·{labels.value_label(action)}',
+                "label": f"{name_of(r)}·{labels.value_label(action)}",
                 "shape": "hollow" if action == "needs_data" else "filled",
                 "tone": _BUDGET_TONE.get(action, "var(--muted)"),
                 "de_emphasize": de,
             }
         )
     body = _scatter(points, x_label="消耗", y_label="投产比 ROAS", median_lines=True)
-    return f'{_chart_badge(confidence, len(points))}{body}'
+    return f"{_chart_badge(confidence, len(points))}{body}"
 
 
 _BUILDERS["product_opportunity_matrix"] = _build_opportunity
@@ -810,9 +810,7 @@ def _timeseries_line(
     plot_h = height - pad_t - pad_b
     baseline_y = pad_t + plot_h
     pts = [
-        (str(r.get(date_key)), float(r[value_key]))
-        for r in rows
-        if r.get(value_key) is not None
+        (str(r.get(date_key)), float(r[value_key])) for r in rows if r.get(value_key) is not None
     ]
     if not pts:
         return _frame(_title(title) + _empty_state(width, height), width, height, label=title)
@@ -877,7 +875,7 @@ def _timeseries_line(
         # changepoint labels that sit in the band just above the plot.
         body.append(
             f'<text x="{width - pad_r}" y="18" text-anchor="end" class="ca-cat">'
-            f'趋势线为 {2 * k + 1} 日移动平均</text>'
+            f"趋势线为 {2 * k + 1} 日移动平均</text>"
         )
     for i in {0, n - 1}:  # anchor first + last observations (single point => one dot)
         body.append(
@@ -931,32 +929,58 @@ def _rank_bars(
         for r in clean
     ]
     badge = _chart_badge(confidence, len(clean))
-    return f'{badge}{_hbar(bar_rows, value_max=vmax, de_emphasize=de)}'
+    return f"{badge}{_hbar(bar_rows, value_max=vmax, de_emphasize=de)}"
 
 
 def _build_demand_funnel(result: AnalysisResult, confidence: ReaderConfidence) -> str:
     rows = [
-        r for r in result.tables.get("demand_funnel_trend", [])
-        if r.get("add_to_cart_users") is not None
+        r
+        for r in result.tables.get("demand_funnel_trend", [])
+        if r.get("add_to_cart_users") is not None or r.get("paid_buyers") is not None
     ]
     if not rows:
         return ""
-    total_cart = sum(float(r.get("add_to_cart_users") or 0) for r in rows)
-    total_pay = sum(float(r.get("paid_buyers") or 0) for r in rows)
-    if total_cart <= 0:
+    cart_values = [
+        float(r["add_to_cart_users"]) for r in rows if r.get("add_to_cart_users") is not None
+    ]
+    pay_values = [float(r["paid_buyers"]) for r in rows if r.get("paid_buyers") is not None]
+    if not cart_values or not pay_values:
+        return ""
+    avg_daily_cart = sum(cart_values) / len(cart_values)
+    avg_daily_pay = sum(pay_values) / len(pay_values)
+    if avg_daily_cart <= 0:
         return ""
     de = _de_emphasize(result)
     funnel_rows = [
-        ("加购人数", total_cart, labels.format_number(total_cart), "var(--ink-strong)"),
-        ("成交人数", total_pay, labels.format_number(total_pay), "var(--ink-strong)"),
+        (
+            "日均加购人数（每日去重）",
+            avg_daily_cart,
+            labels.format_number(avg_daily_cart),
+            "var(--ink-strong)",
+        ),
+        (
+            "日均支付买家数（每日去重）",
+            avg_daily_pay,
+            labels.format_number(avg_daily_pay),
+            "var(--ink-strong)",
+        ),
     ]
-    funnel = _hbar(funnel_rows, value_max=total_cart, de_emphasize=de)
+    funnel = _hbar(funnel_rows, value_max=avg_daily_cart, de_emphasize=de)
     trend = _timeseries_line(
-        rows, date_key="date", value_key="cart_to_pay",
-        value_fmt=labels.format_percent, de_emphasize=de,
-        title="加购→成交转化率趋势",
+        rows,
+        date_key="date",
+        value_key="cart_to_pay",
+        value_fmt=labels.format_percent,
+        de_emphasize=de,
+        title="逐日加购→支付比趋势",
     )
-    return f'{_chart_badge(confidence, int(total_cart))}{funnel}{trend}'
+    paired_days = sum(r.get("cart_to_pay") is not None for r in rows)
+    sample_label: int | str
+    if len(cart_values) == len(pay_values) == paired_days:
+        sample_label = paired_days
+    else:
+        sample_label = f"加购{len(cart_values)}/支付{len(pay_values)}/配对{paired_days}"
+    return f"{_chart_badge(confidence, sample_label)}{funnel}{trend}"
 
 
 def _build_core_business(result: AnalysisResult, confidence: ReaderConfidence) -> str:
@@ -966,18 +990,24 @@ def _build_core_business(result: AnalysisResult, confidence: ReaderConfidence) -
     de = _de_emphasize(result)
     changepoints = {str(r.get("date")) for r in rows if r.get("is_changepoint")}
     body = _timeseries_line(
-        rows, date_key="date", value_key="gmv",
-        value_fmt=labels.format_money, de_emphasize=de,
-        title="成交金额(GMV)趋势", changepoint_dates=changepoints,
+        rows,
+        date_key="date",
+        value_key="gmv",
+        value_fmt=labels.format_money,
+        de_emphasize=de,
+        title="成交金额(GMV)趋势",
+        changepoint_dates=changepoints,
     )
-    return f'{_chart_badge(confidence, len(rows))}{body}'
+    return f"{_chart_badge(confidence, len(rows))}{body}"
 
 
 def _build_channel(result: AnalysisResult, confidence: ReaderConfidence) -> str:
     return _rank_bars(
         result.tables.get("channel_scale", []),
-        label_key="carrier_zh", value_key="gmv",
-        value_fmt=labels.format_money, confidence=confidence,
+        label_key="carrier_zh",
+        value_key="gmv",
+        value_fmt=labels.format_money,
+        confidence=confidence,
         de_emphasize=_de_emphasize(result),
     )
 
@@ -985,8 +1015,10 @@ def _build_channel(result: AnalysisResult, confidence: ReaderConfidence) -> str:
 def _build_sku_l2(result: AnalysisResult, confidence: ReaderConfidence) -> str:
     return _rank_bars(
         result.tables.get("sku_category_l2_mix", []),
-        label_key="category_l2", value_key="gmv",
-        value_fmt=labels.format_money, confidence=confidence,
+        label_key="category_l2",
+        value_key="gmv",
+        value_fmt=labels.format_money,
+        confidence=confidence,
         de_emphasize=_de_emphasize(result),
     )
 
@@ -994,8 +1026,10 @@ def _build_sku_l2(result: AnalysisResult, confidence: ReaderConfidence) -> str:
 def _build_refund_category(result: AnalysisResult, confidence: ReaderConfidence) -> str:
     return _rank_bars(
         result.tables.get("refund_by_category", []),
-        label_key="category_l1", value_key="refund_orders",
-        value_fmt=labels.format_number, confidence=confidence,
+        label_key="category_l1",
+        value_key="refund_orders",
+        value_fmt=labels.format_number,
+        confidence=confidence,
         de_emphasize=_de_emphasize(result),
     )
 
@@ -1004,19 +1038,25 @@ def _build_audience(result: AnalysisResult, confidence: ReaderConfidence) -> str
     # findings[0] is the 人群转化对比 finding, so prefer the conversion table; fall
     # back to GMV composition share when conversion data is absent.
     conversion = [
-        r for r in result.tables.get("audience_conversion_comparison", [])
+        r
+        for r in result.tables.get("audience_conversion_comparison", [])
         if r.get("conversion") is not None
     ]
     if conversion:
         return _rank_bars(
-            conversion, label_key="audience_type", value_key="conversion",
-            value_fmt=labels.format_percent, confidence=confidence,
+            conversion,
+            label_key="audience_type",
+            value_key="conversion",
+            value_fmt=labels.format_percent,
+            confidence=confidence,
             de_emphasize=_de_emphasize(result),
         )
     return _rank_bars(
         result.tables.get("audience_composition", []),
-        label_key="audience_segment", value_key="gmv_share",
-        value_fmt=labels.format_percent, confidence=confidence,
+        label_key="audience_segment",
+        value_key="gmv_share",
+        value_fmt=labels.format_percent,
+        confidence=confidence,
         de_emphasize=_de_emphasize(result),
     )
 
@@ -1126,9 +1166,7 @@ def render_chart_template(
         # column reads "64.5%" (not the raw ratio "0.64"), money rounds to whole yuan,
         # counts group — exactly as the tables render the same key. This is the curated
         # + fallback chart path; the task-keyed builders pass their own value_fmt.
-        texts = [
-            format_scalar(y_key, v) if v is not None else "暂无数据" for v in values
-        ]
+        texts = [format_scalar(y_key, v) if v is not None else "暂无数据" for v in values]
 
         # Bar templates cap their category count: 50–250 bars render as unreadable
         # 2px slivers with overlapping numbers (a form failure, like a wall-of-dates
@@ -1154,8 +1192,7 @@ def render_chart_template(
             # truncates the label while keeping the full text in each bar's <title>.
             vmax = max((v for v in values if v is not None), default=0.0)
             hbar_rows = [
-                (cat, v, txt, "var(--ink-strong)")
-                for cat, v, txt in zip(cats, values, texts)
+                (cat, v, txt, "var(--ink-strong)") for cat, v, txt in zip(cats, values, texts)
             ]
             svg = _hbar(hbar_rows, value_max=vmax, de_emphasize=de)
         elif template == "breakdown_waterfall":

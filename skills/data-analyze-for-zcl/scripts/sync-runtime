@@ -31,6 +31,14 @@ rsync -a --delete \
   "$repo_root/tests" \
   "$runtime_dir/"
 
+mkdir -p "$runtime_dir/scripts"
+rsync -a --delete --delete-excluded \
+  --include="build_xhs_semantic_catalog.py" \
+  --include="extract_har_field_dictionary.rb" \
+  --exclude="*" \
+  "$repo_root/scripts/" \
+  "$runtime_dir/scripts/"
+
 cp "$repo_root/scripts/bootstrap_runtime.py" "$skill_dir/scripts/bootstrap_runtime.py"
 cp "$repo_root/scripts/bootstrap_python.sh" "$skill_dir/scripts/bootstrap_python.sh"
 

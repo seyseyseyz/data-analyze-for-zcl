@@ -31,7 +31,9 @@ One row per comment when comment-level exports are available.
 
 ## Chinese Aliases (from mapping.py FIELD_ALIASES)
 
-No dedicated aliases for `comments` in FIELD_ALIASES (the table signature uses English column names: note_id, comment_time, comment_text).
+必填字段支持：笔记ID/笔记id、评论时间/留言时间、评论内容/评论文本/留言内容。
+
+可选字段支持：评论ID/评论id、父评论ID/上级评论ID、评论点赞数/点赞数、评论用户哈希/用户ID哈希。
 
 ## Sample Row
 

@@ -99,6 +99,29 @@ def _ingest_review(tmp_path, verdict_by_lens, *, view_id="core.bridge", section_
         nw.ingest_output(tmp_path, stage="review", text=json.dumps(payload, ensure_ascii=False))
 
 
+def _ingest_empty_continuity(tmp_path):
+    task = nw.status_json(tmp_path)["tasks"]["pending"][0]
+    nw.ingest_output(
+        tmp_path,
+        stage="continuity",
+        task_id=task["task_id"],
+        text='{"edits":[]}',
+    )
+
+
+def _ingest_review_patch(tmp_path):
+    task = nw.status_json(tmp_path)["tasks"]["pending"][0]
+    nw.ingest_output(
+        tmp_path,
+        stage="patch",
+        task_id=task["task_id"],
+        text=json.dumps(
+            {"sections": [_section(curated_views=[dict(_VALID_VIEW)])]},
+            ensure_ascii=False,
+        ),
+    )
+
+
 # --- tally_votes: pure strict-precedence table -----------------------------
 
 
@@ -246,6 +269,7 @@ def test_empty_curated_views_skips_review_and_finalizes(tmp_path, monkeypatch):
     _drive_to_synth(tmp_path, _section(curated_views=[]))
     state = nw.advance_run(tmp_path)  # gate PASS -> continuity (no curated views to review)
     assert state["stage"] == "continuity"
+    _ingest_empty_continuity(tmp_path)
     state = nw.advance_run(tmp_path)  # continuity PASS -> finalized
     assert state["stage"] == "finalized"
     assert (outputs_dir(tmp_path) / "20260101-000000-叙事报告" / "叙事报告.md").exists()
@@ -274,6 +298,7 @@ def test_review_keep_retains_and_renders_view(tmp_path, monkeypatch):
     state = nw.advance_run(tmp_path)  # review resolves keep -> continuity
     assert state["stage"] == "continuity"
     assert state["_bundle"]["sections"][0]["curated_views"]  # retained
+    _ingest_empty_continuity(tmp_path)
     state = nw.advance_run(tmp_path)  # -> finalized
     assert state["stage"] == "finalized"
     md = (outputs_dir(tmp_path) / "20260101-000000-叙事报告" / "叙事报告.md").read_text(encoding="utf-8")
@@ -289,23 +314,21 @@ def test_review_two_drops_removes_view(tmp_path, monkeypatch):
     state = nw.advance_run(tmp_path)  # 2 drop -> view removed -> continuity
     assert state["stage"] == "continuity"
     assert state["_bundle"]["sections"][0]["curated_views"] == []
+    _ingest_empty_continuity(tmp_path)
     state = nw.advance_run(tmp_path)  # -> finalized
     md = (outputs_dir(tmp_path) / "20260101-000000-叙事报告" / "叙事报告.md").read_text(encoding="utf-8")
     assert "123" not in md  # dropped view's numbers never rendered
 
 
-def test_review_missing_verdicts_drops_view_and_finalizes(tmp_path, monkeypatch):
+def test_review_missing_verdicts_blocks_advance(tmp_path, monkeypatch):
     _prepare(tmp_path, result_tables=_TABLES)
     _echo_gate(monkeypatch)
     _drive_to_synth(tmp_path, _section(curated_views=[dict(_VALID_VIEW)]))
     state = nw.advance_run(tmp_path)  # -> review
     assert state["stage"] == "review"
-    # reviewers never returned anything: advance must degrade, not raise
-    state = nw.advance_run(tmp_path)  # no verdicts -> drop view -> continuity
-    assert state["stage"] == "continuity"
-    assert state["_bundle"]["sections"][0]["curated_views"] == []
-    state = nw.advance_run(tmp_path)  # -> finalized (report still delivers)
-    assert state["stage"] == "finalized"
+    # Missing sidecars are a workflow failure, not an implicit drop verdict.
+    with pytest.raises(ValueError, match="pending briefs"):
+        nw.advance_run(tmp_path)
 
 
 def test_review_no_majority_routes_to_patch(tmp_path, monkeypatch):
@@ -370,6 +393,8 @@ def test_review_patch_eventually_drops_when_never_converges(tmp_path, monkeypatc
     for _ in range(12):
         if state["stage"] == "review":
             _ingest_review(tmp_path, {"价值": "keep", "可读性": "revise", "支撑": "drop"})
+        elif state["stage"] == "patch":
+            _ingest_review_patch(tmp_path)
         state = nw.advance_run(tmp_path)
         if state["stage"] in {"continuity", "finalized", "blocked"}:
             break
