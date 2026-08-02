@@ -78,6 +78,14 @@ def test_build_toc_nav_nests_sub_entries_under_preceding_top():
     assert nav.index("子节A2") < nav.index("大节B")
 
 
+def test_build_toc_nav_omits_redundant_visible_title():
+    nav = toc.build_toc_nav([{"level": 2, "anchor": "a", "label": "大节A"}])
+
+    assert 'class="toc-rail__title"' not in nav
+    assert ">目录<" not in nav
+    assert 'aria-label="报告目录"' in nav
+
+
 def test_build_toc_nav_escapes_labels_and_anchors():
     nav = toc.build_toc_nav([{"level": 2, "anchor": "x", "label": "<script>x</script>"}])
     assert "<script>x</script>" not in nav
@@ -151,6 +159,16 @@ def test_narrative_html_has_persistent_toc_rail_with_resolving_anchors():
     assert anchors <= heading_ids
 
 
+def test_narrative_html_omits_redundant_report_chrome():
+    html = render_markdown_document_html("# 报告标题\n\n## 生意大盘\n\n正文。\n")
+
+    assert 'class="topbar"' not in html
+    assert 'class="eyebrow"' not in html
+    assert "小红书经营分析" not in html
+    assert "Single-file HTML" not in html
+    assert "Integrated Report" not in html
+
+
 def test_narrative_html_toc_is_persistent_and_smooth_without_script_dependency():
     html = render_markdown_document_html("# T\n\n## 一\n\n正文。\n")
     assert "position: sticky" in html
@@ -170,7 +188,8 @@ def test_narrative_html_toc_is_persistent_and_smooth_without_script_dependency()
 def test_narrative_layout_gives_tables_more_room_and_prevents_vertical_headers():
     html = render_markdown_document_html("# T\n\n## 经营诊断明细\n\n正文。\n")
 
-    assert "--toc-rail-w: 196px" in html
+    assert toc.TOC_RAIL_WIDTH == "188px"
+    assert "--toc-rail-w: 188px" in html
     assert "--toc-gap: 32px" in html
     assert "--toc-content: 1040px" in html
     assert "--toc-content-wide: 1268px" in html
@@ -228,6 +247,16 @@ def test_fact_layer_has_persistent_toc_rail():
     assert "position: sticky" in html
     # the old scrolling topbar nav is gone
     assert 'class="toc"' not in html
+
+
+def test_fact_layer_omits_redundant_report_chrome():
+    html = render_html(_results())
+
+    assert 'class="topbar"' not in html
+    assert 'class="eyebrow"' not in html
+    assert "小红书经营分析" not in html
+    assert "Single-file HTML" not in html
+    assert "Operating Report" not in html
 
 
 def test_fact_layer_toc_lists_analysis_domains_as_sub_entries():

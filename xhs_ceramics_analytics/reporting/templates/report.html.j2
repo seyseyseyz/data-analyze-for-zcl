@@ -314,26 +314,6 @@
     .axis-note,
     .empty-state { max-width: 68ch; }
 
-    .topbar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 24px;
-      padding: 14px 0 32px;
-      color: var(--muted);
-      font-size: 13px;
-    }
-
-    .brand {
-      display: inline-flex;
-      align-items: center;
-      gap: 9px;
-      color: var(--ink-strong);
-      font-weight: 700;
-    }
-
-    .brand .ic { width: 20px; height: 20px; stroke-width: 1.9; }
-
     .hero {
       position: relative;
       background: var(--surface);
@@ -361,7 +341,6 @@
 
     .hero > * { position: relative; }
 
-    .eyebrow,
     .tag {
       display: inline-flex;
       align-items: center;
@@ -375,12 +354,6 @@
       text-transform: uppercase;
       font-family: var(--font-mono);
       font-weight: 700;
-    }
-
-    .eyebrow {
-      background: var(--yellow-bg);
-      color: var(--yellow-text);
-      margin-bottom: 24px;
     }
 
     h1,
@@ -726,6 +699,7 @@
       font-family: var(--font-sans);
       fill: var(--ink);
     }
+    .chart-svg .ca-tooltip-text { fill: var(--surface); }
     .chart-svg .ca-title,
     .chart-svg .ca-cat { fill: var(--muted); font-size: 12px; }
     .chart-svg .ca-num {
@@ -839,7 +813,7 @@
       color: inherit;
       font-family: var(--font-sans);
       text-align: left;
-      cursor: pointer;
+      cursor: inherit;
       outline: none;
     }
 
@@ -1134,7 +1108,6 @@
 
     @media (max-width: 860px) {
       section { padding-top: 72px; }
-      .topbar { align-items: flex-start; flex-direction: column; }
       .hero { grid-template-columns: 1fr; min-height: auto; padding: 32px; }
       .action-item { grid-template-columns: 1fr; }
       .action-meta-grid { grid-template-columns: 1fr; }
@@ -1157,14 +1130,8 @@
   <div class="page-grid">
     {{ report.toc_nav_html | safe }}
     <main class="report-shell">
-    <header class="topbar">
-      <div class="brand">{{ ic('spark') }} 小红书经营分析</div>
-      <div>Single-file HTML</div>
-    </header>
-
     <section class="hero reveal" style="--index: 0">
       <div>
-        <span class="eyebrow">Operating Report</span>
         <h1>{{ report_title }}{{ title_mascot_html | safe }}</h1>
         <p class="hero-copy">
           这份报告以六个核心经营领域组织完整分析，并在有相应数据时增加付费增长等专项领域。每个领域默认展示核心结论，其余模块和明细仍保留在同一份报告中，可展开备查。先看结论和行动，再按领域下钻，数据质量与口径说明放在末尾附录。

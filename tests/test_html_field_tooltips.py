@@ -54,7 +54,8 @@ def test_field_explanations_are_focusable_tooltips_not_inline_copy():
     assert ".field-tooltip:hover .field-tooltip-content" in html
     assert ".field-tooltip:focus-visible .field-tooltip-content" in html
     assert ".field-tooltip:focus-within .field-tooltip-content" not in html
-    assert "cursor: pointer" in html
+    field_tooltip_css = html.split(".field-tooltip {", 1)[1].split("}", 1)[0]
+    assert "cursor: inherit" in field_tooltip_css
     assert "cursor: help" not in html
 
 
@@ -167,6 +168,7 @@ def test_final_narrative_diagnostic_table_uses_confirmed_field_tooltips():
     assert "border-bottom: 1px dashed" in html
     assert 'role="tooltip"' in html
     assert 'class="field-tooltip-trigger"' not in html
+    assert "cursor: inherit" in html
     assert 'event.target.closest(".field-tooltip")' not in html
 
 

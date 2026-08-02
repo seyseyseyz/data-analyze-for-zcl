@@ -39,6 +39,12 @@ def test_chart_style_styles_every_class_the_narrative_emits():
         assert token in CHART_STYLE, f"CHART_STYLE is missing a rule for {token}"
 
 
+def test_chart_tooltip_text_overrides_the_generic_svg_text_color():
+    assert ".chart-svg .ca-tooltip-text" in CHART_STYLE
+    tooltip_rule = CHART_STYLE.split(".chart-svg .ca-tooltip-text", 1)[1].split("}", 1)[0]
+    assert "fill: var(--surface)" in tooltip_rule
+
+
 def test_chart_style_references_only_tokens_the_narrative_root_defines():
     # The narrative :root defines exactly these tokens; the chart CSS must not
     # reference a var the narrative never sets (that would render unstyled).
@@ -60,9 +66,11 @@ def test_narrative_html_injects_chart_css():
     assert ".ca-row-highlight" in html
     # a hairline axis stroke is now defined (was invisible before)
     assert ".ca-axis" in html and "stroke: var(--line)" in html
+    assert ".chart-svg .ca-tooltip-text" in html
     # Numeric-table sorting is bundled inline; it must not add a network dependency.
     assert '<script id="ca-table-sort">' in html
     assert "ca-sort-values" in html
+    assert "th.ca-sortable {" in html and "cursor: pointer" in html
     assert "addEventListener(\"click\"" in html
     assert 'event.target.closest(".field-tooltip")' not in html
     assert "if (event.target !== header) return" in html

@@ -37,7 +37,7 @@ _HATCH = (
 _TOOLTIP_STYLE = (
     "<style>"
     ".ca-tooltip-trigger{fill:transparent;stroke:transparent;pointer-events:all;"
-    "cursor:pointer;outline:none}"
+    "cursor:default;outline:none}"
     ".ca-tooltip{opacity:0;visibility:hidden;pointer-events:none;"
     "transition:opacity 80ms ease;transition-delay:120ms}"
     ".ca-tooltip-trigger:hover+.ca-tooltip,.ca-tooltip-trigger:focus+.ca-tooltip{"

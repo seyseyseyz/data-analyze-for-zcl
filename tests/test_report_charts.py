@@ -161,8 +161,17 @@ def test_all_chart_tooltips_are_fast_custom_and_keyboard_accessible():
         assert 'focusable="true"' in svg, name
         assert 'role="tooltip"' in svg, name
         assert "transition-delay:120ms" in svg, name
-        assert "cursor:pointer" in svg, name
+        assert "cursor:default" in svg, name
+        assert "cursor:pointer" not in svg, name
         assert "cursor:help" not in svg, name
+
+
+def test_fact_report_css_keeps_tooltip_text_light_on_dark_background():
+    from xhs_ceramics_analytics.reporting.html import render_html
+
+    html = render_html([_result("cover_style_effect", EvidenceStrength.MEDIUM, {})])
+    tooltip_rule = html.split(".chart-svg .ca-tooltip-text", 1)[1].split("}", 1)[0]
+    assert "fill: var(--surface)" in tooltip_rule
 
 
 def test_horizontal_bar_uses_custom_tooltips_for_every_label_and_bar():

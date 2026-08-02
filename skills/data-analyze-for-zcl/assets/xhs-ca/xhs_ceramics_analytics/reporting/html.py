@@ -620,12 +620,7 @@ def render_markdown_document_html(markdown_text: str, title: str | None = None) 
     )
 
     main_html = f"""<main class="report-shell">
-      <header class="topbar">
-        <div class="brand">小红书经营分析</div>
-        <div>Single-file HTML</div>
-      </header>
       <article class="report-card">
-        <span class="eyebrow">Integrated Report</span>
 {body_html}
       </article>
     </main>"""
@@ -676,36 +671,11 @@ def render_markdown_document_html(markdown_text: str, title: str | None = None) 
       width: min(960px, calc(100% - 24px));
       margin: 0 auto;
     }}
-    .topbar {{
-      display: flex;
-      justify-content: space-between;
-      gap: 20px;
-      padding: 14px 0 28px;
-      color: var(--muted);
-      font-size: 13px;
-    }}
-    .brand {{
-      color: var(--ink-strong);
-      font-weight: 700;
-    }}
     .report-card {{
       background: var(--surface);
       border: 1px solid var(--line);
       border-radius: 12px;
       padding: clamp(24px, 5vw, 56px);
-    }}
-    .eyebrow {{
-      display: inline-flex;
-      width: fit-content;
-      border-radius: 9999px;
-      padding: 5px 10px;
-      background: var(--yellow-bg);
-      color: var(--yellow-text);
-      font-family: 'Geist Mono', 'SF Mono', monospace;
-      font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 0;
-      text-transform: uppercase;
     }}
     h1, h2, h3, h4, h5, h6 {{
       color: var(--ink-strong);

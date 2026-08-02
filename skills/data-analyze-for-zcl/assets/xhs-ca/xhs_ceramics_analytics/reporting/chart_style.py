@@ -42,6 +42,7 @@ CHART_STYLE = """
       font-family: 'SF Pro Display', 'Geist Sans', 'Helvetica Neue', sans-serif;
       fill: var(--ink);
     }
+    .chart-svg .ca-tooltip-text { fill: var(--surface); }
     .chart-svg .ca-title,
     .chart-svg .ca-cat { fill: var(--muted); font-size: 12px; }
     .chart-svg .ca-num {

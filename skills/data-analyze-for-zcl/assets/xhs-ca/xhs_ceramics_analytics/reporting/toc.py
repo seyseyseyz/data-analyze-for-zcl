@@ -26,14 +26,19 @@ from html import escape
 
 # The fixed left-rail width on wide viewports. Exposed so callers can reason about
 # the content column, though the value is baked into TOC_STYLE below.
-TOC_RAIL_WIDTH = "232px"
+TOC_RAIL_WIDTH = "188px"
 
 # Viewport at/above which the rail moves from a top strip to a left column. Kept in
 # one place so both the grid switch and any caller stay in sync.
 TOC_WIDE_BREAKPOINT = "1200px"
 
 
-def build_toc_nav(entries: object, *, title: str = "目录", aria_label: str = "报告目录") -> str:
+def build_toc_nav(
+    entries: object,
+    *,
+    title: str | None = None,
+    aria_label: str = "报告目录",
+) -> str:
     """Render an ordered entry list into the shared ``<nav class="toc-rail">``.
 
     ``entries`` is an ordered iterable of ``{"level": 2|3, "anchor": str,
@@ -41,16 +46,17 @@ def build_toc_nav(entries: object, *, title: str = "目录", aria_label: str = "
     ``<ul class="toc-sub">`` sub-items; a level-3 with no preceding level-2 is
     promoted to a top-level item so it is never silently dropped.
 
+    ``title`` remains accepted for compatibility but is intentionally not rendered.
     Returns ``""`` when there is nothing valid to show. Never raises — a garbage
     argument degrades to an empty string.
     """
     try:
-        return _build_toc_nav(entries, title=title, aria_label=aria_label)
+        return _build_toc_nav(entries, aria_label=aria_label)
     except Exception:
         return ""
 
 
-def _build_toc_nav(entries: object, *, title: str, aria_label: str) -> str:
+def _build_toc_nav(entries: object, *, aria_label: str) -> str:
     items = _normalize_entries(entries)
     if not items:
         return ""
@@ -83,7 +89,6 @@ def _build_toc_nav(entries: object, *, title: str, aria_label: str) -> str:
 
     return (
         f'<nav class="toc-rail" aria-label="{escape(aria_label, quote=True)}">'
-        f'<p class="toc-rail__title">{escape(title)}</p>'
         f'<ul class="toc-list">{"".join(rendered)}</ul>'
         f"</nav>"
     )
@@ -135,7 +140,7 @@ TOC_STYLE = """
     html { scroll-behavior: smooth; }
 
     .page-grid {
-      --toc-rail-w: 196px;
+      --toc-rail-w: 188px;
       --toc-gap: 32px;
       /* Mobile-first gutter; the wide breakpoint below bumps it to 40px. Renderers
          override only the --toc-content widths, never --toc-pad, so this responsive
@@ -162,15 +167,6 @@ TOC_STYLE = """
       border-bottom: 1px solid var(--line);
       padding: 10px 0;
       margin: 0 0 10px;
-    }
-
-    .toc-rail__title {
-      margin: 0 0 6px;
-      font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: var(--muted);
     }
 
     .toc-list {
