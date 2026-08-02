@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-08-02-single-authorization-resume-design.md
+  s_fa9953509f59d8::t_79c579b084a520 1-56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.39-trip",
+  "base_commit_sha": "34d7d39d719459567b61f3c10e137d5a16ccb04c",
+  "prompts": {},
+  "sessions": {
+    "s_fa9953509f59d8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc131-185f-76e2-b174-dbe23ecc8176",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
