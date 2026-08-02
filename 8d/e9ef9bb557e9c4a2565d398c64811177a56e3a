@@ -1,0 +1,19 @@
+skills/data-analyze-for-zcl/agents/openai.yaml
+  s_83c24dadbaeb05::t_e2d5891bedfe36 2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.39-trip",
+  "base_commit_sha": "8de9ef9bb557e9c4a2565d398c64811177a56e3a",
+  "prompts": {},
+  "sessions": {
+    "s_83c24dadbaeb05": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc350-4249-7b30-8f4e-ae41e9ccc10f",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
