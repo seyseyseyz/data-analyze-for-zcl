@@ -54,6 +54,8 @@ def test_field_explanations_are_focusable_tooltips_not_inline_copy():
     assert ".field-tooltip:hover .field-tooltip-content" in html
     assert ".field-tooltip:focus-visible .field-tooltip-content" in html
     assert ".field-tooltip:focus-within .field-tooltip-content" not in html
+    assert "cursor: pointer" in html
+    assert "cursor: help" not in html
 
 
 def test_tooltips_do_not_add_a_second_visible_field_definition_or_break_print():
@@ -165,7 +167,7 @@ def test_final_narrative_diagnostic_table_uses_confirmed_field_tooltips():
     assert "border-bottom: 1px dashed" in html
     assert 'role="tooltip"' in html
     assert 'class="field-tooltip-trigger"' not in html
-    assert 'event.target.closest(".field-tooltip")' in html
+    assert 'event.target.closest(".field-tooltip")' not in html
 
 
 def test_validated_complex_metric_adds_only_relevant_business_caliber_rows():

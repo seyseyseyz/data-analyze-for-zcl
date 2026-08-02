@@ -52,7 +52,7 @@ FIELD_TOOLTIP_STYLE = """
       color: inherit;
       font: inherit;
       text-align: left;
-      cursor: help;
+      cursor: pointer;
       outline: none;
     }
     .field-tooltip-label {

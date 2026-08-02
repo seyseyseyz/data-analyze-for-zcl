@@ -64,4 +64,6 @@ def test_narrative_html_injects_chart_css():
     assert '<script id="ca-table-sort">' in html
     assert "ca-sort-values" in html
     assert "addEventListener(\"click\"" in html
+    assert 'event.target.closest(".field-tooltip")' not in html
+    assert "if (event.target !== header) return" in html
     assert "https://" not in html and "http://" not in html

@@ -161,6 +161,8 @@ def test_all_chart_tooltips_are_fast_custom_and_keyboard_accessible():
         assert 'focusable="true"' in svg, name
         assert 'role="tooltip"' in svg, name
         assert "transition-delay:120ms" in svg, name
+        assert "cursor:pointer" in svg, name
+        assert "cursor:help" not in svg, name
 
 
 def test_horizontal_bar_uses_custom_tooltips_for_every_label_and_bar():

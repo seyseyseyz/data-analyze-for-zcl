@@ -106,9 +106,6 @@ TABLE_SORT_SCRIPT = r"""<script id="ca-table-sort">
     const rows = Array.from(body?.rows || []);
     const matrix = wrapper ? decode(wrapper) : [];
     if (!body || !headers.length || !rows.length || matrix.length !== rows.length) return;
-    const isTooltipEvent = (event) => Boolean(
-      event.target && event.target.closest(".field-tooltip")
-    );
     const original = new Map(rows.map((row, index) => [row, index]));
     const values = new Map(rows.map((row, index) => [row, matrix[index] || []]));
     let activeColumn = -1;
@@ -141,11 +138,9 @@ TABLE_SORT_SCRIPT = r"""<script id="ca-table-sort">
       header.tabIndex = 0;
       header.setAttribute("role", "button");
       header.setAttribute("aria-sort", "none");
-      header.addEventListener("click", (event) => {
-        if (!isTooltipEvent(event)) sortBy(column);
-      });
+      header.addEventListener("click", () => sortBy(column));
       header.addEventListener("keydown", (event) => {
-        if (isTooltipEvent(event)) return;
+        if (event.target !== header) return;
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
           sortBy(column);
