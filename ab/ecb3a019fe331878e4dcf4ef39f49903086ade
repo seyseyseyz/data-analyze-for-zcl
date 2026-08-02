@@ -1,0 +1,39 @@
+skills/data-analyze-for-zcl/SKILL.md
+  s_fa9953509f59d8::t_623b6fa994611c 56-59
+  s_fa9953509f59d8::t_1a165cba62e8db 26-30,38-41,93-97,168-176
+  s_fa9953509f59d8::t_b451e294b1909f 45-48,83-84
+tests/test_skill_wiring.py
+  s_fa9953509f59d8::t_8c4df82abfd9ad 69,116
+  s_fa9953509f59d8::t_e14d849d423103 145-146
+  s_fa9953509f59d8::t_1fad9d9f9a1629 59-60,62,66-68,74,86-89,94-95,98-103,107,109-111,130-131
+  s_fa9953509f59d8::t_9807cc17dcc694 61,63-65,75-85,90-93,96-97,104-106,108,112-115,118-119,121,124,126
+  s_fa9953509f59d8::t_ab36d8c057634e 70-73,117,120,122-123,125,127-129
+orchestration/runbook.md
+  s_fa9953509f59d8::t_1a165cba62e8db 20-24,28-36,39-40,76-79
+  s_fa9953509f59d8::t_ea4824374636a7 37-38
+tests/orchestration/test_runbook.py
+  s_fa9953509f59d8::t_9807cc17dcc694 88-90,92-94,104-114,119-121,124-125,132-134,136,140
+  s_fa9953509f59d8::t_ab36d8c057634e 99-102
+  s_fa9953509f59d8::t_8c4df82abfd9ad 98
+  s_fa9953509f59d8::t_1fad9d9f9a1629 86-87,91,95-97,103,115-118,122-123,126-131,135,137-139,141-142
+skills/data-analyze-for-zcl/assets/xhs-ca/orchestration/runbook.md
+  s_fa9953509f59d8::t_65b09c87a09d90 22-26,30-42,78-81
+skills/data-analyze-for-zcl/agents/openai.yaml
+  s_fa9953509f59d8::t_bf275949e6d05c 4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.39-trip",
+  "base_commit_sha": "abecb3a019fe331878e4dcf4ef39f49903086ade",
+  "prompts": {},
+  "sessions": {
+    "s_fa9953509f59d8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc131-185f-76e2-b174-dbe23ecc8176",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
