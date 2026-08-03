@@ -123,6 +123,50 @@ def test_dispatch_ledger_handles_six_tasks_with_capacity_five_without_duplicates
     assert len(all_task_ids) == 6
 
 
+def test_successful_agent_ingest_releases_capacity_for_next_task(tmp_path):
+    _prepare(tmp_path)
+    state = nw._load_state(tmp_path)
+    tasks = []
+    for index in range(2):
+        brief = tmp_path / "briefs" / f"seed_{index}.md"
+        brief.write_text(f"candidate {index}", encoding="utf-8")
+        tasks.append({"brief": brief, "role": "spine_candidate"})
+    nw._set_stage_tasks(state, "seed", tasks)
+    nw._write_state(tmp_path, state)
+
+    first = nw.reserve_tasks(tmp_path, capacity=1)[0]
+    result_path = tmp_path / "results" / "first.json"
+    result_path.parent.mkdir(parents=True, exist_ok=True)
+    result_path.write_text('{"sections": []}', encoding="utf-8")
+    nw.record_dispatch(
+        tmp_path,
+        task_id=first["task_id"],
+        agent_id="agent-1",
+        result_path=result_path,
+    )
+    nw.record_agent_state(tmp_path, task_id=first["task_id"], status="result_ready")
+
+    ingested = nw.ingest_output(
+        tmp_path,
+        stage="seed",
+        task_id=first["task_id"],
+        source=result_path,
+    )
+
+    completed = nw._dispatch_task(ingested, first["task_id"])
+    assert completed["status"] == "completed"
+    assert completed["dispatch_status"] == "ingested"
+    closed = nw.record_agent_state(
+        tmp_path,
+        task_id=first["task_id"],
+        status="closed",
+    )
+    assert closed["dispatch_status"] == "ingested"
+    second = nw.reserve_tasks(tmp_path, capacity=1)
+    assert len(second) == 1
+    assert second[0]["task_id"] != first["task_id"]
+
+
 def test_dispatch_rejects_result_path_already_assigned_to_another_task(tmp_path):
     _prepare(tmp_path)
     state = nw._load_state(tmp_path)

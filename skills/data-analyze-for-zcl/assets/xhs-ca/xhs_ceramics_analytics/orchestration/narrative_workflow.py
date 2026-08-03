@@ -443,7 +443,8 @@ def reserve_tasks(run_dir, *, capacity: int) -> list[dict]:
     in_flight = sum(
         1
         for task in tasks
-        if task.get("dispatch_status") in _IN_FLIGHT_DISPATCH_STATES
+        if task.get("status") != "completed"
+        and task.get("dispatch_status") in _IN_FLIGHT_DISPATCH_STATES
     )
     slots = max(capacity - in_flight, 0)
     reserved: list[dict] = []
@@ -535,7 +536,8 @@ def record_agent_state(
         task.get("status") == "completed" or current == "failed"
     ):
         raise ValueError("close only an ingested or failed task")
-    task["dispatch_status"] = status
+    if not (status == "closed" and task.get("status") == "completed"):
+        task["dispatch_status"] = status
     if error not in (None, ""):
         task["last_error"] = str(error)
     _write_state(run_dir, state)

@@ -70,16 +70,19 @@ only for an intentional replacement of an unfinished run.
    After dispatch, persist its identity with `xhs-ca narrative record-dispatch --run-dir <dir> --task-id
    <task_id> --agent-id <agent_id> --result-path <file>`. Return an unassigned reservation with
    `xhs-ca narrative release`.
-4. Persist completion or failure with `xhs-ca narrative record-agent-state --status
+4. Persist readiness or failure with `xhs-ca narrative record-agent-state --status
    result_ready|failed|closed`. The ledger is the scheduling truth after an interruption; never redispatch
    an already reserved or dispatched task under another identity. Ingest is allowed only after the recorded
-   agent reaches `result_ready`, and its source must match its registered `result_path`.
+   agent reaches `result_ready`, and its source must match its registered `result_path`. A `closed` call after
+   successful ingest remains accepted as a compatibility no-op and does not replace its `ingested` audit state;
+   it is not required to release controller capacity.
 5. Before ingest, run `xhs-ca narrative validate --run-dir <dir> --stage <stage> --task-id <task_id>
    --source <file>`. Validation fills absent controller-owned IDs/rounds, rejects conflicts and does not
    mutate task state.
 6. For every valid result run `xhs-ca narrative ingest --run-dir <dir> --stage <stage> --task-id <task_id>
    --source <file>`. Ingest rejects stale/wrong-stage tasks, missing required envelope fields and duplicate
-   review identities before recording completion.
+   review identities before recording completion. A successful ingest releases that task's controller
+   capacity immediately while preserving `dispatch_status=ingested` for audit history.
 7. Run `xhs-ca narrative advance --run-dir <dir>`. Advance refuses while required tasks are pending and
    runs deterministic gates at their declared stages.
 8. Re-run `status --json`; never infer the next stage from memory or filenames.
@@ -87,9 +90,11 @@ only for an intentional replacement of an unfinished run.
 The controller may prepare briefs and reduce state, but it never pretends a missing agent result exists.
 
 If dispatch reports a concurrency limit, first inspect all already-dispatched agents. Ingest finished
-results and close completed agents to release capacity, then retry pending tasks with a smaller batch or
-serially. Concurrency limits are transient scheduling pressure: they must not trigger `unsupported`,
-deterministic fallback, report degradation, or another user prompt.
+results to release controller capacity, close or recycle completed host agents to release host capacity,
+then retry pending tasks with a smaller batch or serially. `record-agent-state --status closed` is not the
+host-close operation; after successful ingest it is only a controller-ledger compatibility no-op.
+Concurrency limits are transient scheduling pressure: they must not trigger `unsupported`, deterministic
+fallback, report degradation, or another user prompt.
 
 ## Dispatch map
 

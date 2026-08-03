@@ -103,8 +103,8 @@ def test_runbook_treats_agent_capacity_as_retryable_not_degradation():
 
     actions = (
         "inspect all already-dispatched agents",
-        "ingest finished results",
-        "close completed agents",
+        "ingest finished results to release controller capacity",
+        "close or recycle completed host agents to release host capacity",
         "retry pending tasks",
     )
     positions = [capacity.index(action) for action in actions]
@@ -112,6 +112,14 @@ def test_runbook_treats_agent_capacity_as_retryable_not_degradation():
     assert "must not trigger `unsupported`" in capacity
     assert "deterministic fallback" in capacity
     assert "another user prompt" in capacity
+    assert "`record-agent-state --status closed` is not the host-close operation" in capacity
+
+
+def test_runbook_says_successful_ingest_releases_capacity_without_close():
+    body = " ".join(_text("runbook.md").split())
+    assert "a successful ingest releases that task's controller capacity immediately" in body
+    assert "accepted as a compatibility no-op" in body
+    assert "does not replace its `ingested` audit state" in body
 
 
 def test_runbook_requires_a_complete_manual_mapping_decision_packet():

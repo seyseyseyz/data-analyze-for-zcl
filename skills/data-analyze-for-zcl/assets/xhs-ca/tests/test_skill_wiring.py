@@ -65,7 +65,7 @@ def test_skill_reuses_authorization_for_the_same_report():
     assert "concurrency limits" in authorization
 
 
-def test_skill_capacity_pressure_closes_finished_agents_before_retrying():
+def test_skill_capacity_pressure_ingests_finished_agents_before_retrying():
     text = " ".join(SKILL.read_text(encoding="utf-8").lower().split())
     capacity = text[
         text.index("if agent dispatch hits a concurrency limit"):
@@ -74,8 +74,8 @@ def test_skill_capacity_pressure_closes_finished_agents_before_retrying():
 
     actions = (
         "inspect the already-dispatched agents",
-        "ingest their finished results",
-        "close completed agents",
+        "ingest their finished results to release controller capacity",
+        "close or recycle completed host agents to release host capacity",
         "retry pending tasks",
     )
     positions = [capacity.index(action) for action in actions]
@@ -83,6 +83,7 @@ def test_skill_capacity_pressure_closes_finished_agents_before_retrying():
     assert "must not trigger `unsupported`" in capacity
     assert "deterministic fallback" in capacity
     assert "another user authorization prompt" in capacity
+    assert "`record-agent-state --status closed` is only a controller-ledger compatibility call" in capacity
 
 
 def test_skill_manual_mapping_question_includes_decision_evidence():

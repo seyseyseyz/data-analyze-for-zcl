@@ -101,8 +101,10 @@ narrative workflow and is the only default delivery surface:
    missing sidecar. A cache hit may skip agent work,
    but authorization was still obtained first.
    If agent dispatch hits a concurrency limit, first inspect the already-dispatched
-   agents, ingest their finished results, close completed agents to release capacity,
-   then retry pending tasks with a smaller batch or serially. Concurrency limits are
+   agents, ingest their finished results to release controller capacity, and close or
+   recycle completed host agents to release host capacity. Then retry pending tasks with a
+   smaller batch or serially. `record-agent-state --status closed` is only a controller-ledger
+   compatibility call after successful ingest; it does not close a host agent. Concurrency limits are
    transient scheduling pressure: they must not trigger `unsupported`, deterministic
    fallback, report degradation, or another user authorization prompt.
 3. If step 2 was declined, prepare with `--multi-agent-declined`, then run
