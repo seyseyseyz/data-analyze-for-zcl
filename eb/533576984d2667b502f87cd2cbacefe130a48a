@@ -1,0 +1,40 @@
+skills/data-analyze-for-zcl/assets/xhs-ca/orchestration/runbook.md
+  s_91ea3b5af7c9ab::t_497271854d12d9 93-97
+  s_91ea3b5af7c9ab::t_860f4d4aa922e6 73,84-85
+  s_91ea3b5af7c9ab::t_01529d026f52c2 76-78
+skills/data-analyze-for-zcl/SKILL.md
+  s_91ea3b5af7c9ab::t_6eafae5818f8e1 104-107
+xhs_ceramics_analytics/orchestration/narrative_workflow.py
+  s_91ea3b5af7c9ab::t_c1957718c96046 539-540
+  s_91ea3b5af7c9ab::t_a3c6821070c836 446-447
+tests/test_skill_wiring.py
+  s_91ea3b5af7c9ab::t_9c2da9fc9b39fe 78,86
+  s_91ea3b5af7c9ab::t_a3c6821070c836 68,77
+orchestration/runbook.md
+  s_91ea3b5af7c9ab::t_c1957718c96046 74-76
+  s_91ea3b5af7c9ab::t_6eafae5818f8e1 91-95
+  s_91ea3b5af7c9ab::t_a3c6821070c836 71,82-83
+tests/orchestration/test_runbook.py
+  s_91ea3b5af7c9ab::t_c1957718c96046 121-122
+  s_91ea3b5af7c9ab::t_9c2da9fc9b39fe 106-107,115
+  s_91ea3b5af7c9ab::t_a3c6821070c836 116-120
+tests/orchestration/test_quality_workflow_integrity.py
+  s_91ea3b5af7c9ab::t_d670890616af7f 159-164
+  s_91ea3b5af7c9ab::t_ad96a7015d6778 126-158,165-169
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.39-trip",
+  "base_commit_sha": "eb533576984d2667b502f87cd2cbacefe130a48a",
+  "prompts": {},
+  "sessions": {
+    "s_91ea3b5af7c9ab": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc317-d435-76b2-9cb9-f2b7fe722a12",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
