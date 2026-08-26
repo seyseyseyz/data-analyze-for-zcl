@@ -27,8 +27,10 @@ Use this menu to describe tasks to the user. **Do not hand-pick by guesswork** �
 | 需求漏斗与心愿单蓄水 | `demand_funnel_diagnosis` | `business_overview_daily` | — | 商品访客→加购→支付的日级阶段事实、心愿单蓄水与趋势；不输出跨期唯一人数 |
 | 搜索流量效率怎么样 | `search_efficiency_diagnosis` | `search_overview` | `search_terms` | 载体和搜索词的曝光→点击→支付→GMV、真实/正推覆盖与趋势 |
 | 进店人群结构如何 | `audience_structure_diagnosis` | `shop_page_funnel` | `shop_page_source` | 进店漏斗、来源结构、人群画像口径说明 |
+| 买家复购结构与复购率 | `buyer_repurchase_diagnosis` | `orders` | — | 去重买家、复购率、复购买家 GMV 占比、平均客单价、复购间隔分析 |
 | 退款结构与高退款点 | `refund_structure_diagnosis` | `refund_overview` | `notes`, `sku_performance`, `refund_reasons` | 原始周期/账号/载体粒度、发货阶段/退款类型、载体对比、趋势、笔记/商品与手工退款原因 |
 | 笔记级商业效能（GMV 集中度/转化/退款） | `note_commercial_diagnosis` | `notes` | — | 笔记 GMV 帕累托、转化效率分布、笔记级退款异常 |
+| 笔记引流进店/直播承接效率 | `note_carry_efficiency` | `notes` | — | 笔记进店与直播间承接效率汇总、Top 20 承接笔记明细 |
 | SKU 结构与退款诊断 | `sku_structure_diagnosis` | `sku_performance` | — | GMV/净收入排序、商品/品牌归并、心愿→加购→支付承接、高退款与价格带 |
 | 渠道结构与健康诊断 | `channel_structure_diagnosis` | `business_overview_daily` | `traffic_source` | 渠道日级事实、规模/转化/退款，以及账号×渠道×笔记类型效率矩阵 |
 | 退款根因诊断（发货环节/品类/价格带） | `refund_root_cause_diagnosis` | `business_overview_daily` | `sku_performance`, `refund_overview` | 发货阶段；SKU 支付时间/退款时间两套事实；分品类与分价格带独立降级 |

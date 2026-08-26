@@ -544,6 +544,97 @@ def record_agent_state(
     return _task_with_contract(run_dir, state, task)
 
 
+def next_task(run_dir, *, project_root=None) -> dict:
+    """One serial-host step: hand out exactly one dispatched task, or say why not.
+
+    Hosts without a parallel sub-agent facility (e.g. Codex CLI) drive the run as
+    "take one task → do it → hand it back". This folds status + advance + reserve +
+    record-dispatch into a single call and generates the agent_id / result_path pair
+    itself, so the host can never invent a value the dispatch ledger would reject.
+    Returns ``{"status": "ready", "task": <contract>}`` when a task was dispatched,
+    ``"in_flight"`` when everything pending is already dispatched (submit first),
+    or ``"terminal"`` when the run has finished or degraded.
+    """
+    run_dir = Path(run_dir)
+    # Bounded: every loop iteration either returns or advances the stage machine,
+    # and a run has a fixed number of stages.
+    for _ in range(64):
+        state = _load_state(run_dir)
+        if state is None:
+            raise FileNotFoundError(f"no run at {run_dir}")
+        stage = state["stage"]
+        if stage in _TERMINAL_STAGES:
+            return {
+                "status": "terminal",
+                "stage": stage,
+                "next_action": _NEXT_ACTION.get(stage, ""),
+                "degradation_reason": state.get("degradation_reason"),
+            }
+        if _pending_tasks(state, stage):
+            reserved = reserve_tasks(run_dir, capacity=1)
+            if not reserved:
+                return {
+                    "status": "in_flight",
+                    "stage": stage,
+                    "pending": [
+                        task.get("task_id") for task in _pending_tasks(state, stage)
+                    ],
+                }
+            task = reserved[0]
+            task_id = str(task["task_id"])
+            attempt = int(task.get("attempt") or 1)
+            dispatched = record_dispatch(
+                run_dir,
+                task_id=task_id,
+                agent_id=f"host-{task_id}-r{attempt}",
+                result_path=task.get("result_path")
+                or run_dir / "results" / f"{task_id}.json",
+            )
+            # The host writes its result straight to this path — make sure the
+            # directory exists so the handed-out contract is usable as-is.
+            Path(str(dispatched["result_path"])).parent.mkdir(
+                parents=True, exist_ok=True
+            )
+            return {"status": "ready", "stage": stage, "task": dispatched}
+        advance_run(run_dir, project_root=project_root)
+    raise RuntimeError("next_task did not converge after 64 stage advances")
+
+
+def submit_task(run_dir, *, task_id: str, source=None) -> dict:
+    """Hand one finished task result back: validate → result_ready → ingest → close.
+
+    The counterpart of :func:`next_task`. ``source`` defaults to the result_path
+    recorded at dispatch time. Validation runs read-only first, so a malformed
+    result leaves the task dispatched (fix the file and submit again) instead of
+    wedging the ledger. The trailing ``closed`` transition is the controller-ledger
+    compatibility call the runbook requires after a successful ingest.
+    """
+    run_dir = Path(run_dir)
+    state = _load_state(run_dir)
+    if state is None:
+        raise FileNotFoundError(f"no run at {run_dir}")
+    stage = state["stage"]
+    task = _dispatch_task(state, task_id)
+    result_path = source if source is not None else task.get("result_path")
+    if result_path in (None, ""):
+        raise FileNotFoundError(f"task {task_id} has no recorded result_path")
+    result_file = Path(str(result_path))
+    if not result_file.exists():
+        raise FileNotFoundError(f"result file not found: {result_file}")
+    validate_output(run_dir, stage=stage, source=result_file, task_id=task_id)
+    record_agent_state(run_dir, task_id=task_id, status="result_ready")
+    new_state = ingest_output(run_dir, stage=stage, source=result_file, task_id=task_id)
+    try:
+        record_agent_state(run_dir, task_id=task_id, status="closed")
+    except ValueError:
+        pass  # ledger-compat only — ingest may have already recycled the slot
+    return {
+        "ingested": task_id,
+        "stage": new_state["stage"],
+        "pending": len(_pending_tasks(new_state, new_state.get("stage"))),
+    }
+
+
 def _task_for_ingest(
     state: dict,
     stage: str,
@@ -3278,6 +3369,9 @@ def status_json(run_dir) -> dict:
         "stage": stage,
         "workflow_version": state.get("workflow_version"),
         "run_id": state.get("run_id"),
+        # Recorded once at prepare; a resuming host reads it here instead of
+        # asking the user for multi-agent authorization a second time.
+        "authorization_decision": state.get("authorization_decision"),
         "next_action": _NEXT_ACTION.get(stage, ""),
         "briefs": briefs,
         "tasks": {"pending": pending, "completed": completed},
