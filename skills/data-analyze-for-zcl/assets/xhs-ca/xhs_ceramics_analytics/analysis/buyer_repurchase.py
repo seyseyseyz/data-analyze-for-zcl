@@ -4,6 +4,7 @@
 观察性描述，never-raise 降级纪律，买家哈希做了截断保护。
 """
 
+import statistics
 from datetime import datetime
 from pathlib import Path
 
@@ -153,8 +154,7 @@ def _repurchase_diagnosis_finding(
             pass
 
     if intervals:
-        intervals.sort()
-        median_interval_days = float(intervals[len(intervals) // 2])
+        median_interval_days = float(statistics.median(intervals))
         avg_interval_days = sum(intervals) / len(intervals)
 
     # 结论
