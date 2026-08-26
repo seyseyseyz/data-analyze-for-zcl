@@ -36,6 +36,11 @@ _DIGIT_RE = re.compile(r"\d")
 # currency / percent / 万·亿 figure there is an un-anchored data magnitude the writer invented.
 _ACTION_MAGNITUDE_RE = re.compile(r"[¥￥$%]|\d+(?:\.\d+)?\s*[万亿]")
 _ACTION_LICENSES = {"execute", "pilot", "observe", "blocked"}
+# Action-license ordering for the deterministic downward cap (ADR §3.3): a card may
+# claim at most what its primary fact's evidence allows; mechanism-hypothesis support
+# caps at pilot regardless of anchors ("把 observe 写成 execute" is forbidden).
+_LICENSE_RANK = {"blocked": 0, "observe": 1, "pilot": 2, "execute": 3}
+_RANK_LICENSE = {rank: name for name, rank in _LICENSE_RANK.items()}
 _VISUAL_OMISSION_REASONS = {
     "not_visualizable",
     "insufficient_rows",
@@ -102,6 +107,36 @@ def allowed_confidence_tag(claim: dict, facts: dict) -> str:
             rank = 1
         best = max(best, rank)
     return _RANK_TAG[best]
+
+
+def allowed_action_license(card: dict, facts: dict, claims_by_id: dict) -> str:
+    """Highest action license the card's evidence defensibly allows (ADR §3.3).
+
+    Mirrors :func:`allowed_confidence_tag`: deterministic, pure, never raises.
+    The cap comes from the primary fact's evidence axes — strong causal evidence
+    licenses execution, a merely-reliable observational number licenses a pilot,
+    anything weaker licenses observation only, and a not-judgable anchor blocks
+    the action until data arrives. Support from any mechanism-hypothesis claim
+    caps at pilot no matter how strong the anchor: no controls, no execution.
+    """
+    fact = facts.get(card.get("primary_fact_id")) or {}
+    es = fact.get("evidence_strength")
+    dr = fact.get("descriptive_reliability")
+    if es == "not_judgable":
+        return "blocked"
+    if es == "strong":
+        cap = "execute"
+    elif es == "medium" or dr in ("high", "medium"):
+        cap = "pilot"
+    else:
+        cap = "observe"
+    if cap == "execute":
+        for claim_id in card.get("supporting_claim_ids") or []:
+            claim = claims_by_id.get(claim_id)
+            if isinstance(claim, dict) and claim.get("claim_kind") == "mechanism":
+                cap = "pilot"
+                break
+    return cap
 
 
 def _check_tokens(claim: dict, facts: dict, absent: set, hard: list) -> None:
@@ -606,8 +641,20 @@ def _action_sentence(card: dict) -> str:
     return "\n".join(str(part) for part in parts if part not in (None, ""))
 
 
-def _check_action_cards(bundle: dict, facts: dict, absent: set, hard: list) -> None:
+def _check_action_cards(
+    bundle: dict,
+    facts: dict,
+    absent: set,
+    hard: list,
+    warnings: list,
+    capped: list,
+) -> None:
     claim_ids = _all_claim_ids(bundle)
+    claims_by_id = {
+        claim.get("claim_id"): claim
+        for claim in _iter_claims(bundle)
+        if isinstance(claim, dict)
+    }
     seen_action_ids: set[str] = set()
     for index, card in enumerate(_iter_action_cards(bundle)):
         fallback_id = f"action[{index}]"
@@ -637,6 +684,23 @@ def _check_action_cards(bundle: dict, facts: dict, absent: set, hard: list) -> N
             hard.append(_fail("ACTION_SPEC_INVALID", label, "owner_role is not allowed"))
         if card.get("license") not in _ACTION_LICENSES:
             hard.append(_fail("ACTION_SPEC_INVALID", label, "license is not allowed"))
+        else:
+            # License cap (deterministic; downward only, like CONFIDENCE_CAPPED):
+            # a card never claims more than its primary fact's evidence allows.
+            allowed_license = allowed_action_license(card, facts, claims_by_id)
+            stated_license = card["license"]
+            if _LICENSE_RANK[stated_license] > _LICENSE_RANK[allowed_license]:
+                card["license"] = allowed_license
+                capped.append(
+                    {"claim_id": label, "from": stated_license, "to": allowed_license}
+                )
+                warnings.append(
+                    _fail(
+                        "ACTION_LICENSE_CAPPED",
+                        label,
+                        f"{stated_license} -> {allowed_license}",
+                    )
+                )
 
         primary_fact_id = card.get("primary_fact_id")
         if primary_fact_id not in facts or primary_fact_id in absent:
@@ -774,7 +838,7 @@ def run_gate(bundle: dict, facts_json: dict, result_tables: dict | None = None) 
                 )
             )
 
-    _check_action_cards(bundle, facts, absent, hard)
+    _check_action_cards(bundle, facts, absent, hard, warnings, capped)
 
     # Cross-section: dangling callbacks + missing callbacks
     for section in bundle.get("sections") or []:
