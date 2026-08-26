@@ -1,0 +1,40 @@
+xhs_ceramics_analytics/orchestration/narrative_workflow.py
+  s_f2db6a2feac0ef::t_7c783518ddeead 593-597
+  s_f2db6a2feac0ef::t_1fa57719f35b17 547-592,598-637
+  s_f2db6a2feac0ef::t_23928abf7bc5b7 3372-3374
+CHANGELOG.md
+  s_f2db6a2feac0ef::t_14bc25fb2e22d4 5-31
+xhs_ceramics_analytics/cli.py
+  s_f2db6a2feac0ef::t_5618fb5d56e17a 986-1022
+tests/orchestration/test_serial_host_loop.py
+  s_f2db6a2feac0ef::t_c65db1238e18eb 1-123
+orchestration/runbook.md
+  s_f2db6a2feac0ef::t_b8baa27aa78b58 61-86
+README.md
+  s_f2db6a2feac0ef::t_27940ff7033582 27-36
+scripts/git-hooks/pre-commit
+  s_f2db6a2feac0ef::t_31fb0e68db5873 1-28
+tests/orchestration/test_narrative_cli.py
+  s_f2db6a2feac0ef::t_571260f0c97fe4 184-242
+skills/data-analyze-for-zcl/SKILL.md
+  s_f2db6a2feac0ef::t_ec822006495047 315-319
+  s_f2db6a2feac0ef::t_d348edcab20370 3
+  s_f2db6a2feac0ef::t_8f23db0655f50b 98-107
+  s_f2db6a2feac0ef::t_7678624f176ad3 27-29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.43-trip",
+  "base_commit_sha": "1c4309f6a0bb87ed79d0f8bca27c08a277c2dd59",
+  "prompts": {},
+  "sessions": {
+    "s_f2db6a2feac0ef": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cca2f6ff-140e-45f7-9ae4-455b16d13ea7",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
