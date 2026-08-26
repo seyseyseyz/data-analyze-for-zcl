@@ -114,12 +114,29 @@ rm -rf ~/.claude/skills/data-analyze-for-zcl/assets/xhs-ca/.venv
 ~/.claude/skills/data-analyze-for-zcl/scripts/bootstrap
 ```
 
-**Nuclear option — full skill reinstall:**
+**Published-source migration — when update reports no matching skill:**
+
+`npx skills update data-analyze-for-zcl -g -y` cannot update installs whose
+recorded source is a local path. If it prints
+`No installed skills found matching: data-analyze-for-zcl`, preserve the old
+copy and reinstall from the published GitHub source:
 
 ```bash
-rm -rf "$HOME/.agents/skills/data-analyze-for-zcl"
-npx skills add seyseyseyz/data-analyze-for-zcl -g -y --skill data-analyze-for-zcl
-~/.agents/skills/data-analyze-for-zcl/scripts/bootstrap
+set -e
+SKILL_DIR="$HOME/.agents/skills/data-analyze-for-zcl"
+BACKUP_ROOT="$(mktemp -d "$HOME/.agents/data-analyze-for-zcl-backup.XXXXXX")"
+SKILL_BACKUP="$BACKUP_ROOT/data-analyze-for-zcl"
+mv "$SKILL_DIR" "$SKILL_BACKUP"
+
+if ! npx skills add seyseyseyz/data-analyze-for-zcl -g -y --skill data-analyze-for-zcl; then
+  rm -rf "$SKILL_DIR"
+  mv "$SKILL_BACKUP" "$SKILL_DIR"
+  exit 1
+fi
+
+"$SKILL_DIR/scripts/bootstrap"
+"$SKILL_DIR/scripts/xhs-ca" doctor --strict
+echo "Previous local install kept at: $SKILL_BACKUP"
 ```
 
 ---

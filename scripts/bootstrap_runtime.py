@@ -140,10 +140,39 @@ PIP_CACHE_DIR="$PIP_CACHE_DIR" "$RUNTIME_DIR/.venv/bin/python" -m pip install -e
 def repair_reinstall_skill_shell() -> str:
     return '''set -e
 
-rm -rf "$HOME/.agents/skills/data-analyze-for-zcl"
+SKILL_DIR="$HOME/.agents/skills/data-analyze-for-zcl"
+mkdir -p "$HOME/.agents"
+BACKUP_ROOT="$(mktemp -d "$HOME/.agents/data-analyze-for-zcl-backup.XXXXXX")"
+SKILL_BACKUP="$BACKUP_ROOT/data-analyze-for-zcl"
+
+restore_skill() {
+  status=$?
+  trap - EXIT
+  if [ "$status" -ne 0 ] && [ -e "$SKILL_BACKUP" ]; then
+    rm -rf "$SKILL_DIR"
+    mv "$SKILL_BACKUP" "$SKILL_DIR"
+    echo "Reinstall failed; restored the previous skill from $SKILL_BACKUP."
+  fi
+  exit "$status"
+}
+trap restore_skill EXIT
+
+if [ -e "$SKILL_DIR" ]; then
+  mv "$SKILL_DIR" "$SKILL_BACKUP"
+fi
+
 npx skills add seyseyseyz/data-analyze-for-zcl -g -y --skill data-analyze-for-zcl
-test -x "$HOME/.agents/skills/data-analyze-for-zcl/scripts/xhs-ca"
-test -d "$HOME/.agents/skills/data-analyze-for-zcl/assets/xhs-ca"
+test -x "$SKILL_DIR/scripts/xhs-ca"
+test -d "$SKILL_DIR/assets/xhs-ca"
+"$SKILL_DIR/scripts/bootstrap"
+"$SKILL_DIR/scripts/xhs-ca" doctor --strict
+
+trap - EXIT
+if [ -e "$SKILL_BACKUP" ]; then
+  echo "Previous local install kept at: $SKILL_BACKUP"
+else
+  rmdir "$BACKUP_ROOT"
+fi
 '''
 
 

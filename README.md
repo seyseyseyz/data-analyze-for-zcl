@@ -38,12 +38,32 @@ Install globally:
 npx skills add seyseyseyz/data-analyze-for-zcl -g -y
 ```
 
-Refresh an existing global install before testing bootstrap fixes:
+Update an existing GitHub-tracked global install:
 
 ```bash
-rm -rf "$HOME/.agents/skills/data-analyze-for-zcl"
-npx skills add seyseyseyz/data-analyze-for-zcl -g -y --skill data-analyze-for-zcl
-~/.agents/skills/data-analyze-for-zcl/scripts/bootstrap
+npx skills update data-analyze-for-zcl -g -y
+```
+
+If that prints `No installed skills found matching: data-analyze-for-zcl`, the
+existing copy was installed from a local path and cannot be updated in place.
+Back it up, then migrate it to the published GitHub source:
+
+```bash
+set -e
+SKILL_DIR="$HOME/.agents/skills/data-analyze-for-zcl"
+BACKUP_ROOT="$(mktemp -d "$HOME/.agents/data-analyze-for-zcl-backup.XXXXXX")"
+SKILL_BACKUP="$BACKUP_ROOT/data-analyze-for-zcl"
+mv "$SKILL_DIR" "$SKILL_BACKUP"
+
+if ! npx skills add seyseyseyz/data-analyze-for-zcl -g -y --skill data-analyze-for-zcl; then
+  rm -rf "$SKILL_DIR"
+  mv "$SKILL_BACKUP" "$SKILL_DIR"
+  exit 1
+fi
+
+"$SKILL_DIR/scripts/bootstrap"
+"$SKILL_DIR/scripts/xhs-ca" doctor --strict
+echo "Previous local install kept at: $SKILL_BACKUP"
 ```
 
 ## Quick Start

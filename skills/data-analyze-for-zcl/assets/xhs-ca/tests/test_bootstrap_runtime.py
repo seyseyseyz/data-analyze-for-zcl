@@ -66,6 +66,50 @@ def test_install_repair_shell_uses_temporary_pip_cache():
     assert "\"$SKILL_DIR/scripts/xhs-ca\" doctor --strict" in shell
 
 
+def test_reinstall_repair_shell_backs_up_local_install_before_migrating():
+    helper = load_bootstrap_runtime()
+
+    shell = helper.repair_reinstall_skill_shell()
+
+    backup = 'mv "$SKILL_DIR" "$SKILL_BACKUP"'
+    install = (
+        "npx skills add seyseyseyz/data-analyze-for-zcl -g -y "
+        "--skill data-analyze-for-zcl"
+    )
+    assert 'SKILL_DIR="$HOME/.agents/skills/data-analyze-for-zcl"' in shell
+    assert 'BACKUP_ROOT="$(mktemp -d "$HOME/.agents/data-analyze-for-zcl-backup.XXXXXX")"' in shell
+    assert backup in shell
+    assert shell.index(backup) < shell.index(install)
+    assert 'rm -rf "$HOME/.agents/skills/data-analyze-for-zcl"' not in shell
+    assert install in shell
+    assert '"$SKILL_DIR/scripts/bootstrap"' in shell
+    assert '"$SKILL_DIR/scripts/xhs-ca" doctor --strict' in shell
+
+
+def test_install_docs_explain_safe_migration_from_local_source():
+    test_path = Path(__file__).resolve()
+    roots = [test_path.parents[1], test_path.parents[5]]
+    repo_root = next(root for root in roots if (root / "README.md").exists())
+    candidates = [
+        repo_root / "README.md",
+        repo_root / "references" / "troubleshooting.md",
+        repo_root
+        / "skills"
+        / "data-analyze-for-zcl"
+        / "assets"
+        / "xhs-ca"
+        / "references"
+        / "troubleshooting.md",
+    ]
+    docs = [path for path in candidates if path.exists()]
+
+    for path in docs:
+        body = path.read_text(encoding="utf-8")
+        assert "No installed skills found matching" in body
+        assert 'mv "$SKILL_DIR" "$SKILL_BACKUP"' in body
+        assert 'rm -rf "$HOME/.agents/skills/data-analyze-for-zcl"' not in body
+
+
 def test_bootstrap_wrappers_use_shared_python_selector():
     test_path = Path(__file__).resolve()
     bootstrap_scripts = [
