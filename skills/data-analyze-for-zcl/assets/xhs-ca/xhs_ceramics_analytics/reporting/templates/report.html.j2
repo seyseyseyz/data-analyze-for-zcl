@@ -1253,6 +1253,7 @@
           <div class="step-number">{{ loop.index }}</div>
           <div>
             <span class="tag {{ action.confidence_class }}" title="{{ action.confidence_help }}">置信度 {{ action.confidence }}</span>
+            {% if action.license %}<span class="tag license-{{ action.license_class }}" title="{{ action.license_help }}">行动许可 {{ action.license }}</span>{% endif %}
             <h3>{{ action.task }}：{{ action.target }}</h3>
             <div class="action-meta-grid">
               <div class="action-cell">

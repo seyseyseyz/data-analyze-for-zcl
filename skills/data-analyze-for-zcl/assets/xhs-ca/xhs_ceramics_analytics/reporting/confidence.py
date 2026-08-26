@@ -70,6 +70,57 @@ def reader_confidence(finding: Finding) -> ReaderConfidence:
     )
 
 
+class ActionLicense(NamedTuple):
+    level: str  # execute / pilot / observe / blocked
+    label: str  # 可执行 / 可试点 / 仅观察 / 先补数据
+    help: str
+
+
+_LICENSE_LABELS = {
+    "execute": "可执行",
+    "pilot": "可试点",
+    "observe": "仅观察",
+    "blocked": "先补数据",
+}
+_LICENSE_HELP = {
+    "execute": "有对照证据支持，可以直接按建议执行。",
+    "pilot": "数字可靠但没有对照组，先小规模试点验证，再决定是否扩大。",
+    "observe": "目前只是假设，继续观察，不建议据此行动。",
+    "blocked": "关键数据不足，先补齐数据再评估。",
+}
+
+# 试点许可要求描述层足够可靠（数字本身站得住），弱且不可靠的假设只配观察。
+_PILOT_RELIABILITY = (DescriptiveReliability.HIGH, DescriptiveReliability.MEDIUM)
+
+
+def _license(level: str) -> ActionLicense:
+    return ActionLicense(
+        level=level, label=_LICENSE_LABELS[level], help=_LICENSE_HELP[level]
+    )
+
+
+def action_license(finding: Finding) -> ActionLicense:
+    """第二个读者标签：这条结论发放什么级别的行动许可。Never-raise。
+
+    Decision Compiler ADR §3.3 的政策表：有对照的 STRONG 才可执行；MEDIUM（有对照
+    但允许一个混淆因子）封顶试点；观察性 WEAK 结论要拿到试点许可必须同时具备
+    可靠的描述数字 *和* 显式升级路径（next_test）——SKILL 规则 4 禁止无升级路径的
+    弱证据出现在建议里。NOT_JUDGABLE 一律先补数据。
+    """
+    if finding.evidence_strength is EvidenceStrength.NOT_JUDGABLE:
+        return _license("blocked")
+    if not finding.recommended_action and not finding.next_test:
+        return _license("observe")
+    if finding.evidence_strength is EvidenceStrength.STRONG:
+        return _license("execute")
+    if finding.evidence_strength is EvidenceStrength.MEDIUM:
+        return _license("pilot")
+    reliable = finding.descriptive_reliability in _PILOT_RELIABILITY
+    if reliable and finding.next_test:
+        return _license("pilot")
+    return _license("observe")
+
+
 # Fallback for result-level contexts with no scored finding (empty modules).
 NOT_JUDGABLE = ReaderConfidence(
     level="not_judgable",

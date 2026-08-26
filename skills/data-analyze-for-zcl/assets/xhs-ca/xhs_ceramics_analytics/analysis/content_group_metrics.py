@@ -1,5 +1,16 @@
 """Shared descriptive metrics for content-feature groupings."""
 
+from xhs_ceramics_analytics.analytics.multiplicity import (
+    benjamini_hochberg,
+    one_sided_binomial_p,
+)
+
+# Reader-facing verdict per group after multiple-comparison control. Scanning many
+# dimension values for "read rate above overall" inflates false positives exactly
+# like the refund-outlier scans; the ranking table must say which leaders survive.
+_SIGNAL_ABOVE = "显著高于整体"
+_SIGNAL_NOT_SIGNIFICANT = "未见显著优势"
+
 _METRICS = (
     "impressions",
     "reads",
@@ -151,7 +162,54 @@ def fetch_group_effects(con, dimension: str) -> tuple[list[dict[str, object]], l
         limitations.append("notes 表的阅读/收藏指标不完整。")
     if rows and not any(row.get("matched_notes") for row in rows):
         limitations.append("没有匹配的笔记指标，内容效果不可判断。")
+    rows, fdr_note = _annotate_read_rate_significance(rows)
+    if fdr_note:
+        limitations.append(fdr_note)
     return rows, limitations
+
+
+def _annotate_read_rate_significance(
+    rows: list[dict[str, object]],
+) -> tuple[list[dict[str, object]], str | None]:
+    """Add a ``read_rate_signal`` verdict per group, BH-FDR controlled. Never raises.
+
+    Baseline is the pooled read rate across all testable groups; each group's
+    reads/impressions gets a one-sided binomial p-value against it, and only
+    Benjamini-Hochberg survivors are called out. Untestable groups (missing
+    reads or impressions) keep ``None`` so absence of data never reads as a
+    tested negative.
+    """
+    testable: list[int] = []
+    total_reads = 0.0
+    total_impressions = 0.0
+    for index, row in enumerate(rows):
+        reads = row.get("reads")
+        impressions = row.get("impressions")
+        if isinstance(reads, (int, float)) and isinstance(impressions, (int, float)):
+            if impressions > 0 and 0 <= reads <= impressions:
+                testable.append(index)
+                total_reads += float(reads)
+                total_impressions += float(impressions)
+    annotated = [{**row, "read_rate_signal": None} for row in rows]
+    if len(testable) < 2 or total_impressions <= 0:
+        return annotated, None
+    baseline = total_reads / total_impressions
+    pvals = [
+        one_sided_binomial_p(
+            float(annotated[i]["reads"]), float(annotated[i]["impressions"]), baseline
+        )
+        for i in testable
+    ]
+    survived = benjamini_hochberg(pvals, alpha=0.05)
+    for i, hit in zip(testable, survived, strict=True):
+        annotated[i]["read_rate_signal"] = (
+            _SIGNAL_ABOVE if hit else _SIGNAL_NOT_SIGNIFICANT
+        )
+    note = (
+        f"组间阅读率对比已做多重比较校正（BH-FDR，α=0.05）：{len(testable)} 组可检验，"
+        f"{sum(survived)} 组显著高于整体；未标显著的领先组可能只是随机波动。"
+    )
+    return annotated, note
 
 
 def _sum_expr(columns: set[str], metric: str) -> str:

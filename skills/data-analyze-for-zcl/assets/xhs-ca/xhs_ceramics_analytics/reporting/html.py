@@ -6,7 +6,8 @@ from jinja2 import Environment, PackageLoader
 from xhs_ceramics_analytics.analysis.methodology import combined_methodology
 from xhs_ceramics_analytics.analysis.result import AnalysisResult, Finding, Subsection
 from xhs_ceramics_analytics.reporting import confidence as _confidence
-from xhs_ceramics_analytics.reporting.confidence import reader_confidence
+from xhs_ceramics_analytics.reporting.confidence import action_license, reader_confidence
+from xhs_ceramics_analytics.evidence import EvidenceStrength
 from xhs_ceramics_analytics.reporting.domains import (
     APPENDIX_DOMAIN_INTRO,
     APPENDIX_DOMAIN_TITLE,
@@ -1583,6 +1584,7 @@ def _recommended_actions(findings: list[Finding]) -> list[dict[str, str]]:
             "title": finding.title,
             "body": finding.recommended_action,
             **_confidence_chip(reader_confidence(finding)),
+            **_license_chip(action_license(finding)),
         }
         for finding in findings
         if finding.recommended_action
@@ -1745,6 +1747,7 @@ def _action(
         "metric": metric,
         "stop_rule": stop_rule,
         **_confidence_chip(_primary_confidence(result)),
+        **_license_chip(_primary_license(result)),
     }
 
 
@@ -1787,6 +1790,27 @@ def _confidence_chip(rc) -> dict[str, str]:
         "confidence_class": rc.level,
         "confidence_help": rc.help,
     }
+
+
+def _license_chip(lic) -> dict[str, str]:
+    """Reader-facing 行动许可 fields for an action chip (second reader label)."""
+    return {
+        "license": lic.label,
+        "license_class": lic.level,
+        "license_help": lic.help,
+    }
+
+
+def _primary_license(result: AnalysisResult | None):
+    if result is None or not result.findings:
+        return action_license(
+            Finding(
+                title="",
+                conclusion="",
+                evidence_strength=EvidenceStrength.NOT_JUDGABLE,
+            )
+        )
+    return action_license(result.findings[0])
 
 
 def _primary_confidence(result: AnalysisResult | None):
