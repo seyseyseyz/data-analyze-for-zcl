@@ -1,0 +1,33 @@
+README.md
+  s_034c2f84038e38::t_a109ba2035393a 41,44-66
+references/troubleshooting.md
+  s_034c2f84038e38::t_a109ba2035393a 115-120,123-137
+skills/data-analyze-for-zcl/assets/xhs-ca/tests/test_bootstrap_runtime.py
+  s_034c2f84038e38::t_73d323031c6ae1 69-112
+skills/data-analyze-for-zcl/assets/xhs-ca/references/troubleshooting.md
+  s_034c2f84038e38::t_9cbe7439142515 117-122,125-139
+tests/test_bootstrap_runtime.py
+  s_034c2f84038e38::t_f373016efde778 69-88
+  s_034c2f84038e38::t_6396ad0b622a99 89,94-95,103,105-112
+  s_034c2f84038e38::t_b4a43f73327ac0 90-93,96-102,104
+scripts/bootstrap_runtime.py
+  s_034c2f84038e38::t_b76611cc497b81 143-163,165-175
+skills/data-analyze-for-zcl/scripts/bootstrap_runtime.py
+  s_034c2f84038e38::t_9cbe7439142515 143-163,165-175
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.43-trip",
+  "base_commit_sha": "017072f1eb77b6362e92b71ecf6d3e6e8a2c8bcc",
+  "prompts": {},
+  "sessions": {
+    "s_034c2f84038e38": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc3d5-699b-7671-b890-ed4143d8da33",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
