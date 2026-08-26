@@ -1,0 +1,20 @@
+xhs_ceramics_analytics/analysis/buyer_repurchase.py
+  s_f2db6a2feac0ef::t_de7b1e55296b68 7
+  s_f2db6a2feac0ef::t_b8771bad92ca8d 157
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.43-trip",
+  "base_commit_sha": "c54e67dce79dddfcb46aa2c5f5781c5a31ae22db",
+  "prompts": {},
+  "sessions": {
+    "s_f2db6a2feac0ef": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cca2f6ff-140e-45f7-9ae4-455b16d13ea7",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Yuheng Zhou <zyuheng@trip.com>"
+    }
+  }
+}
