@@ -30,6 +30,7 @@ DOMAINS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
         "笔记商业效能、搜索承接、渠道结构与重拍机会,发什么、从哪来。",
         (
             "note_commercial_diagnosis",
+            "note_carry_efficiency",
             "search_efficiency_diagnosis",
             "channel_structure_diagnosis",
             "reshoot_repost_candidates",
@@ -58,7 +59,7 @@ DOMAINS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     (
         "用户与需求",
         "人群结构与评论里的真实疑问,谁在买、还想问什么。",
-        ("audience_structure_diagnosis", "comment_demand_mining"),
+        ("audience_structure_diagnosis", "buyer_repurchase_diagnosis", "comment_demand_mining"),
     ),
     (
         "退款与售后",

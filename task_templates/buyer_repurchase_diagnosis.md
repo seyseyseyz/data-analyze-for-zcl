@@ -1,0 +1,110 @@
+# 买家复购结构诊断 (buyer_repurchase_diagnosis)
+
+> Observational analysis of buyer repeat purchase structure, deduplication, repurchase rate,
+> and buyer-level economics. Same module contract, shared stat helpers, and never-raise
+> degradation discipline. Hash truncation protects privacy while enabling cohort analysis.
+
+- `TASK_ID = "buyer_repurchase_diagnosis"`，`TITLE = "买家复购结构诊断"`
+- Module: `xhs_ceramics_analytics/analysis/buyer_repurchase.py`
+- Test: `tests/test_buyer_repurchase.py`
+
+## Purpose
+
+回答「去重买家有多少、有多大比例复购、复购买家贡献了多少 GMV、复购周期怎么样」。
+把订单明细（`orders`）按买家去重，分析单次 vs 复购买家的规模、GMV 占比与平均客单价。
+仅做观察性描述，不做因果归因。观察期截断提醒：窗口末期首购的买家没机会复购。
+
+## Required tables
+
+- `orders`（**必需**；缺失则返回单个 `NOT_JUDGABLE` 的 `_missing_result`）。
+  颗粒度：订单级（每笔订单一行）。
+
+## Optional / gated columns
+
+每一列使用前均用 `_table_columns` 守卫（`read_csv_auto` 构建的表可能缺列）：
+
+- `buyer_id_hash`（**必需用于去重**；缺失或全空则 `NOT_JUDGABLE`）。
+  可为 None（表示无法追踪的游客订单）；覆盖率 < 50% 时 evidence 降级为 WEAK + caveat。
+- `paid_time`（**必需计算复购间隔**；缺失则跳过间隔分析，记 limitation）。
+- `paid_amount`（**必需计算 GMV**；缺失则跳过，记 limitation）。
+
+## Method — 各 Finding
+
+### Finding 1 — 买家复购结构（始终产出当 orders 表存在时）
+
+- 买家去重：按 `buyer_id_hash` 去重，`unique_buyers = len(distinct buyer_id_hash)`。
+- 覆盖率：`coverage = non-null buyer_id_hash 订单数 / 全部订单数`。
+- 分类：
+  - 单次买家：`n_single = count(buyer_id_hash with order_count == 1)`。
+  - 复购买家：`n_repeat = count(buyer_id_hash with order_count >= 2)`。
+  - 复购率：`repurchase_rate = n_repeat / unique_buyers`。
+- GMV 贡献：
+  - 单次买家 GMV / 复购买家 GMV；`repeat_gmv_share = repeat_gmv / total_gmv`。
+  - 平均客单：单次买家 GMV 均值 / 复购买家订单均值（或买家均值，见下表）。
+- 复购间隔（仅复购买家）：同一买家相邻订单支付时间差 → 中位数 + 平均值（天）。
+- 输出表：
+  - `buyer_structure`（按买家类型聚合：单次/复购，含买家数/订单数/GMV/平均客单）。
+  - `repeat_buyer_top`（复购买家 Top 10 按 GMV 降序，买家 ID 截断至 8 字符 + "…"）。
+- Evidence `has_controls=False` → 上限 WEAK；`coverage < 50%` 时降级为 WEAK + caveat。
+  Confounders：买家成熟度与留存机制、观察期长度、活动与促销强度。
+- 覆盖率 < 50% 或买家_id_hash 全空时降级或返回 `NOT_JUDGABLE`。
+
+## Thresholds
+
+- `_COVERAGE_THRESHOLD = 0.5`：买家识别覆盖率低于 50% 时降级证据为 WEAK。
+- 复购定义：`order_count >= 2`。
+- 哈希截断：`hash_str[:8] + "…"`（防止泄露原始完整哈希）。
+- 复购间隔统计：只计算 `delta_time >= 0` 的相邻订单对（时间正向）。
+
+## Output tables
+
+`buyer_structure`、`repeat_buyer_top`。仅在 `buyer_id_hash` 和 `paid_amount` 存在时产出。
+
+## Failure modes（降级矩阵）
+
+| 缺失 | 行为 |
+|---|---|
+| `orders` | `NOT_JUDGABLE` `_missing_result`（唯一无真实 Finding 的情形）。 |
+| `buyer_id_hash` | `NOT_JUDGABLE` 缺列告知 Finding，不产出表。 |
+| `buyer_id_hash` 全空 | `NOT_JUDGABLE` 告知「无法追踪买家」。 |
+| `buyer_id_hash` 覆盖率 < 50% | 产出真实 Finding，但 evidence 降级为 WEAK + caveat。 |
+| `paid_time` | 跳过复购间隔分析，记 limitation；其他指标正常产出。 |
+| `paid_amount` | 跳过 GMV 分析，记 limitation；其他指标正常产出。 |
+| 单次/复购买家为 0 | 对应行不产出或置为 0，不抛异常。 |
+| 复购间隔解析失败 | 中位数/均值为 None，记 limitation。 |
+
+Finding 1 在 `orders` 表存在时**始终**产出 → `run()` 的 findings 永不为空（`orders` 表存在时）。
+
+## Levers（recommended_action）
+
+- 复购率低 → 一周内做买家复购召回活动（满减/会员权益/邮件提醒），优化复购体验。
+- 复购买家 GMV 占比低 → 加强复购激励（积分/会员权益），建立买家分层运营。
+- 复购间隔长 → 缩短促销周期或做定期召回营销，加快回购速度。
+- 单次买家占比高 → 优化订单体验与包装，增加随单赠品或复购券。
+
+## Caveats baked in
+
+1. 用 `_table_columns` 守卫每一列后再引用（`read_csv_auto` 可能缺列）。
+2. `buyer_id_hash` 覆盖率 < 50% 是数据质量问题，Evidence 降级为 WEAK + caveat，不静默忽略。
+3. 买家哈希在 `repeat_buyer_top` 表截断至 8 字符 + "…"，防止泄露原始完整哈希。
+4. **观察窗截断提醒：** 窗口末期首购的买家没机会在观察期内复购，期内复购率是下限估计，
+   不能作为终局复购率。建议周期性观察、排除末期新客后再对比。
+5. 所有 `/ count` 都守卫 count > 0；0 分母返回 None，不抛异常。
+6. 复购间隔仅统计 `delta_time >= 0`（时间递增）；反向时间差或解析失败不计入。
+7. 每个 Finding 填 confounders（买家成熟度、观察期长度、活动强度）+ 观察性 caveat。
+
+## Cross-links
+
+- 同级模块：`audience_structure_diagnosis`（人群与首购周期转化对比）。
+- 同批模块：`core_business_diagnosis`（§2 生意大盘）、`refund_structure_diagnosis`（§7 退款与售后）。
+
+## 常见误读提醒
+
+- **「复购率」是去重买家维度，不是订单维度：** 复购率 = 复购买家数 / 去重买家总数，
+  不是 `repeat_orders / total_orders`。
+- **「观察窗截断」：** 如果数据跨度 2025-01-01 到 2025-01-31，1 月 28 日首购的买家，
+  到 1 月 31 日只有 3 天机会复购，不代表终局复购率。建议排除末期新客后再对标。
+- **「买家 ID 截断」：** `repeat_buyer_top` 的哈希显示 8 字符 + "…"，用于人类识别，
+  不是完整哈希，仅供内部追踪；不可逆向还原。
+- **「平均客单价」分两种：** 单次买家的平均*支付金额*；复购买家的平均*订单*金额
+  或平均*买家*金额（若某买家下多笔订单）——报告中明确区分。
