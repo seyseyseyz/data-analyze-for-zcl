@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+### Evidence & methodology
+
+- Land the Decision Compiler action-license projection: findings project to a
+  second reader label (可执行/可试点/仅观察/先补数据) via
+  `reporting.confidence.action_license`, the factcheck gate caps an action card's
+  stated license to what its primary fact's evidence allows (mechanism-supported
+  actions cap at pilot), and fact-layer HTML actions carry the 行动许可 chip.
+- Control multiple comparisons in content group scans: cover/copy/portfolio
+  ranking tables gain a BH-FDR `read_rate_signal` verdict per group, so a leader
+  that is merely lucky is no longer presented like a proven winner.
+
+### Serial host workflow
+
+- Add `xhs-ca narrative next` / `submit`: a two-command per-task loop for hosts
+  that work one task at a time (no parallel sub-agent facility). `next` advances,
+  reserves one task, and generates the dispatch identity; `submit` validates
+  read-only, ingests, and releases capacity. The low-level ledger primitives stay
+  available for parallel hosts and repair.
+- Expose the recorded `authorization_decision` in `narrative status --json`, so a
+  resuming host reads the stored answer instead of re-asking the user.
+
+### Development hygiene
+
+- Add a commit-time mirror guard (`scripts/git-hooks/pre-commit`, enable with
+  `git config core.hooksPath scripts/git-hooks`) so a commit touching canonical
+  sources carries the regenerated skill mirror.
+
 ### Design
 
 - Add Decision Compiler architecture ADR (`docs/superpowers/specs/2026-07-10-decision-compiler-architecture-design.md`).

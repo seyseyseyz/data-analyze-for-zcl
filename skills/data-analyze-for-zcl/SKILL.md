@@ -1,6 +1,6 @@
 ---
 name: data-analyze-for-zcl
-description: "Xiaohongshu/小红书/千帆 ceramics/tableware export analysis. DuckDB + evidence-scored tasks: weekly_business_review, sku_counterfactual_lift, comment_demand_mining, paid_traffic_efficiency, cover_style_effect, copy_angle_effect, note_funnel, product_opportunity_matrix. Triggers on 笔记数据_/订单数据_/SKU销售_ or columns 笔记ID/曝光量/note_sku_links. Not for generic data analysis or non-XHS platforms unless explicitly invoked."
+description: "Xiaohongshu/小红书/千帆 ceramics/tableware export analysis. DuckDB + evidence-scored diagnosis tasks: core_business, demand_funnel, search_efficiency, channel/audience/SKU structure, note_commercial, refund_root_cause, buyer_repurchase (复购结构), note_carry (笔记进店/直播承接), plus comment_demand_mining, paid_traffic_efficiency, cover/copy effects, sku_counterfactual_lift and more (26 registered tasks). Triggers on 笔记数据_/订单数据_/SKU销售_ or columns 笔记ID/曝光量/note_sku_links. Not for generic data analysis or non-XHS platforms unless explicitly invoked."
 ---
 
 # Xiaohongshu Ceramics Analytics
@@ -24,7 +24,9 @@ Use this skill when the user provides Xiaohongshu (小红书 / 千帆) exported 
    data or metric mappings. If the user declines, continue later with the deterministic
    final-report fallback rather than producing a separate fact report.
    Once authorized, that decision remains valid for the same report through later turns,
-   interruptions, retries, and concurrency limits: do not ask again. Ask for multi-agent
+   interruptions, retries, and concurrency limits: do not ask again — after any
+   interruption, read the recorded answer from `narrative status --json`
+   (`authorization_decision`) instead of re-asking. Ask for multi-agent
    authorization again only for a separate report after this run finishes or when the
    user explicitly revokes it. A field-mapping decision is a separate semantic question,
    not a reason to repeat this authorization gate.
@@ -93,13 +95,16 @@ narrative workflow and is the only default delivery surface:
    `assets/xhs-ca/orchestration/runbook.md` exactly: two independent spine candidates →
    spine adjudication → per-domain writer/challenger/adjudicator → cross-domain synthesis →
    independent visual curation → deterministic gate → three independent review lenses →
-   continuity → candidate HTML → merchant final review. Always dispatch the exact pending
-   `task_id` values returned by `status --json`. Use each task's `result_path`, `schema_path`,
-   enum hints, controller fields, current round, dynamic allowed values and contract version
-   as its dispatch contract. Reserve only real capacity, persist dispatch/agent transitions,
-   validate each result read-only, then ingest with `--task-id`; never advance over a
-   missing sidecar. A cache hit may skip agent work,
-   but authorization was still obtained first.
+   continuity → candidate HTML → merchant final review. Default serial loop: run
+   `narrative next` to receive ONE dispatched task (its contract carries `result_path`,
+   `schema_path`, enum hints, controller fields, current round, dynamic allowed values
+   and contract version), complete it per its brief, write the JSON result to the
+   contract's `result_path`, then run `narrative submit --task-id <task_id>` — it
+   validates read-only, ingests, and releases capacity in one call. Repeat until `next`
+   reports `terminal`. A host dispatching several agents in parallel may instead use the
+   low-level primitives (`status --json` → reserve → record-dispatch → validate → ingest)
+   under the runbook's ledger rules, always using the exact pending `task_id` values.
+   A cache hit may skip agent work, but authorization was still obtained first.
    If agent dispatch hits a concurrency limit, first inspect the already-dispatched
    agents, ingest their finished results to release controller capacity, and close or
    recycle completed host agents to release host capacity. Then retry pending tasks with a
@@ -307,7 +312,11 @@ HAR/platform field catalog into the report.
 # Prepare the authorized quality-first merchant report from the validated sidecar pair.
 <skill-dir>/scripts/xhs-ca narrative prepare --run-dir <run-dir> --results <state-dir>/results.json --facts <state-dir>/facts.json --name 店铺名日期范围经营诊断报告 --multi-agent-authorized
 
-# Durable dispatch loop: reserve -> record -> validate -> ingest
+# Serial host loop (default): one task out, one result back — repeat until terminal.
+<skill-dir>/scripts/xhs-ca narrative next --run-dir <run-dir>
+<skill-dir>/scripts/xhs-ca narrative submit --run-dir <run-dir> --task-id <task_id>
+
+# Low-level durable dispatch loop (parallel hosts / repair): reserve -> record -> validate -> ingest
 <skill-dir>/scripts/xhs-ca narrative reserve --run-dir <run-dir> --capacity <n> --json
 <skill-dir>/scripts/xhs-ca narrative record-dispatch --run-dir <run-dir> --task-id <task_id> --agent-id <agent_id> --result-path <file>
 <skill-dir>/scripts/xhs-ca narrative record-agent-state --run-dir <run-dir> --task-id <task_id> --status result_ready

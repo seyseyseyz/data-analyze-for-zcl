@@ -58,9 +58,32 @@ slices and never pass facts as results. Prepare freezes and hashes:
 It writes a snapshot manifest, durable task queue and the first pending briefs. `--force` is
 only for an intentional replacement of an unfinished run.
 
-## Passive control loop
+## Serial host loop (default)
 
-1. Run `xhs-ca narrative status --run-dir <dir> --json`.
+A host that works one task at a time — including any host without a parallel sub-agent
+facility — drives the whole run with two commands per task and never touches the
+low-level ledger primitives:
+
+1. `xhs-ca narrative next --run-dir <dir>` — advances the stage machine as far as it
+   can, reserves ONE task, records its dispatch with a controller-generated
+   `agent_id`/`result_path`, and prints the full task contract as JSON.
+   `status=in_flight` means submit the outstanding result first; `status=terminal`
+   means the run is finalized, blocked, or delivery_failed.
+2. Do the task exactly as its brief and contract specify, writing the JSON result to
+   the contract's `result_path`.
+3. `xhs-ca narrative submit --run-dir <dir> --task-id <task_id>` — validates
+   read-only, records readiness, ingests, and releases the capacity in one call. A
+   malformed result leaves the task dispatched: fix the file and submit again.
+4. Repeat from step 1 until `next` reports `terminal`.
+
+`next`/`submit` compose the same ledger primitives documented below, so an
+interrupted serial run can always be inspected or repaired with the low-level loop.
+
+## Passive control loop (parallel hosts and repair)
+
+1. Run `xhs-ca narrative status --run-dir <dir> --json`. Its
+   `authorization_decision` field is the recorded answer from prepare — a resuming
+   host reads it instead of asking the user again.
 2. Read only the pending task briefs listed by status. Each task exposes `result_path`, `schema_path`,
    allowed enums, immutable `controller_fields`, `current_round`, run-scoped dynamic values and
    `contract_version`; do not reconstruct these from filenames or memory.

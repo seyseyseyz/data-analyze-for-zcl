@@ -24,6 +24,16 @@ does not have Python 3.11+ or dependency installation fails, bootstrap prints a
 short command block to copy into macOS Terminal instead of showing a raw pip
 traceback.
 
+Edit only the top-level sources (`xhs_ceramics_analytics/`, `references/`,
+`task_templates/`, `orchestration/`, `tests/`) — the deployed skill bundle under
+`skills/data-analyze-for-zcl/assets/xhs-ca/` is a generated mirror. Regenerate it
+with `bash skills/data-analyze-for-zcl/scripts/sync-runtime` and commit it together
+with the source change. Enable the commit-time guard once per clone:
+
+```bash
+git config core.hooksPath scripts/git-hooks
+```
+
 ## Skill Install
 
 List the published skill without installing:

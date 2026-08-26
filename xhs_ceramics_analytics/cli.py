@@ -983,6 +983,43 @@ def narrative_validate(
         typer.echo(f"valid: task_id={payload.get('task_id')}")
 
 
+@narrative_app.command("next")
+def narrative_next(
+    run_dir: Annotated[Path, typer.Option("--run-dir")],
+    project_root: Annotated[Path | None, typer.Option("--project-root")] = None,
+) -> None:
+    """Serial-host loop, step 1: advance as far as possible and hand out ONE
+    dispatched task (agent_id and result_path are controller-generated). Emits
+    JSON: status=ready carries the task contract; in_flight means submit the
+    outstanding result first; terminal means the run is done or degraded."""
+    try:
+        payload = _nw.next_task(run_dir, project_root=project_root)
+    except (ValueError, FileNotFoundError, RuntimeError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(_json.dumps(payload, ensure_ascii=False, default=str))
+
+
+@narrative_app.command("submit")
+def narrative_submit(
+    run_dir: Annotated[Path, typer.Option("--run-dir")],
+    task_id: Annotated[str, typer.Option("--task-id")],
+    source: Annotated[
+        Path | None,
+        typer.Option("--source", help="Defaults to the result_path recorded at dispatch."),
+    ] = None,
+) -> None:
+    """Serial-host loop, step 2: validate + ingest one finished task result and
+    release its capacity. A malformed result leaves the task dispatched so the
+    host can fix the file and submit again."""
+    try:
+        payload = _nw.submit_task(run_dir, task_id=task_id, source=source)
+    except (ValueError, FileNotFoundError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(_json.dumps(payload, ensure_ascii=False, default=str))
+
+
 @narrative_app.command("reserve")
 def narrative_reserve(
     run_dir: Annotated[Path, typer.Option("--run-dir")],

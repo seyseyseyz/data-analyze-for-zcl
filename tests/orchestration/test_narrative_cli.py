@@ -181,3 +181,62 @@ def test_prepare_malformed_results_json(tmp_path):
     ])
     assert res.exit_code != 0
     assert "not valid JSON" in res.output
+
+
+def test_next_then_submit_drives_one_task_end_to_end(tmp_path):
+    # 串行宿主(如 Codex)的最小循环:next 发一个任务,submit 交回,两次调用完成
+    # 原来 reserve/record-dispatch/record-agent-state/validate/ingest 五步的工作。
+    _write_inputs(tmp_path)
+    run_dir = tmp_path / "run"
+    runner.invoke(app, [
+        "narrative", "prepare",
+        "--run-dir", str(run_dir),
+        "--results", str(tmp_path / "results.json"),
+        "--facts", str(tmp_path / "facts.json"),
+        "--name", "报告",
+        "--project-root", str(tmp_path),
+    ])
+
+    res = runner.invoke(app, ["narrative", "next", "--run-dir", str(run_dir)])
+    assert res.exit_code == 0, res.output
+    handed = json.loads(res.stdout)
+    assert handed["status"] == "ready"
+    task = handed["task"]
+
+    with open(task["result_path"], "w", encoding="utf-8") as fh:
+        json.dump(
+            {"sections": [{"section_id": "生意大盘", "title": "生意大盘", "body": "正文。"}]},
+            fh,
+            ensure_ascii=False,
+        )
+    res = runner.invoke(app, [
+        "narrative", "submit",
+        "--run-dir", str(run_dir),
+        "--task-id", task["task_id"],
+    ])
+    assert res.exit_code == 0, res.output
+    outcome = json.loads(res.stdout)
+    assert outcome["ingested"] == task["task_id"]
+
+
+def test_submit_without_result_file_reports_error(tmp_path):
+    _write_inputs(tmp_path)
+    run_dir = tmp_path / "run"
+    runner.invoke(app, [
+        "narrative", "prepare",
+        "--run-dir", str(run_dir),
+        "--results", str(tmp_path / "results.json"),
+        "--facts", str(tmp_path / "facts.json"),
+        "--name", "报告",
+        "--project-root", str(tmp_path),
+    ])
+    res = runner.invoke(app, ["narrative", "next", "--run-dir", str(run_dir)])
+    task = json.loads(res.stdout)["task"]
+
+    res = runner.invoke(app, [
+        "narrative", "submit",
+        "--run-dir", str(run_dir),
+        "--task-id", task["task_id"],
+    ])
+    assert res.exit_code != 0
+    assert "not found" in res.output

@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Mirror guard: the deployed skill bundle (skills/data-analyze-for-zcl/assets/xhs-ca)
+# is a generated copy of the top-level sources. CI's sync-check catches drift at PR
+# time; this hook catches it at commit time, so a commit that touches canonical
+# sources always carries the regenerated mirror with it.
+#
+# Enable once per clone:  git config core.hooksPath scripts/git-hooks
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+mirror="skills/data-analyze-for-zcl/assets/xhs-ca"
+
+# Only guard commits that touch the mirrored canonical sources.
+if git diff --cached --quiet -- \
+  xhs_ceramics_analytics orchestration references task_templates tests \
+  pyproject.toml scripts/bootstrap_runtime.py scripts/bootstrap_python.sh; then
+  exit 0
+fi
+
+bash "$repo_root/skills/data-analyze-for-zcl/scripts/sync-runtime" > /dev/null
+
+if ! git diff --quiet -- "$mirror" \
+  || [ -n "$(git ls-files --others --exclude-standard -- "$mirror")" ]; then
+  echo "pre-commit: skill mirror was out of sync; sync-runtime has regenerated it." >&2
+  echo "Stage the mirror and commit again:" >&2
+  echo "  git add $mirror && git commit" >&2
+  exit 1
+fi
