@@ -1,0 +1,9 @@
+skills/data-analyze-for-zcl/assets/xhs-ca/xhs_ceramics_analytics/analysis/buyer_repurchase.py
+  ai_agent 7,157
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.43-trip",
+  "base_commit_sha": "e2e5e2906e96d5da32dba315320b1d97ac234d63",
+  "prompts": {}
+}
